@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\": missing \"drop_when\" (a signal must say when it produces nothing)"
+}

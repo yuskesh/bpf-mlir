@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "schema: version must be 1, got 2"
+}

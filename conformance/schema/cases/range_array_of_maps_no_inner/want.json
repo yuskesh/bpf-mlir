@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"outer\": a array_of_maps map needs inner (the symbol of the inner map template in core.maps)"
+}

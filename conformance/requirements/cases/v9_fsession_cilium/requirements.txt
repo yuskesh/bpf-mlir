@@ -1,0 +1,5 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	f	tracing	26
+attach	f	trace_fsession	func:bpf_fentry_test1
+btf	int

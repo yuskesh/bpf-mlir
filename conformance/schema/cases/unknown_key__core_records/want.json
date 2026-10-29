@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.records: unknown key \"zz_unknown\" (known: symbol, id, size, min_size, alignment, required_through, fields, note)"
+}

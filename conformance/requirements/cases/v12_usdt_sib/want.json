@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "usdtarg_unknown",
+      "program": "u",
+      "name": "1 of p1d:hit at pc 0x1179 (u32)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

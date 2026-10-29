@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"tp\": fields \"__syscall_nr\" needs an integer offset \u003e= 0 (bytes from the start of the record, as in the tracefs format)"
+}

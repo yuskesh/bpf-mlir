@@ -1,0 +1,6 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	s	sk_skb	14
+map	sock	sockmap	15	u32	u32	2	0
+attach	s	sk_skb_stream_verdict	map:sock
+btf	int

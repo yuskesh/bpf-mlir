@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "uretprobe_abi",
+      "program": "r",
+      "name": "main.probe_target",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

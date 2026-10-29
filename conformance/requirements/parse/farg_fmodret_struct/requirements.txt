@@ -1,0 +1,8 @@
+ebpf-requirements 10
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	m	tracing	26
+attach	m	trace_fmod_ret	bpf_modify_return_test
+retsig	m	2	i32
+farg	m	0	task_struct
+farg	m	1	-
+btf	int

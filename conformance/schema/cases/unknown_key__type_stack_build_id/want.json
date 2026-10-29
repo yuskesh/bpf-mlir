@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"st_b\" value element: unknown key \"zz_unknown\" (known: kind)"
+}

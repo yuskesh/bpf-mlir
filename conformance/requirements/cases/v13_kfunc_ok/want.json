@@ -1,0 +1,26 @@
+{
+  "result": "ok",
+  "unmet": [
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "k",
+      "name": "bpf_rcu_read_lock",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "k",
+      "name": "bpf_task_from_pid",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "k",
+      "name": "bpf_task_release",
+      "id": 0,
+      "blocks_load": false
+    }
+  ]
+}

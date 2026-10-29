@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "helper",
+      "program": "prog",
+      "name": "map_lookup_elem",
+      "id": 1,
+      "blocks_load": true
+    }
+  ]
+}

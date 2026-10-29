@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"count_packets\": missing or non-string \"attach_target\""
+}

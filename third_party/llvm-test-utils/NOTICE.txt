@@ -1,0 +1,5 @@
+LLVM test utility sources: FileCheck/FileCheck.cpp, count/count.c, not/not.cpp.
+Upstream: https://github.com/llvm/llvm-project/tree/llvmorg-23.1.1/llvm/utils
+Version: llvmorg-23.1.1. These sources are included for optional non-root tests.
+See LICENSE.TXT for the Apache License v2.0 with LLVM Exceptions and notices.
+No LLVM binaries or libraries are included in this source package.

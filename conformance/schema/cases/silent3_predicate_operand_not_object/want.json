@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec_total\" drop_when: \"operand\" must be an object"
+}

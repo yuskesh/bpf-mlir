@@ -1,0 +1,50 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "bml-libbpf-v1.7",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "keep",
+      "enum64": "keep",
+      "func_global": "keep",
+      "type_tag": "keep"
+    }
+  },
+  "queries": {
+    "attach_targets": {
+      "trace_fsession/func:bpf_fentry_test1": {
+        "value": true
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "tracing/trace_fsession": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "tracing": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

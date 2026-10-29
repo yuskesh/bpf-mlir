@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "coverage.programs must be \"complete\" or \"omitted\", got \"partial\" (there is no \"partial\": its scope would be ambiguous)"
+}

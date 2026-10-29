@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"hdr\": min_size 24 exceeds size 16"
+}

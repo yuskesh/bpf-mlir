@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"g12cc\" struct_ops op: unknown key \"zz_unknown\" (known: member, program)"
+}

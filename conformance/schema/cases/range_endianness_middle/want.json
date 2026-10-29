@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"hdr\" field \"kind\": endianness must be \"little\" or \"big\", got \"middle\""
+}

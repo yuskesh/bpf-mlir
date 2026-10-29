@@ -1,0 +1,3 @@
+ebpf-requirements 1
+program	a	xdp	6
+map	m	array	2

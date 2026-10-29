@@ -1,0 +1,10 @@
+ebpf-requirements 4
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	count	kprobe	2
+attach	count	uprobe	e557_alias
+arch	count	x86_64
+ctxfield	count	pt_regs	di	112	8
+ctxfield	count	pt_regs	si	104	8
+binary	count	sha256	f7eec1ea2712ee675e4b7a5c31b360d06f483d68022f0209e2e1595d3662d758
+uprobearg	count	1	u32
+uprobearg	count	2	u64

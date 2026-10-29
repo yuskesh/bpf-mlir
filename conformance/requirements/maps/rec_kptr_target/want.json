@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "record:kv",
+      "field": "record",
+      "declared": "size=16;t:0:kptr:cred;n:8:u64;",
+      "elf": "size=16;t:0:kptr:task_struct;n:8:u64;"
+    }
+  ]
+}

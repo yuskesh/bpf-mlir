@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\": signal must be \"traces\", \"metrics\" or \"logs\", got \"events\""
+}

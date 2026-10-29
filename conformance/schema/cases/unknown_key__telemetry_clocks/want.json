@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.clocks: unknown key \"zz_unknown\" (known: id, kernel_source, posix_clock, to_wall, note)"
+}

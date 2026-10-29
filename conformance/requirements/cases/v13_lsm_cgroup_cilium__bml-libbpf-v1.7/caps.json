@@ -1,0 +1,60 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "bml-libbpf-v1.7",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "keep",
+      "enum64": "keep",
+      "func_global": "keep",
+      "type_tag": "keep"
+    }
+  },
+  "queries": {
+    "attach_targets": {
+      "lsm_cgroup/lsm:socket_bind": {
+        "value": true
+      }
+    },
+    "func_args": {
+      "bpf_lsm_socket_bind(socket,-,-)": {
+        "diffs": []
+      }
+    },
+    "func_param": {
+      "bpf_lsm_socket_bind/3/i32": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "lsm/lsm_cgroup": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "lsm": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

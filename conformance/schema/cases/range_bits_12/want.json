@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"hdr\" field \"kind\": bits must be 8, 16, 32 or 64, got 12"
+}

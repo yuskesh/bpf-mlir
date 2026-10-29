@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"kv\" field \"t\": unknown key \"zz_unknown\" (known: kind, struct)"
+}

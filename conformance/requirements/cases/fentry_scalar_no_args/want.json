@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "farg_unknown",
+      "program": "f",
+      "name": "bpf_fentry_test2",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

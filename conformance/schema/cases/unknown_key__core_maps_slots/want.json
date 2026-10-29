@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"progs\" slot: unknown key \"zz_unknown\" (known: index, program)"
+}

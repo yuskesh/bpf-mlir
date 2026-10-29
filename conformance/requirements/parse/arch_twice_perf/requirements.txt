@@ -1,0 +1,7 @@
+ebpf-requirements 11
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	perf_event	7
+attach	p	trace_perf	perf
+arch	p	x86_64
+arch	p	x86_64
+btf	int

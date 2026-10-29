@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"counts\": missing or non-string \"kind\""
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\" fields type: unknown key \"zz_unknown\" (known: kind)"
+}

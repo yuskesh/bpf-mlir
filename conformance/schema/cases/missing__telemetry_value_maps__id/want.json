@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.value_maps: missing or non-string \"id\""
+}

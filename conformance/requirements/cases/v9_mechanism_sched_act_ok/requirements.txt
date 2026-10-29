@@ -1,0 +1,5 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	a	sched_act	4
+attach	a	sched_act	netlink
+btf	int

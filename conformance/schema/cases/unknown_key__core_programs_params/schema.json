@@ -1,0 +1,91 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid; the value counts calls, matching the C kprobe fixture",
+        "record": "",
+        "symbol": "counts",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid; the value sums the second argument (u32), matching the C kprobe fixture",
+        "record": "",
+        "symbol": "sums",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "arch": "x86_64",
+        "attach_target": "sys_ni_syscall",
+        "kind": "kprobe",
+        "maps": [
+          "counts",
+          "sums"
+        ],
+        "name": "prog",
+        "note": "Probe sys_ni_syscall, which has both the original and __x64_ alias symbols, as an attach_alias control",
+        "params": [
+          {
+            "n": 2,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            },
+            "zz_unknown": 1
+          }
+        ]
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

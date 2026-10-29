@@ -1,0 +1,53 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "b32",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "bss"
+    },
+    {
+      "map": "b64a",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "bss"
+    },
+    {
+      "map": "b64b",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "bss"
+    },
+    {
+      "map": "r16",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "rodata"
+    },
+    {
+      "map": "r32",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "rodata"
+    },
+    {
+      "map": "r32b",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "rodata"
+    },
+    {
+      "map": "r64",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "rodata"
+    },
+    {
+      "map": "r8",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "rodata"
+    }
+  ]
+}

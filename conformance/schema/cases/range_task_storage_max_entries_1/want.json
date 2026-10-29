@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"ts\": a task_storage map takes max_entries 0 (one value per owner object — the kernel refuses a positive max_entries), got 1"
+}

@@ -1,0 +1,7 @@
+ebpf-requirements 16
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	kprobe	2
+attach	p	ksyscall	execve
+arch	p	x86_64
+sysarg	p	2	strarray
+btf	int

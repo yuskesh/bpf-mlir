@@ -1,0 +1,4 @@
+{
+  "key": "stability",
+  "path": "telemetry.signals[].attributes[]"
+}

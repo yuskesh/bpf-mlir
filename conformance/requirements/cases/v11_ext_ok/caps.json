@@ -1,0 +1,50 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none"
+  },
+  "queries": {
+    "ext_targets": {
+      "x/xdp_sub/2/i32(u32,-)": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "ext": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+ebpf-requirements 12
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	k	xdp	6
+kfunc	k	bpf_rcu_read_lock	void

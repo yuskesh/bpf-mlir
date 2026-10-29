@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "kfield_unknown",
+      "program": "p",
+      "name": "root.nested (struct:child)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kfield_unknown",
+      "program": "p",
+      "name": "root.nested.value (u32)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

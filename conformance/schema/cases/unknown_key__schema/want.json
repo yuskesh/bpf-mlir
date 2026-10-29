@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "schema: unknown key \"zz_unknown\" (known: version, coverage, core, telemetry, extensions)"
+}

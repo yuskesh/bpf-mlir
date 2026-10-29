@@ -1,0 +1,393 @@
+{
+  "version": 1, "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "hdr",
+        "id": 0,
+        "size": 16,
+        "min_size": 16,
+        "alignment": 8,
+        "required_through": "",
+        "note": "Shared header referenced as a named record through record_ref",
+        "fields": [
+          {
+            "name": "kind",
+            "offset": 0,
+            "expose": "int",
+            "note": "",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "ts",
+            "offset": 8,
+            "expose": "int",
+            "note": "ktime",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      },
+      {
+        "symbol": "event",
+        "id": 1,
+        "size": 48,
+        "min_size": 40,
+        "alignment": 8,
+        "required_through": "pid",
+        "note": "",
+        "fields": [
+          {
+            "name": "hdr",
+            "offset": 0,
+            "expose": "",
+            "note": "A nested structure references a named record",
+            "type": {
+              "kind": "record_ref",
+              "symbol": "hdr"
+            }
+          },
+          {
+            "name": "comm",
+            "offset": 16,
+            "expose": "str",
+            "note": "bpf_get_current_comm",
+            "type": {
+              "kind": "array",
+              "count": 16,
+              "element": {
+                "kind": "int",
+                "bits": 8,
+                "signed": true,
+                "endianness": "little",
+                "alignment": 1
+              }
+            }
+          },
+          {
+            "name": "pid",
+            "offset": 32,
+            "expose": "int",
+            "note": "",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "duration_ns",
+            "offset": 40,
+            "expose": "int",
+            "note": "0 = not measured",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      },
+      {
+        "symbol": "tick",
+        "id": 2,
+        "size": 8,
+        "min_size": 8,
+        "alignment": 8,
+        "required_through": "count",
+        "note": "Counter-value event carried by the ring buffer",
+        "fields": [
+          {
+            "name": "count",
+            "offset": 0,
+            "expose": "int",
+            "note": "Cumulative count through this packet",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "counts",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 1024,
+        "flags": 0,
+        "record": "",
+        "note": ""
+      },
+      {
+        "symbol": "events",
+        "kind": "ringbuf",
+        "max_entries": 262144,
+        "flags": 0,
+        "record": "tick",
+        "note": "Ring buffers have no key or value"
+      }
+    ],
+    "programs": [
+      {
+        "name": "count_packets",
+        "kind": "xdp",
+        "attach_target": "eth0",
+        "maps": [
+          "counts"
+        ],
+        "note": "XDP counter assembled by the schema generator"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [
+      {
+        "id": "monotonic",
+        "kernel_source": "bpf_ktime_get_ns()",
+        "posix_clock": "CLOCK_MONOTONIC",
+        "to_wall": "wall = ktime + (CLOCK_REALTIME - CLOCK_MONOTONIC)",
+        "note": "The record reader obtains offsets for that machine and boot"
+      }
+    ],
+    "value_maps": [
+      {
+        "id": "tcp_state",
+        "unknown": "unnamed(%ld)",
+        "arch_invariant": true,
+        "btf_mode": "names",
+        "btf_anchor": "TCP_ESTABLISHED",
+        "btf_prefix": "TCP_",
+        "btf_omit": "TCP_MAX_STATES",
+        "authority": "Kernel TCP-state enum",
+        "note": "Do not trust declarations; check them against the running kernel's BTF",
+        "entries": [
+          {
+            "value": 1,
+            "name": "ESTABLISHED"
+          },
+          {
+            "value": 2,
+            "name": "SYN_SENT"
+          }
+        ]
+      }
+    ],
+    "bounds_sets": [
+      {
+        "id": "otel_duration_s",
+        "unit": "s",
+        "authority": "Default buckets from OTel eBPF Instrumentation",
+        "note": "Records carry nanoseconds; convert ns to seconds",
+        "bounds": [
+          0,
+          0.005,
+          0.01,
+          0.025,
+          0.05,
+          0.1,
+          0.25,
+          0.5,
+          1,
+          2.5,
+          5,
+          10
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "exec",
+        "signal": "traces",
+        "record": "event",
+        "span_name": "exec {process.executable.name}",
+        "span_kind": "INTERNAL",
+        "note": "",
+        "timing": {
+          "start": "record_ktime:hdr.ts",
+          "clock": "monotonic",
+          "end": "start_plus:duration_ns"
+        },
+        "drop_when": {
+          "op": "zero",
+          "operand": {
+            "kind": "field",
+            "name": "pid"
+          }
+        },
+        "attributes": [
+          {
+            "key": "process.pid",
+            "stability": "semconv",
+            "note": "",
+            "source": {
+              "kind": "field",
+              "name": "pid",
+              "from": "",
+              "detail": ""
+            },
+            "presence": {
+              "op": "always"
+            }
+          },
+          {
+            "key": "process.executable.name",
+            "stability": "semconv",
+            "note": "",
+            "source": {
+              "kind": "derived",
+              "name": "comm_str",
+              "from": "comm",
+              "detail": "comm[16] as a NUL-terminated string"
+            },
+            "presence": {
+              "op": "nonempty",
+              "operand": {
+                "kind": "field",
+                "name": "comm"
+              }
+            }
+          },
+          {
+            "key": "spnl.latency_ns",
+            "stability": "spinel",
+            "note": "",
+            "source": {
+              "kind": "field",
+              "name": "duration_ns",
+              "from": "",
+              "detail": ""
+            },
+            "presence": {
+              "op": "nonzero",
+              "operand": {
+                "kind": "field",
+                "name": "duration_ns"
+              }
+            }
+          },
+          {
+            "key": "spnl.route",
+            "stability": "spinel",
+            "note": "",
+            "source": {
+              "kind": "runtime_extension",
+              "name": "spnl.route",
+              "from": "",
+              "detail": "Userspace routing-table lookup; not expressible in the schema"
+            },
+            "presence": {
+              "op": "any",
+              "args": [
+                {
+                  "op": "nonzero",
+                  "operand": {
+                    "kind": "field",
+                    "name": "pid"
+                  }
+                },
+                {
+                  "op": "nonempty",
+                  "operand": {
+                    "kind": "field",
+                    "name": "comm"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "exec_total",
+        "signal": "metrics",
+        "record": "event",
+        "span_name": "",
+        "span_kind": "",
+        "note": "",
+        "timing": {
+          "start": "record_ktime:hdr.ts",
+          "clock": "monotonic",
+          "end": "start"
+        },
+        "value": {
+          "kind": "constant",
+          "name": "1",
+          "from": "",
+          "detail": ""
+        },
+        "metric": {
+          "kind": "sum",
+          "unit": "1",
+          "temporality": "cumulative",
+          "monotonic": true
+        },
+        "drop_when": {
+          "op": "never"
+        },
+        "attributes": []
+      }
+    ]
+  },
+  "extensions": {
+    "spinel.ebpf": {
+      "push_fn": "spnl_otlp_exec_span_push",
+      "enrichers": [
+        "k8s",
+        "cri"
+      ],
+      "producer": "emit_exec",
+      "consumer": {
+        "form": "on_emit :exec do |ev| ... end",
+        "drain_fn": "spnl_rec_exec_drain"
+      }
+    },
+    "example.vendor": {
+      "anything": [
+        1,
+        2,
+        {
+          "nested": true
+        }
+      ]
+    }
+  }
+}

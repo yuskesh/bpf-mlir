@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "uprobearg",
+      "program": "prog",
+      "name": "1 of main (u32)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "uprobearg",
+      "program": "prog",
+      "name": "2 of main (u64)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

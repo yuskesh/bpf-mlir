@@ -1,0 +1,11 @@
+{
+  "maps": [
+    {
+      "name": "m",
+      "kind": "array",
+      "key": "u32",
+      "value": "u64",
+      "max_entries": 1
+    }
+  ]
+}

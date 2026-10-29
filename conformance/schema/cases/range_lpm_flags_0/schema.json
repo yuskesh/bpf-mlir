@@ -1,0 +1,344 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "kind": "record_ref",
+          "symbol": "lpm_key"
+        },
+        "kind": "lpm_trie",
+        "max_entries": 16,
+        "note": "Source prefix maps to 1 for drop or 0; userspace inserts entries",
+        "record": "",
+        "symbol": "policy",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "kind": "record_ref",
+          "symbol": "flow_key"
+        },
+        "kind": "lru_hash",
+        "max_entries": 64,
+        "note": "Flow table",
+        "record": "",
+        "symbol": "flows",
+        "value": {
+          "kind": "record_ref",
+          "symbol": "flow_val"
+        }
+      },
+      {
+        "flags": 0,
+        "kind": "ringbuf",
+        "max_entries": 4096,
+        "note": "Event for a newly observed flow",
+        "record": "event",
+        "symbol": "events"
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 4,
+        "note": "Slots 1/2/3 count lost events, absent flows and update errors",
+        "record": "",
+        "symbol": "stats",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "",
+        "kind": "xdp",
+        "maps": [
+          "policy",
+          "flows",
+          "stats"
+        ],
+        "name": "prog",
+        "note": "Flow-aggregation workload"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 4,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "prefixlen",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "addr",
+            "note": "Keep network byte order",
+            "offset": 4,
+            "type": {
+              "count": 4,
+              "element": {
+                "alignment": 1,
+                "bits": 8,
+                "endianness": "little",
+                "kind": "int",
+                "signed": false
+              },
+              "kind": "array"
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 8,
+        "note": "Same layout as struct lpm_key in the C flow fixture",
+        "required_through": "",
+        "size": 8,
+        "symbol": "lpm_key"
+      },
+      {
+        "alignment": 4,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "saddr",
+            "note": "Packet bytes in network order",
+            "offset": 0,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "daddr",
+            "note": "",
+            "offset": 4,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "sport",
+            "note": "",
+            "offset": 8,
+            "type": {
+              "alignment": 2,
+              "bits": 16,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "dport",
+            "note": "",
+            "offset": 10,
+            "type": {
+              "alignment": 2,
+              "bits": 16,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "proto",
+            "note": "",
+            "offset": 12,
+            "type": {
+              "alignment": 1,
+              "bits": 8,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "_pad",
+            "note": "0",
+            "offset": 13,
+            "type": {
+              "count": 3,
+              "element": {
+                "alignment": 1,
+                "bits": 8,
+                "endianness": "little",
+                "kind": "int",
+                "signed": false
+              },
+              "kind": "array"
+            }
+          }
+        ],
+        "id": 1,
+        "min_size": 16,
+        "note": "Flow-key structure",
+        "required_through": "",
+        "size": 16,
+        "symbol": "flow_key"
+      },
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "packets",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "bytes",
+            "note": "Sum of IPv4 total length",
+            "offset": 8,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "last_ns",
+            "note": "",
+            "offset": 16,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "id": 2,
+        "min_size": 24,
+        "note": "Flow-value structure",
+        "required_through": "",
+        "size": 24,
+        "symbol": "flow_val"
+      },
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "key",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "kind": "record_ref",
+              "symbol": "flow_key"
+            }
+          },
+          {
+            "expose": "int",
+            "name": "first_ns",
+            "note": "",
+            "offset": 16,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "len",
+            "note": "",
+            "offset": 24,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "_pad",
+            "note": "0",
+            "offset": 28,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "id": 3,
+        "min_size": 32,
+        "note": "Flow event structure",
+        "required_through": "",
+        "size": 32,
+        "symbol": "event"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "omitted",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

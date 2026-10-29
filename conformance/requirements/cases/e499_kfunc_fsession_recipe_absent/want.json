@@ -1,0 +1,19 @@
+{
+  "result": "ok",
+  "unmet": [
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "fsess",
+      "name": "bpf_session_cookie",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "fsess",
+      "name": "bpf_session_is_return",
+      "id": 0,
+      "blocks_load": false
+    }
+  ]
+}

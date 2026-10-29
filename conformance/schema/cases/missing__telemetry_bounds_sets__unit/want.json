@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "bounds_set \"otel_duration_s\": missing or non-string \"unit\""
+}

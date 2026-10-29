@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.clocks: missing or non-string \"id\""
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": semaphore and max_points are only for usdt programs"
+}

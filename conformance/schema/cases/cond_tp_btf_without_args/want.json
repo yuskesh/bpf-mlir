@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"on_fork\": a tp_btf program needs args (the kernel types of the tracepoint arguments it reads)"
+}

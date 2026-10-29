@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "sysarg",
+      "program": "k",
+      "name": "2 of syscall prctl (strptr)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

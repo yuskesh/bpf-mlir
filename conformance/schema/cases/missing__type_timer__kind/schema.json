@@ -1,0 +1,135 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "Timer, count and status, matching the C timer fixture",
+        "record": "",
+        "symbol": "vals",
+        "value": {
+          "kind": "record_ref",
+          "symbol": "val"
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "",
+        "kind": "xdp",
+        "maps": [
+          "vals"
+        ],
+        "name": "prog",
+        "note": "Initialize vals[0]'s timer; on success, set the callback and start a 1 ms timer"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "t",
+            "note": "struct bpf_timer",
+            "offset": 0,
+            "type": {}
+          },
+          {
+            "expose": "int",
+            "name": "count",
+            "note": "The callback increments by one",
+            "offset": 16,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "st_init",
+            "note": "Status from timer_init",
+            "offset": 24,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "int",
+            "name": "st_cb",
+            "note": "Status from timer_set_callback",
+            "offset": 32,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "int",
+            "name": "st_start",
+            "note": "Status from timer_start",
+            "offset": 40,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "int",
+            "name": "armed",
+            "note": "Count of entries into the init == 0 branch",
+            "offset": 48,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 56,
+        "note": "Same layout as struct val in the C timer fixture",
+        "required_through": "",
+        "size": 56,
+        "symbol": "val"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

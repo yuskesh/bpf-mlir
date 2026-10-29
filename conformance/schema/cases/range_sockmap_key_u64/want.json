@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"socks\": a sockmap map needs a u32 key (the slot)"
+}

@@ -1,0 +1,12 @@
+{
+  "result": "ok",
+  "unmet": [
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "task",
+      "name": "bpf_task_from_pid",
+      "id": 0,
+      "blocks_load": false
+    }
+  ]
+}

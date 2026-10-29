@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "S16",
+        "id": 0,
+        "size": 16,
+        "min_size": 16,
+        "alignment": 8,
+        "required_through": "bytes",
+        "note": "Mojo struct S16",
+        "fields": [
+          {
+            "name": "packets",
+            "offset": 0,
+            "expose": "int",
+            "note": "Mojo field packets",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          },
+          {
+            "name": "bytes",
+            "offset": 8,
+            "expose": "int",
+            "note": "Mojo field bytes",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      },
+      {
+        "symbol": "S12",
+        "id": 1,
+        "size": 12,
+        "min_size": 12,
+        "alignment": 4,
+        "required_through": "c",
+        "note": "Mojo struct S12",
+        "fields": [
+          {
+            "name": "a",
+            "offset": 0,
+            "expose": "int",
+            "note": "Mojo field a",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "b",
+            "offset": 4,
+            "expose": "int",
+            "note": "Mojo field b",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "c",
+            "offset": 8,
+            "expose": "int",
+            "note": "Mojo field c",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "A16",
+        "kind": "percpu_array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "S16"
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "S16",
+        "note": "Mojo comptime A16"
+      },
+      {
+        "symbol": "A12",
+        "kind": "percpu_array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "S12"
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "S12",
+        "note": "Mojo comptime A12"
+      },
+      {
+        "symbol": "AI",
+        "kind": "percpu_array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "",
+        "note": "Mojo comptime AI"
+      },
+      {
+        "symbol": "PH",
+        "kind": "percpu_hash",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 16,
+        "flags": 0,
+        "record": "",
+        "note": "Mojo comptime PH"
+      },
+      {
+        "symbol": "LPH",
+        "kind": "lru_percpu_hash",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "S16"
+        },
+        "max_entries": 16,
+        "flags": 0,
+        "record": "S16",
+        "note": "Mojo comptime LPH"
+      }
+    ],
+    "programs": [
+      {
+        "name": "pc",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "A16",
+          "A12",
+          "AI",
+          "PH",
+          "LPH"
+        ],
+        "note": "Mojo def pc"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

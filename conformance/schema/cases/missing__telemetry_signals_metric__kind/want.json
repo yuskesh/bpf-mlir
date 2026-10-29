@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec_total\" metric: missing or non-string \"kind\""
+}

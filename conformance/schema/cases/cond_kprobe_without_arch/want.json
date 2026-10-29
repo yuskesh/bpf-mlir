@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": missing or non-string \"arch\""
+}

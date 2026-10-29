@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "clock \"monotonic\": missing or non-string \"kernel_source\""
+}

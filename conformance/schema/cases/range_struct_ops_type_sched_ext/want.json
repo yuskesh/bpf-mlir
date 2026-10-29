@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"g12cc\": struct_ops op member \"ssthresh\" is not a function pointer member of sched_ext_ops in the UAPI table (structopsmember)"
+}

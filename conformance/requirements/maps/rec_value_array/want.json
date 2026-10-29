@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "record:outer",
+      "field": "record",
+      "declared": "size=40;id:0:u8;in:4:record:inner;arr:12:[2]u16;total:24:u64;flags:32:u8;",
+      "elf": "size=40;id:0:u8;in:4:record:inner;arr:12:[3]u16;total:24:u64;flags:32:u8;"
+    }
+  ]
+}

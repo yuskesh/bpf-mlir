@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"event\" field \"hdr\": missing or non-string \"kind\""
+}

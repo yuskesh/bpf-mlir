@@ -1,0 +1,59 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "example-usdt-refctr",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": false,
+    "core_poisons_missing_field": false,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "ref_ctr"
+  },
+  "queries": {
+    "arch": {
+      "": {
+        "text": "x86_64"
+      }
+    },
+    "struct_field": {
+      "pt_regs.di/112/8": {
+        "diffs": []
+      },
+      "pt_regs.sp/152/8": {
+        "diffs": []
+      }
+    },
+    "uprobe_binary": {
+      "u": {
+        "file": "../../bin/usdt_clang_O2"
+      }
+    }
+  },
+  "privileged_queries": {
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "kprobe": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

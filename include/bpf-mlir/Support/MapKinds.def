@@ -1,0 +1,62 @@
+//===- MapKinds.def - canonical map kinds -----------------------*- C++ -*-===//
+//
+// Define EBPF_MAP_KIND before including.
+// ENUM: ebpf::MapKind enumerator.
+// NAME: schema kind, !ebpf.map spelling and UAPI maptype name; only the ABI table
+//       owns enum bpf_map_type numbers.
+// MAPTYPE: allowed in !ebpf.map (false for ringbuf, which has !ebpf.ringbuf).
+//
+// Row order determines diagnostic lists. Adding a kind also requires its key,
+// value, operation and BTF rules; those rules remain with their existing owners.
+//===----------------------------------------------------------------------===//
+
+#ifndef EBPF_MAP_KIND
+#error "define EBPF_MAP_KIND(ENUM, NAME, MAPTYPE) before including MapKinds.def"
+#endif
+
+EBPF_MAP_KIND(Hash,           "hash",             true)
+EBPF_MAP_KIND(Array,          "array",            true)
+EBPF_MAP_KIND(RingBuf,        "ringbuf",          false)
+EBPF_MAP_KIND(PerCpuArray,    "percpu_array",     true)
+EBPF_MAP_KIND(PerCpuHash,     "percpu_hash",      true)
+EBPF_MAP_KIND(LruHash,        "lru_hash",         true)
+EBPF_MAP_KIND(LruPerCpuHash,  "lru_percpu_hash",  true)
+EBPF_MAP_KIND(Devmap,         "devmap",           true)
+EBPF_MAP_KIND(LpmTrie,        "lpm_trie",         true)
+EBPF_MAP_KIND(ProgArray,      "prog_array",       true)
+EBPF_MAP_KIND(StackTrace,     "stack_trace",      true)
+EBPF_MAP_KIND(PerfEventArray, "perf_event_array", true)  // sk_skb/sk_msg attachment maps hold socket FDs populated by userspace.
+// checkMapKind rejects program operations on them.
+EBPF_MAP_KIND(Sockmap,        "sockmap",          true)
+EBPF_MAP_KIND(Sockhash,       "sockhash",         true)
+EBPF_MAP_KIND(ReuseportSockarray, "reuseport_sockarray", true)  // reuseport_sockarray permits only ebpf.sk.select_reuseport in programs.
+// struct_ops holds one operation-table value (.struct_ops.link's local schema
+// struct_ops struct). Programs cannot access it as !ebpf.map. The loader maps
+// member programs and names into the kernel value and registers BPF_LINK_CREATE.
+EBPF_MAP_KIND(StructOps,      "struct_ops",       false) // Local storage associates values with socket/task/inode/cgroup objects.
+// Programs use owner pointers, not keys, through storage.get/delete only;
+// checkMapKind rejects map.*. Schema uses 32-bit keys, zero max_entries and no_prealloc.
+EBPF_MAP_KIND(SkStorage,      "sk_storage",       true)
+EBPF_MAP_KIND(TaskStorage,    "task_storage",     true)
+EBPF_MAP_KIND(InodeStorage,   "inode_storage",    true)
+EBPF_MAP_KIND(CgrpStorage,    "cgrp_storage",     true)  // Map-in-map values are inner-map handles with the schema inner template type.
+// Programs may only lookup -> ref.check -> map.inner; update/delete are rejected.
+// BTF uses key_size and values (Schema.cpp and BuildBTF).
+EBPF_MAP_KIND(ArrayOfMaps,    "array_of_maps",    true)
+EBPF_MAP_KIND(HashOfMaps,     "hash_of_maps",     true)  // Userspace-to-kernel ring buffers are addressed by name through
+// user_ringbuf.drain only, without key/value; the record identifies the sample.
+EBPF_MAP_KIND(UserRingBuf,    "user_ringbuf",     false) // Keyless queue (FIFO), stack (LIFO) and bloom_filter handles are
+// !ebpf.map<kind, none, V>. Only map.push/pop/peek and bloom.peek are permitted;
+// other map operations are rejected. Schema has no key and an integer value.
+EBPF_MAP_KIND(Queue,          "queue",            true)
+EBPF_MAP_KIND(Stack,          "stack",            true)
+EBPF_MAP_KIND(BloomFilter,    "bloom_filter",     true)  // Redirect-only targets, like devmap: other map operations are rejected.
+// Keys/values are u32: cpumap CPU/qsize, xskmap queue/AF_XDP socket FD,
+// devmap_hash hash key/ifindex. BTF uses untyped definitions.
+EBPF_MAP_KIND(Cpumap,         "cpumap",           true)
+EBPF_MAP_KIND(Xskmap,         "xskmap",           true)
+EBPF_MAP_KIND(DevmapHash,     "devmap_hash",      true)  // Userspace supplies cgroup FDs. Programs use dedicated ancestry helpers only;
+// BTF has untyped key_size/value_size.
+EBPF_MAP_KIND(CgroupArray,    "cgroup_array",     true)
+
+#undef EBPF_MAP_KIND

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"val\" field \"lock\": unknown key \"zz_unknown\" (known: kind)"
+}

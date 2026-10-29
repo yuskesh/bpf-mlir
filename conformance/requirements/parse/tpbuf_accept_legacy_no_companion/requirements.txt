@@ -1,0 +1,4 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	raw_tracepoint_writable	24
+attach	p	raw_tp_writable	rawtp:bpf_test_finish

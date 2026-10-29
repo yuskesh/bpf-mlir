@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "counts",
+      "field": "kind",
+      "declared": "percpu_array",
+      "elf": "array"
+    }
+  ]
+}

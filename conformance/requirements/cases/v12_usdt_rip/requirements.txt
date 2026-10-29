@@ -1,0 +1,12 @@
+ebpf-requirements 12
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	u	kprobe	2
+attach	u	usdt	p1d:hit
+arch	u	x86_64
+ctxfield	u	pt_regs	di	112	8
+ctxfield	u	pt_regs	sp	152	8
+binary	u	sha256	4059f6dc46a3767a2382fbe5a94952f7616285ff7e89179ad6a7e29b2ec90dda
+usdtsem	u	none
+usdtarg	u	1	u32
+usdtarg	u	2	u64
+btf	int

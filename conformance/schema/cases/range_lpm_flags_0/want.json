@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"policy\": a lpm_trie map needs BPF_F_NO_PREALLOC (flags bit 0) — the kernel refuses it otherwise"
+}

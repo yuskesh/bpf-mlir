@@ -1,0 +1,26 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "sysarg_unknown",
+      "program": "k",
+      "name": "1 of syscall prctl (i32)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "sysarg_unknown",
+      "program": "k",
+      "name": "2 of syscall prctl (u64)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "ksyscall_loader_unknown",
+      "program": "k",
+      "name": "prctl",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+ebpf-requirements 8
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	g	cgroup_skb	8
+attach	g	cgroup_inet_ingress	cgroup
+btf	int

@@ -1,0 +1,26 @@
+{
+  "result": "ok",
+  "unmet": [
+    {
+      "kind": "attach_type_unknown",
+      "program": "g",
+      "name": "cgroup_inet_ingress",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "attach_type_unknown",
+      "program": "s",
+      "name": "sk_skb_stream_verdict",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "attach_type_unknown",
+      "program": "t",
+      "name": "tcx_ingress",
+      "id": 0,
+      "blocks_load": false
+    }
+  ]
+}

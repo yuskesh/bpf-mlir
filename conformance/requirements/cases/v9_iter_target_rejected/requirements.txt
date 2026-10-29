@@ -1,0 +1,5 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	i	tracing	26
+attach	i	trace_iter	iter:bpf_map_elem
+btf	int

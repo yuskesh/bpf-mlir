@@ -1,0 +1,120 @@
+{
+  "core": {
+    "kernel_types": [
+      {
+        "fields": [
+          {
+            "name": "pid",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "name": "tgid",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          }
+        ],
+        "name": "u32",
+        "note": "sched_switch(bool preempt, prev, next, unsigned int prev_state); prev is not read"
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "cfg[0] = observed task pid",
+        "symbol": "cfg",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 4,
+        "note": "out[0] = next pid; out[1] = preempt sum; out[2] = last prev_state; out[3] = next tgid",
+        "symbol": "out",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "args": [
+          {
+            "alignment": 1,
+            "bits": 8,
+            "endianness": "little",
+            "kind": "int",
+            "signed": false
+          },
+          null,
+          "u32",
+          {
+            "alignment": 4,
+            "bits": 32,
+            "endianness": "little",
+            "kind": "int",
+            "signed": false
+          }
+        ],
+        "attach_target": "sched_switch",
+        "kind": "tp_btf",
+        "maps": [
+          "cfg",
+          "out"
+        ],
+        "name": "prog",
+        "note": "sched_switch tracepoint contract"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

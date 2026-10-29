@@ -1,0 +1,25 @@
+{
+  "maps": [
+    {
+      "name": "outer",
+      "kind": "array_of_maps",
+      "key": "u32",
+      "value": "u32",
+      "max_entries": 3,
+      "inner": {
+        "kind": "percpu_hash",
+        "key": "u32",
+        "value": "u64",
+        "max_entries": 8,
+        "flags": 0
+      }
+    },
+    {
+      "name": "out",
+      "kind": "array",
+      "key": "u32",
+      "value": "u64",
+      "max_entries": 3
+    }
+  ]
+}

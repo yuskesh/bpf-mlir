@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"progs\": slot 4 is outside max_entries 4"
+}

@@ -1,0 +1,7 @@
+ebpf-requirements 8
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	f	tracing	26
+attach	f	trace_fentry	bpf_fentry_test2
+farg	f	0	i32
+farg	f	1	u64
+btf	int

@@ -1,0 +1,125 @@
+{
+  "core": {
+    "kernel_types": [
+      {
+        "fields": [
+          {
+            "name": "pid",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          }
+        ],
+        "name": "task_struct",
+        "note": "Task-storage owner; no fields are read, but kernel_types requires at least one field"
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "cfg[0] = observed cgroup ID; zero does nothing; supplied by attach setup",
+        "record": "",
+        "symbol": "cfg",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 5,
+        "note": "out[0] = last value; out[1] = get-without-create present count; out[2] = first delete status; out[3] = negated second delete status",
+        "record": "",
+        "symbol": "out",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 1,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": true
+        },
+        "kind": "task_storage",
+        "max_entries": 1,
+        "note": "Per-task counter; the userspace key is pidfd",
+        "record": "",
+        "symbol": "ts",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "args": [
+          {
+            "kind": "struct",
+            "name": "task_struct",
+            "nullable": true
+          }
+        ],
+        "attach_target": "task_getioprio",
+        "kind": "lsm",
+        "maps": [
+          "cfg",
+          "out",
+          "ts"
+        ],
+        "name": "task",
+        "note": "Task storage for p in lsm/task_getioprio(struct task_struct *p)"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

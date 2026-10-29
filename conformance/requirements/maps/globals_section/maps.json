@@ -1,0 +1,45 @@
+{
+  "globals": [
+    {
+      "name": "r8",
+      "section": "rodata",
+      "type": "u8"
+    },
+    {
+      "name": "r16",
+      "section": "rodata",
+      "type": "u16"
+    },
+    {
+      "name": "r32",
+      "section": "rodata",
+      "type": "u32"
+    },
+    {
+      "name": "r64",
+      "section": "rodata",
+      "type": "u64"
+    },
+    {
+      "name": "r32b",
+      "section": "rodata",
+      "type": "u32"
+    },
+    {
+      "name": "b32",
+      "section": "rodata",
+      "type": "u32"
+    },
+    {
+      "name": "b64a",
+      "section": "bss",
+      "type": "u64"
+    },
+    {
+      "name": "b64b",
+      "section": "bss",
+      "type": "u64"
+    }
+  ],
+  "maps": []
+}

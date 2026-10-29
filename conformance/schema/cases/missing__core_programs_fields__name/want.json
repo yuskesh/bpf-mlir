@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"tp\" fields: missing or non-string \"name\""
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.bounds_sets: unknown key \"zz_unknown\" (known: id, bounds, unit, authority, note)"
+}

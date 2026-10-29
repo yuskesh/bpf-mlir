@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"event\" field \"hdr\": unknown key \"zz_unknown\" (known: kind, symbol)"
+}

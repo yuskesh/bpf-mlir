@@ -1,0 +1,11 @@
+ebpf-requirements 11
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	c	struct_ops	27
+map	g12cc	struct_ops	26	u32	-	1	0
+attach	c	trace_struct_ops	map:g12cc
+structop	c	tcp_congestion_ops	cong_avoid
+retsig	c	3	void
+farg	c	0	sock
+farg	c	1	u32
+farg	c	2	u32
+btf	int

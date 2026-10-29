@@ -1,0 +1,100 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "inner": "tpl",
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array_of_maps",
+        "max_entries": 3,
+        "note": "Outer map whose slot k contains an inner map created from the template by the runner",
+        "record": "",
+        "symbol": "outer",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 4,
+        "note": "Inner-map template in BTF values; it is not a map in the ELF .maps section",
+        "record": "",
+        "symbol": "tpl",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 3,
+        "note": "out[k] = inner map index 0 for outer slot k; use 77 if absent and 99 if the outer slot is empty",
+        "record": "",
+        "symbol": "out",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "",
+        "kind": "xdp",
+        "maps": [
+          "outer",
+          "out"
+        ],
+        "name": "aom",
+        "note": "Two-level array_of_maps lookup"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

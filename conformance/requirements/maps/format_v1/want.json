@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "",
+      "field": "format",
+      "declared": "requirements version 1 has no map definitions (rebuild the object)",
+      "elf": ""
+    }
+  ]
+}

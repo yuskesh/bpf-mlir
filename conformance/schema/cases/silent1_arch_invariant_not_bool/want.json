@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.value_maps: \"arch_invariant\" must be a boolean"
+}

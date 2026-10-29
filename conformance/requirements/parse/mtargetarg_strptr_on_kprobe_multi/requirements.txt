@@ -1,0 +1,12 @@
+ebpf-requirements 13
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	m	kprobe	2
+attach	m	kprobe_multi	2
+arch	m	x86_64
+ctxfield	m	pt_regs	di	112	8
+ctxfield	m	pt_regs	si	104	8
+mtarget	m	0	bpf_fentry_test1
+mtarget	m	1	bpf_fentry_test2
+mtargetarg	m	0	1	i32
+mtargetarg	m	1	2	strptr
+btf	int

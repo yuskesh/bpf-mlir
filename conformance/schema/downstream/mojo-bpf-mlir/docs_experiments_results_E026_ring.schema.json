@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "Event",
+        "id": 0,
+        "size": 16,
+        "min_size": 16,
+        "alignment": 8,
+        "required_through": "tag",
+        "note": "Mojo struct Event",
+        "fields": [
+          {
+            "name": "seq",
+            "offset": 0,
+            "expose": "int",
+            "note": "Mojo field seq",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          },
+          {
+            "name": "len",
+            "offset": 8,
+            "expose": "int",
+            "note": "Mojo field len",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "proto",
+            "offset": 12,
+            "expose": "int",
+            "note": "Mojo field proto",
+            "type": {
+              "kind": "int",
+              "bits": 8,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 1
+            }
+          },
+          {
+            "name": "tag",
+            "offset": 14,
+            "expose": "int",
+            "note": "Mojo field tag",
+            "type": {
+              "kind": "int",
+              "bits": 16,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 2
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "Events",
+        "kind": "ringbuf",
+        "max_entries": 4096,
+        "flags": 0,
+        "record": "Event",
+        "note": "Mojo comptime Events"
+      },
+      {
+        "symbol": "Drops",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "",
+        "note": "Mojo comptime Drops"
+      }
+    ],
+    "programs": [
+      {
+        "name": "ring",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "Drops"
+        ],
+        "note": "Mojo def ring"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

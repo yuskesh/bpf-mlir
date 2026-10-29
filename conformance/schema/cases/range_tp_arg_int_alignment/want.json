@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": integer args entries must be little-endian integers of 8 / 16 / 32 / 64 bits with the natural alignment"
+}

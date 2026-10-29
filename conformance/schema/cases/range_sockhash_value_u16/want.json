@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"socks\": a sockhash map needs a u32 or u64 value (the socket fd userspace puts in)"
+}

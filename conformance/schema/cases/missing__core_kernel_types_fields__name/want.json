@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"tcp_sock\" field: missing or non-string \"name\""
+}

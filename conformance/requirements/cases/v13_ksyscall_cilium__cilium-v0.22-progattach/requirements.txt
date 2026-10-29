@@ -1,0 +1,9 @@
+ebpf-requirements 13
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	k	kprobe	2
+attach	k	ksyscall	prctl
+arch	k	x86_64
+ctxfield	k	pt_regs	di	112	8
+sysarg	k	1	i32
+sysarg	k	2	u64
+btf	int

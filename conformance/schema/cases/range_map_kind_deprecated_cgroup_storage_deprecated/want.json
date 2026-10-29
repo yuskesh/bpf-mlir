@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"counts\": map kind \"cgroup_storage_deprecated\" (BPF_MAP_TYPE_CGROUP_STORAGE_DEPRECATED) is deprecated by the kernel and not supported — use \"cgrp_storage\" (BPF_MAP_TYPE_CGRP_STORAGE — cgroup local storage, ebpf.storage.get / ebpf.storage.delete with the cgroup as the owner) (kernel-source audit)"
+}

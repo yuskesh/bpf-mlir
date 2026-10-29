@@ -1,0 +1,2 @@
+ebpf-requirements 2
+program	a	xdp	6

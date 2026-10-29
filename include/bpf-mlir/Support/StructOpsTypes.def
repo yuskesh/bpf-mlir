@@ -1,0 +1,67 @@
+//===- StructOpsTypes.def - kernel behavior for struct_ops -------*- C++ -*-===//
+//
+// EBPF_STRUCT_OPS defines supported schema struct_ops.type names. Optional DATA
+// and PROMOTION rows feed schema parsing, local BTF, .struct_ops.link values and
+// requirement farg names.
+//
+// BTF member names, kinds and sizes come from ABI structopsmember rows. This
+// hand-maintained table contains behavior that BTF and UAPI cannot express:
+// REGISTER follows bpf_struct_ops .reg/.init_member; DATA describes writable
+// non-function members and accepted values; PROMOTION follows verifier
+// is_valid_access (for example sock -> tcp_sock). FUNC_PROTO retains the
+// unpromoted type. Every row needs source evidence, enforced by tests.
+//
+// EBPF_STRUCT_OPS(TYPE, REGISTER, EVIDENCE)
+// TYPE is the kernel/schema/local-BTF ops struct name. REGISTER is link for
+// BPF_LINK_CREATE, or none for load/test-run-only types rejected at registration.
+//
+// EBPF_STRUCT_OPS_DATA(TYPE, MEMBER, SCHEMAKEY, BYTES, KIND, RULE, EVIDENCE)
+// Written data follows function pointers in local structs in table order.
+// Unlisted data remains zero; cilium permits absent target members when zero.
+// SCHEMAKEY is currently name; additions must update SchemaKeys.inc too.
+// BYTES must match ABI structopsmember bits/8. KIND str is a char array;
+// RULE objname follows bpf_obj_name_cpy: 1..BYTES-1 alphanumeric, '_' or '.'.
+//
+// EBPF_STRUCT_OPS_PROMOTION(TYPE, BTF, PROMOTED, EVIDENCE)
+// Verifier treats struct BTF pointers as PROMOTED for this ops type. Schema args
+// and ctx.arg use PROMOTED; farg requirements use BTF and verify that prerequisite.
+// Unlisted structs are not remapped.
+//===----------------------------------------------------------------------===//
+// clang-format off
+#ifndef EBPF_STRUCT_OPS
+#define EBPF_STRUCT_OPS(TYPE, REGISTER, EVIDENCE)
+#endif
+#ifndef EBPF_STRUCT_OPS_DATA
+#define EBPF_STRUCT_OPS_DATA(TYPE, MEMBER, SCHEMAKEY, BYTES, KIND, RULE, EVIDENCE)
+#endif
+#ifndef EBPF_STRUCT_OPS_PROMOTION
+#define EBPF_STRUCT_OPS_PROMOTION(TYPE, BTF, PROMOTED, EVIDENCE)
+#endif
+
+// tcp_congestion_ops: link creation calls tcp_register_congestion_control;
+// the named congestion control is unregistered when its last reference ends.
+EBPF_STRUCT_OPS("tcp_congestion_ops", "link",
+                "net/ipv4/bpf_tcp_ca.c bpf_tcp_ca_reg (7.1.8:238) — link creation, name registration and removal measured on 7.1.8")
+EBPF_STRUCT_OPS_DATA("tcp_congestion_ops", "name", "name", 16, "str", "objname",
+                     "net/ipv4/bpf_tcp_ca.c bpf_tcp_ca_init_member bpf_obj_name_cpy (7.1.8:229); include/net/tcp.h TCP_CA_NAME_MAX 16 (7.1.8:1261)")
+EBPF_STRUCT_OPS_PROMOTION("tcp_congestion_ops", "sock", "tcp_sock",
+                          "net/ipv4/bpf_tcp_ca.c bpf_tcp_ca_is_valid_access (7.1.8:44 — btf_id == sock_id selects tcp_sock_id); tcp_sock cwnd reads and writes measured on 7.1.8")
+// bpf_dummy_ops is a kernel selftest type. .init_member/.reg reject registration
+// with -EOPNOTSUPP, leaving no link or persistent host state. Programs run only
+// through bpf_struct_ops_test_run (BPF_PROG_TEST_RUN). There is no name member.
+EBPF_STRUCT_OPS("bpf_dummy_ops", "none",
+                "net/bpf/bpf_dummy_struct_ops.c bpf_dummy_init_member / bpf_dummy_reg return -EOPNOTSUPP (7.1.8:269 / 276); test run uses bpf_struct_ops_test_run (7.1.8:129)")
+// Callback compilation only. Direct registration also needs short timeouts and
+// dispatch; actual registration was measured only with a C donor in a VM.
+EBPF_STRUCT_OPS("sched_ext_ops", "link",
+                "kernel/sched/ext.c bpf_scx_reg / bpf_scx_unreg call scx_ops_enable / scx_ops_disable (6.12.111:5761 / 5766); link close observed in a VM")
+EBPF_STRUCT_OPS_DATA("sched_ext_ops", "name", "name", 128, "str", "objname",
+                     "kernel/sched/ext.c bpf_scx_init_member name bpf_obj_name_cpy (6.12.111:5710); sched_ext_ops.name uses SCX_OPS_NAME_LEN 128")
+// Callback compilation only. Numeric ring_fd DATA is unavailable; explicit
+// synthesis for an owned ring exists only in the verification runner.
+EBPF_STRUCT_OPS("io_uring_bpf_ops", "link",
+                "io_uring/bpf-ops.c bpf_io_reg / bpf_io_unreg install / eject one ring_fd ctx (7.1.8:179 / 214); verified by source and an owned-ring callback")
+// clang-format on
+#undef EBPF_STRUCT_OPS
+#undef EBPF_STRUCT_OPS_DATA
+#undef EBPF_STRUCT_OPS_PROMOTION

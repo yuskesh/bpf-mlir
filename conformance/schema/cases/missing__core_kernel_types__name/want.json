@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.kernel_types: missing or non-string \"name\""
+}

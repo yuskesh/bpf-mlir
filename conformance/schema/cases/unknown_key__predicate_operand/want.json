@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\" attribute \"process.executable.name\" presence operand: unknown key \"zz_unknown\" (known: kind, name)"
+}

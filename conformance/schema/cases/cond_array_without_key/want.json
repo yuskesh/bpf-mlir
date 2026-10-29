@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"counts\": a \"array\" map needs both key and value"
+}

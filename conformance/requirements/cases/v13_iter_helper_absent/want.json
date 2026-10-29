@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "helper",
+      "program": "i",
+      "name": "seq_write",
+      "id": 127,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "r8",
+      "field": "global_undeclared",
+      "declared": "",
+      "elf": "rodata"
+    }
+  ]
+}

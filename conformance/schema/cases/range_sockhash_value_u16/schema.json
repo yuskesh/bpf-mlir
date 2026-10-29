@@ -1,0 +1,77 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 8,
+        "note": "Indices 0/1/2 hold last message size, family and first byte; out-of-range byte reads use 99",
+        "record": "",
+        "symbol": "seen",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "sockhash",
+        "max_entries": 2,
+        "note": "sk_msg attach target; userspace supplies the sending socket FD as u64",
+        "record": "",
+        "symbol": "socks",
+        "value": {
+          "alignment": 2,
+          "bits": 16,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "socks",
+        "kind": "sk_msg",
+        "maps": [
+          "seen",
+          "socks"
+        ],
+        "name": "mv",
+        "note": "Read sk_msg size/family and first packet byte, then return drop/pass"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

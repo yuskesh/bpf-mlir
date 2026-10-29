@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.signals: unknown key \"zz_unknown\" (known: name, signal, record, span_name, span_kind, timing, drop_when, attributes, body, value, metric, note)"
+}

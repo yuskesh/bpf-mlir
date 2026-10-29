@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "outer",
+      "field": "inner",
+      "declared": "kind=hash key=u32 value=u64 max_entries=4 flags=0",
+      "elf": "kind=percpu_hash key=u32 value=u64 max_entries=4 flags=0"
+    }
+  ]
+}

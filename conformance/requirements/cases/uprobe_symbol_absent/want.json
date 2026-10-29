@@ -1,0 +1,26 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "uprobe_symbol",
+      "program": "count",
+      "name": "nope",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "uprobearg_unknown",
+      "program": "count",
+      "name": "1 of nope (u32)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "uprobearg_unknown",
+      "program": "count",
+      "name": "2 of nope (u64)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

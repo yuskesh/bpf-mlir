@@ -1,0 +1,161 @@
+{
+  "core": {
+    "kernel_types": [
+      {
+        "name": "tcp_sock",
+        "note": "The verifier-promoted struct sock * type for tcp_congestion_ops members; local CO-RE offsets are placeholders"
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 4,
+        "note": "Indices 0/1/2/3 count init, ssthresh, undo_cwnd and whether cong_avoid ran",
+        "record": "",
+        "symbol": "out",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "struct_ops",
+        "max_entries": 1,
+        "note": "Reno-style tcp_congestion_ops in .struct_ops.link; the runner sets name to g13r\u003cpid\u003e\u003carm\u003e before load",
+        "record": "",
+        "struct_ops": {
+          "name": "g13cc",
+          "ops": [
+            {
+              "member": "init",
+              "program": "g13_init"
+            },
+            {
+              "member": "ssthresh",
+              "program": "g13_ssthresh"
+            },
+            {
+              "member": "cong_avoid",
+              "program": "g13_cong_avoid"
+            },
+            {
+              "member": "undo_cwnd",
+              "program": "g13_undo_cwnd"
+            }
+          ],
+          "type": "tcp_congestion_ops"
+        },
+        "symbol": "g13cc"
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "g13cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g13_init",
+        "nargs": 1,
+        "note": "void init(struct sock *); the argument is not read",
+        "ret": "void"
+      },
+      {
+        "args": [
+          "tcp_sock"
+        ],
+        "attach_target": "g13cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g13_ssthresh",
+        "nargs": 1,
+        "note": "u32 ssthresh(struct sock *); read sk as tcp_sock, while farg declares sock",
+        "ret": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "args": [
+          "tcp_sock"
+        ],
+        "attach_target": "g13cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g13_undo_cwnd",
+        "nargs": 1,
+        "note": "u32 undo_cwnd(struct sock *)",
+        "ret": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "args": [
+          "tcp_sock",
+          null,
+          {
+            "alignment": 4,
+            "bits": 32,
+            "endianness": "little",
+            "kind": "int",
+            "signed": false
+          }
+        ],
+        "attach_target": "g13cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g13_cong_avoid",
+        "nargs": 3,
+        "note": "void cong_avoid(struct sock *, u32 ack, u32 acked); ack is not read",
+        "ret": "void"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

@@ -1,0 +1,5 @@
+# Compile a typed program with a schema, retaining BTF and target requirements.
+# RUN: ebpf-compile %S/Inputs/pass.mlir --schema %S/Inputs/schema.json -o %t.o
+# RUN: llvm-readelf -S %t.o | FileCheck %s
+# CHECK-DAG: .BTF
+# CHECK-DAG: .ebpf_requirements

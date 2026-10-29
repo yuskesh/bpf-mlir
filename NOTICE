@@ -1,0 +1,10 @@
+bpf-mlir
+Copyright (c) 2026 Yusuke Shinozaki
+
+bpf-mlir is licensed under Apache-2.0 WITH LLVM-exception. See LICENSE.
+
+Bundled source:
+- LLVM 23.1.1 test utilities (FileCheck, count, not), provided for optional
+  tests. Their upstream copyright notices and license are preserved in
+  third_party/llvm-test-utils/LICENSE.TXT and its origin notice.
+  No LLVM binaries or libraries are bundled.

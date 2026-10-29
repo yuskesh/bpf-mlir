@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "extensions: namespace \"nodot\" must be a reverse-DNS style stable name (containing '.')"
+}

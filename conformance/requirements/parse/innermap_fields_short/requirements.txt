@@ -1,0 +1,7 @@
+ebpf-requirements 12
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	x	xdp	6
+map	outer	array_of_maps	12	u32	u32	3	0
+innermap	outer	percpu_hash	5	u32	u64	4
+map	out	array	2	u32	u64	3	0
+btf	int

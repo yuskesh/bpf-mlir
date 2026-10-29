@@ -1,0 +1,5 @@
+ebpf-requirements 8
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	f	tracing	26
+farg	f	0	task_struct
+btf	int

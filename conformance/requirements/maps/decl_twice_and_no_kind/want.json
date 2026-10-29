@@ -1,0 +1,17 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "cfg",
+      "field": "decl",
+      "declared": "declared twice",
+      "elf": ""
+    },
+    {
+      "map": "counts",
+      "field": "decl",
+      "declared": "declared without a kind (the kind is required — the key and value spellings alone do not tell an array from a per-CPU array)",
+      "elf": ""
+    }
+  ]
+}

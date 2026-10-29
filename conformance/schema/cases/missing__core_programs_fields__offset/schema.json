@@ -1,0 +1,89 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "cfg[0] = tgid counted by the attach runner",
+        "record": "",
+        "symbol": "cfg",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 2,
+        "note": "out[0] counts getppid calls by cfg[0]'s task; out[1] holds the event's __syscall_nr",
+        "record": "",
+        "symbol": "out",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "syscalls/sys_enter_getppid",
+        "fields": [
+          {
+            "name": "__syscall_nr",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          }
+        ],
+        "kind": "tracepoint",
+        "maps": [
+          "cfg",
+          "out"
+        ],
+        "name": "tp",
+        "note": "Tracefs tracepoint event; fields follow tracefs format and are checked through tpfield requirements before load"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

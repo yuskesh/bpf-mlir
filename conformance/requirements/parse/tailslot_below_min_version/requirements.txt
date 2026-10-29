@@ -1,0 +1,5 @@
+ebpf-requirements 6
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	e	xdp	6
+map	progs	prog_array	3	u32	u32	2	0
+tailslot	progs	0	e

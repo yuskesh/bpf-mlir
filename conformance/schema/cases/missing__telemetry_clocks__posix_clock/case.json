@@ -1,0 +1,4 @@
+{
+  "key": "posix_clock",
+  "path": "telemetry.clocks[]"
+}

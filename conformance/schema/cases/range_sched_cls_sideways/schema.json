@@ -1,0 +1,29 @@
+{
+  "core": {
+    "maps": [],
+    "programs": [
+      {
+        "attach_target": "sideways",
+        "kind": "sched_cls",
+        "maps": [],
+        "name": "prog",
+        "note": "Check read-only packet.check access in sched_cls"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

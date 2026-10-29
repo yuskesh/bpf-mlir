@@ -1,0 +1,4 @@
+ebpf-requirements 10
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	t	tracepoint	5
+tpfield	t	__syscall_nr	8	4	i

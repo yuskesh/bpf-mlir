@@ -1,0 +1,68 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none"
+  },
+  "queries": {
+    "arch": {
+      "": {
+        "text": "x86_64"
+      }
+    },
+    "kernel_symbol": {
+      "bpf_fentry_test1": {
+        "value": true
+      },
+      "bpf_fentry_test2": {
+        "value": true
+      }
+    },
+    "struct_field": {
+      "pt_regs.ax/80/8": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "kprobe/trace_kprobe_multi": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "kprobe": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

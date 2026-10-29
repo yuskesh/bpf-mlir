@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": binary_sha256 must be 64 lowercase hex digits (the SHA-256 of the user binary's content)"
+}

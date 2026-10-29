@@ -1,0 +1,149 @@
+{
+  "core": {
+    "kernel_types": [
+      {
+        "fields": [
+          {
+            "name": "tgid",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "name": "real_parent",
+            "type": {
+              "kind": "kptr",
+              "strukt": "task_struct"
+            }
+          },
+          {
+            "name": "mm",
+            "type": {
+              "kind": "kptr",
+              "struct": "mm_struct"
+            }
+          },
+          {
+            "name": "vfork_done",
+            "type": {
+              "kind": "kptr",
+              "struct": "completion"
+            }
+          }
+        ],
+        "name": "task_struct",
+        "note": "Traverse pointer fields real_parent, mm and vfork_done"
+      },
+      {
+        "fields": [
+          {
+            "name": "total_vm",
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "name": "mm_struct",
+        "note": "Only fields that are read"
+      },
+      {
+        "fields": [
+          {
+            "name": "done",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "name": "completion",
+        "note": "Only fields that are read"
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "cfg[0] = parent tgid whose forks are counted",
+        "symbol": "cfg",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 4,
+        "note": "out[0] = child's real_parent tgid; out[1] = child's mm total_vm; out[2] = NULL vfork_done count; out[3] = non-NULL mm count",
+        "symbol": "out",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "args": [
+          "task_struct",
+          "task_struct"
+        ],
+        "attach_target": "sched_process_fork",
+        "kind": "tp_btf",
+        "maps": [
+          "cfg",
+          "out"
+        ],
+        "name": "prog",
+        "note": "Child task kernel-field contract"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

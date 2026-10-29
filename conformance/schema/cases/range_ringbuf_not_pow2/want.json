@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"events\": a ringbuf size must be a power of two, got 4097"
+}

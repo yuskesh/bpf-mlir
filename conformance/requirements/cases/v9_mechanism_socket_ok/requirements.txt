@@ -1,0 +1,5 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	s	socket_filter	1
+attach	s	socket_filter	socket
+btf	int

@@ -1,0 +1,77 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "bml-libbpf-v1.7",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "keep",
+      "enum64": "keep",
+      "func_global": "keep",
+      "type_tag": "keep"
+    }
+  },
+  "queries": {
+    "arch": {
+      "": {
+        "text": "x86_64"
+      }
+    },
+    "func_param": {
+      "bpf_fentry_test1/1/i32": {
+        "diffs": []
+      },
+      "bpf_fentry_test2/1/i32": {
+        "diffs": []
+      },
+      "bpf_fentry_test3/1/i32": {
+        "diffs": []
+      }
+    },
+    "kernel_symbol": {
+      "bpf_fentry_test1": {
+        "value": true
+      },
+      "bpf_fentry_test2": {
+        "value": true
+      },
+      "bpf_fentry_test3": {
+        "value": true
+      }
+    },
+    "struct_field": {
+      "pt_regs.di/112/8": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "kprobe/trace_kprobe_multi": {
+        "value": false
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "kprobe": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

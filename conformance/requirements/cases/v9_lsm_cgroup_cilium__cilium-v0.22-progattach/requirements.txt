@@ -1,0 +1,5 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	l	lsm	29
+attach	l	lsm_cgroup	lsm:socket_bind
+btf	int

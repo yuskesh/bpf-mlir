@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "last",
+      "field": "max_entries",
+      "declared": "4",
+      "elf": "3"
+    }
+  ]
+}

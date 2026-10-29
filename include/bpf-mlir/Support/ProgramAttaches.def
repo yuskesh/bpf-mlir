@@ -1,0 +1,148 @@
+//===- ProgramAttaches.def - per-kind attachment contracts -------*- C++ -*-===//
+//
+// Define EBPF_PROGRAM_ATTACH before including. Every ProgramKinds.def kind has
+// at least one row; section, expected_attach_type, requirement and verdicts may
+// differ between attachments. ABI tests check existing kinds, unique kind/attach
+// pairs, cross-kind section uniqueness, attachment shapes and known ABI names.
+//
+// KIND: ProgramKinds.def NAME; kind order and then row order determine diagnostics.
+// ATTACH: program/schema attach_target. Empty means omitted (None or a default
+// CgroupHook). '*' allows the kind's free-form shape and substitutes its value
+// into {}; other spellings enumerate the exact allowed values.
+// SECTION: libbpf/cilium section spelling. Free-form MapSymbol/StructOpsMap rows
+// carry no value and have no {}. Enumerated rows contain the literal section.
+// ATTACHTYPE: ABI expected_attach_type name matching cilium v0.22 elf_sections.go,
+// or '-' when absent.
+// REQATTACH: requirement type/target. '-' omits it; {} substitutes the attachment.
+// ObjectEmitter emits companion rows for families in requirements_format.md,
+// otherwise a generic attach row (format 9).
+// VERDICTS: family or family:allowed,subset in diagnostic order. Families come
+// from ABI verdict rows, HandVerdicts.def or done (ProgramKinds.def DONE).
+// A suffix |int[:range] permits ebpf.return with any (default), u32 or lo..hi.
+// A bare |int describes kinds such as ext without named verdicts.
+//
+// Add an attachment with one row. A previously None kind needs an enumerated
+// shape if adding choices. When verdict families vary by attachment, ABI return
+// validation uses the enclosing function section; sectionless handwritten ABI
+// input is explicitly rejected by VerifyABI.
+//===----------------------------------------------------------------------===//
+// clang-format off
+// KIND                 ATTACH        SECTION                  ATTACHTYPE                 REQATTACH                          VERDICTS
+EBPF_PROGRAM_ATTACH("xdp",              "",           "xdp",                   "xdp",                     "-",                               "xdp")
+EBPF_PROGRAM_ATTACH("tp_btf",           "*",          "tp_btf/{}",             "trace_raw_tp",            "trace_raw_tp {}",                 "done")
+EBPF_PROGRAM_ATTACH("fentry",           "*",          "fentry/{}",             "trace_fentry",            "trace_fentry {}",                 "done")
+EBPF_PROGRAM_ATTACH("fexit",            "*",          "fexit/{}",              "trace_fexit",             "trace_fexit {}",                  "done")
+EBPF_PROGRAM_ATTACH("kprobe",           "*",          "kprobe/{}",             "-",                       "kprobe {}",                       "done")
+EBPF_PROGRAM_ATTACH("uprobe",           "*",          "uprobe/{}",             "-",                       "uprobe {}",                       "done")
+// sched_cls uses tcx/<direction>, allowing tcx_action_base pass/drop.
+// Redirect is available only as the helper result returned by ebpf.redirect.
+EBPF_PROGRAM_ATTACH("sched_cls",        "ingress",    "tcx/ingress",           "tcx_ingress",             "tcx ingress",                     "sched_cls:pass,drop")
+EBPF_PROGRAM_ATTACH("sched_cls",        "egress",     "tcx/egress",            "tcx_egress",              "tcx egress",                      "sched_cls:pass,drop")
+// __sk_buff program families.
+EBPF_PROGRAM_ATTACH("socket_filter",    "",           "socket",                "-",                       "socket_filter socket",            "socket_filter|int:u32")
+EBPF_PROGRAM_ATTACH("sched_act",        "",           "action",                "-",                       "sched_act netlink",               "tc_act:ok,shot,pipe")
+EBPF_PROGRAM_ATTACH("cgroup_skb",       "ingress",    "cgroup_skb/ingress",    "cgroup_inet_ingress",     "cgroup_inet_ingress cgroup",      "cgroup")
+// Egress allows 0..3, including deny_cn/allow_cn congestion notification
+// (HandVerdicts.def cgroup_skb_egress); ingress remains 0..1.
+EBPF_PROGRAM_ATTACH("cgroup_skb",       "egress",     "cgroup_skb/egress",     "cgroup_inet_egress",      "cgroup_inet_egress cgroup",       "cgroup_skb_egress")
+EBPF_PROGRAM_ATTACH("lwt_in",           "",           "lwt_in",                "-",                       "lwt_in netlink",                  "bpf_ret_code:ok,drop")
+EBPF_PROGRAM_ATTACH("lwt_out",          "",           "lwt_out",               "-",                       "lwt_out netlink",                 "bpf_ret_code:ok,drop")
+EBPF_PROGRAM_ATTACH("lwt_xmit",         "",           "lwt_xmit",              "-",                       "lwt_xmit netlink",                "bpf_ret_code:ok,drop")
+EBPF_PROGRAM_ATTACH("flow_dissector",   "",           "flow_dissector",        "flow_dissector",          "flow_dissector netns",            "bpf_ret_code:ok,drop,flow_dissector_continue")
+
+EBPF_PROGRAM_ATTACH("sk_lookup",        "",           "sk_lookup",             "sk_lookup",               "sk_lookup netns",                 "sk_action")
+EBPF_PROGRAM_ATTACH("netfilter",        "",           "netfilter",             "netfilter",               "netfilter netns",                 "nf:drop,accept")
+// Tracing families.
+EBPF_PROGRAM_ATTACH("raw_tp",           "*",          "raw_tp/{}",             "-",                       "raw_tp rawtp:{}",                 "done")
+EBPF_PROGRAM_ATTACH("kretprobe",        "*",          "kretprobe/{}",          "-",                       "kretprobe {}",                    "done")
+EBPF_PROGRAM_ATTACH("uretprobe",        "*",          "uretprobe/{}",          "-",                       "uretprobe {}",                    "done")
+EBPF_PROGRAM_ATTACH("iter",             "*",          "iter/{}",               "trace_iter",              "trace_iter iter:{}",              "done")
+EBPF_PROGRAM_ATTACH("syscall",          "",           "syscall",               "-",                       "syscall none",                    "done|int")
+EBPF_PROGRAM_ATTACH("fmod_ret",         "*",          "fmod_ret/{}",           "modify_return",           "trace_fmod_ret {}",               "done|int")
+// lsm int hooks return -MAX_ERRNO..0; compile conservatively rejects bool-hook return 1.
+EBPF_PROGRAM_ATTACH("lsm",              "*",          "lsm/{}",                "lsm_mac",                 "lsm_mac lsm:{}",                  "done|int:-4095..0")
+// Cgroup socket hooks retain omitted-attach defaults for compatibility.
+// Kernel 7.1.8 verifier.c return_retval_range requires allow-only (1) for
+// recvmsg/getpeername/getsockname; inet4/inet6 bind permit 0..3 with flag bits
+// including BPF_RET_BIND_NO_CAP_NET_BIND_SERVICE; others default to 0..1.
+// Unix hooks are outside scope. For shared sections, default and explicit
+// sock_create/connect4 rows must match all other columns (static_assert/tests).
+EBPF_PROGRAM_ATTACH("cgroup_sock",      "",           "cgroup/sock_create",    "cgroup_inet_sock_create", "cgroup_inet_sock_create cgroup",  "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock",      "sock_create",  "cgroup/sock_create",    "cgroup_inet_sock_create",  "cgroup_inet_sock_create cgroup",  "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock",      "sock_release", "cgroup/sock_release",   "cgroup_inet_sock_release", "cgroup_inet_sock_release cgroup", "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock",      "post_bind4",   "cgroup/post_bind4",     "cgroup_inet4_post_bind",   "cgroup_inet4_post_bind cgroup",   "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock",      "post_bind6",   "cgroup/post_bind6",     "cgroup_inet6_post_bind",   "cgroup_inet6_post_bind cgroup",   "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "",           "cgroup/connect4",       "cgroup_inet4_connect",    "cgroup_inet4_connect cgroup",     "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "bind4",        "cgroup/bind4",          "cgroup_inet4_bind",        "cgroup_inet4_bind cgroup",        "cgroup|int:0..3")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "bind6",        "cgroup/bind6",          "cgroup_inet6_bind",        "cgroup_inet6_bind cgroup",        "cgroup|int:0..3")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "connect4",     "cgroup/connect4",       "cgroup_inet4_connect",     "cgroup_inet4_connect cgroup",     "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "connect6",     "cgroup/connect6",       "cgroup_inet6_connect",     "cgroup_inet6_connect cgroup",     "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "connect_unix", "cgroup/connect_unix",   "cgroup_unix_connect",      "cgroup_unix_connect cgroup",      "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "sendmsg4",     "cgroup/sendmsg4",       "cgroup_udp4_sendmsg",      "cgroup_udp4_sendmsg cgroup",      "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "sendmsg6",     "cgroup/sendmsg6",       "cgroup_udp6_sendmsg",      "cgroup_udp6_sendmsg cgroup",      "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "recvmsg4",     "cgroup/recvmsg4",       "cgroup_udp4_recvmsg",      "cgroup_udp4_recvmsg cgroup",      "cgroup:allow")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "recvmsg6",     "cgroup/recvmsg6",       "cgroup_udp6_recvmsg",      "cgroup_udp6_recvmsg cgroup",      "cgroup:allow")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "getpeername4", "cgroup/getpeername4",   "cgroup_inet4_getpeername", "cgroup_inet4_getpeername cgroup", "cgroup:allow")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "getpeername6", "cgroup/getpeername6",   "cgroup_inet6_getpeername", "cgroup_inet6_getpeername cgroup", "cgroup:allow")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "getsockname4", "cgroup/getsockname4",   "cgroup_inet4_getsockname", "cgroup_inet4_getsockname cgroup", "cgroup:allow")
+EBPF_PROGRAM_ATTACH("cgroup_sock_addr", "getsockname6", "cgroup/getsockname6",   "cgroup_inet6_getsockname", "cgroup_inet6_getsockname cgroup", "cgroup:allow")
+EBPF_PROGRAM_ATTACH("sock_ops",         "",           "sockops",               "cgroup_sock_ops",         "cgroup_sock_ops cgroup",          "cgroup")
+// Cgroup attachment families.
+EBPF_PROGRAM_ATTACH("cgroup_device",    "",           "cgroup/dev",            "cgroup_device",           "cgroup_device cgroup",            "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sysctl",    "",           "cgroup/sysctl",         "cgroup_sysctl",           "cgroup_sysctl cgroup",            "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sockopt",   "getsockopt", "cgroup/getsockopt",     "cgroup_getsockopt",       "cgroup_getsockopt cgroup",        "cgroup")
+EBPF_PROGRAM_ATTACH("cgroup_sockopt",   "setsockopt", "cgroup/setsockopt",     "cgroup_setsockopt",       "cgroup_setsockopt cgroup",        "cgroup")
+// Redirect (7) skips the next segment lookup and retains dst; meaningful after
+// lwt.seg6_action such as End.X sets dst. Without an action it retains the
+// seg6local route's own dst and re-enters the same route.
+EBPF_PROGRAM_ATTACH("lwt_seg6local",    "",           "lwt_seg6local",         "-",                       "lwt_seg6local netlink",           "bpf_ret_code:ok,drop,redirect")
+// Sockmap/sockhash symbols live in schema attach_target, not the section.
+EBPF_PROGRAM_ATTACH("sk_skb",           "*",          "sk_skb/stream_verdict", "sk_skb_stream_verdict",   "sk_skb_stream_verdict map:{}",    "sk_action")
+// stream_parser:<map> strips the prefix before substituting {}. Returns are
+// message lengths: positive length, zero for more data, negative to abort.
+// strparser has no named verdict; the verifier imposes no return range.
+EBPF_PROGRAM_ATTACH("sk_skb",           "stream_parser:*", "sk_skb/stream_parser", "sk_skb_stream_parser", "sk_skb_stream_parser map:{}",   "|int")
+EBPF_PROGRAM_ATTACH("sk_msg",           "*",          "sk_msg",                "sk_msg_verdict",          "sk_msg_verdict map:{}",           "sk_action")
+
+EBPF_PROGRAM_ATTACH("sk_reuseport",     "",           "sk_reuseport",          "sk_reuseport_select",     "sk_reuseport_select socket",      "sk_action")
+// sk_reuseport/migrate also moves queued children when a listener closes;
+// select_or_migrate uses the same sk_action verdicts as selection.
+EBPF_PROGRAM_ATTACH("sk_reuseport",     "migrate",    "sk_reuseport/migrate",  "sk_reuseport_select_or_migrate", "sk_reuseport_select_or_migrate socket", "sk_action")
+
+EBPF_PROGRAM_ATTACH("tracepoint",       "*",          "tracepoint/{}",         "-",                       "trace_tp {}",                     "done")
+EBPF_PROGRAM_ATTACH("perf_event",       "",           "perf_event",            "-",                       "trace_perf perf",                 "done")
+EBPF_PROGRAM_ATTACH("raw_tp_writable",  "*",          "raw_tp.w/{}",           "-",                       "raw_tp_writable rawtp:{}",        "done")
+
+EBPF_PROGRAM_ATTACH("ext",              "*",          "freplace/{}",           "-",                       "freplace {}",                     "|int")
+EBPF_PROGRAM_ATTACH("lirc_mode2",       "",           "lirc_mode2",            "lirc_mode2",              "lirc_mode2 device",               "done")
+// struct_ops map symbols do not appear in sections.
+EBPF_PROGRAM_ATTACH("struct_ops",       "*",          "struct_ops",            "-",                       "trace_struct_ops {}",             "done|int:u32")
+// Multi-probe name lists have no section suffix: cilium ignores it, while libbpf
+// automatic attachment treats it as a glob. REQATTACH {} is the number N of
+// schema attach_target names; ObjectEmitter emits N mtarget companion rows.
+EBPF_PROGRAM_ATTACH("kprobe_multi",     "*",          "kprobe.multi",          "trace_kprobe_multi",      "kprobe_multi {}",                 "done")
+EBPF_PROGRAM_ATTACH("kretprobe_multi",  "*",          "kretprobe.multi",       "trace_kprobe_multi",      "kretprobe_multi {}",              "done")
+EBPF_PROGRAM_ATTACH("uprobe_multi",     "*",          "uprobe.multi",          "trace_uprobe_multi",      "uprobe_multi {}",                 "done")
+EBPF_PROGRAM_ATTACH("uretprobe_multi",  "*",          "uretprobe.multi",       "trace_uprobe_multi",      "uretprobe_multi {}",              "done")
+// USDT provider:name has no section suffix: libbpf would interpret one as
+// usdt/<path>:<provider>:<name>. Like uprobes, no expected_attach_type is set.
+// REQATTACH {} is the schema attach_target supplied by ObjectEmitter.
+EBPF_PROGRAM_ATTACH("usdt",             "*",          "usdt",                  "-",                       "usdt {}",                         "done")
+// lsm_s shares lsm's attachment, generic requirement and verdicts; only the
+// lsm.s/ section differs (BPF_F_SLEEPABLE in cilium). lsm_cgroup uses the ABI
+// lsm_cgroup attachment, lsm target kind and cgroup verdict family. Its cgroup
+// FD is a loader input.
+EBPF_PROGRAM_ATTACH("lsm_s",            "*",          "lsm.s/{}",              "lsm_mac",                 "lsm_mac lsm:{}",                  "done|int:-4095..0")
+EBPF_PROGRAM_ATTACH("lsm_cgroup",       "*",          "lsm_cgroup/{}",         "lsm_cgroup",              "lsm_cgroup lsm:{}",               "cgroup")
+// ksyscall/<name> follows libbpf spelling. Format 13 uses the distinct ksyscall
+// requirement family with syscall name, followed by arch/ctxfield/sysarg rows;
+// the old generic kprobe wrapper spelling could not distinguish this kind.
+EBPF_PROGRAM_ATTACH("ksyscall",         "*",          "ksyscall/{}",           "-",                       "ksyscall {}",                     "done")
+// kprobe.session/<function> follows cilium/libbpf; the one function name also
+// identifies the same target under libbpf glob handling. fsession uses
+// fsession/<function>. Both use generic attach rows without companions.
+// kprobe_session permits integer returns 0..1; one skips the return callback.
+EBPF_PROGRAM_ATTACH("kprobe_session",   "*",          "kprobe.session/{}",     "trace_kprobe_session",    "trace_kprobe_session func:{}",    "done|int:0..1")
+EBPF_PROGRAM_ATTACH("fsession",         "*",          "fsession/{}",           "trace_fsession",          "trace_fsession func:{}",          "done")
+// clang-format on
+#undef EBPF_PROGRAM_ATTACH

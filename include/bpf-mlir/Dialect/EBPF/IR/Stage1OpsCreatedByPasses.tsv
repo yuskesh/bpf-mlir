@@ -1,0 +1,12 @@
+# Stage-1 ebpf ops also created by passes at stage 2 or later, with reasons.
+# Every pass-created ebpf op must implement EBPF_Stage2Op (Stage2InternalOp, rejected as input) or appear here; ebpf-reference stage2 checks this in the gate.
+# New stage-2-only ops use EBPF_Stage2Op. Add a row here only for pass-created ops that are also valid stage-1 input.
+op	reason
+MapLookupOp	Stage 2 expands ebpf.map.atomic_add into map.lookup, an is_present branch, and ref.atomic_add (the same op accepted at stage 1).
+MsgRedirectOp	Stage 2 expands msg.redirect with when into cond_br, unconditional msg.redirect and verdict (the same op accepted at stage 1).
+PacketWindowLoadOp	Accepted at stage 1 through a packet.check window and created at stage 2 from packet.load; deliberately not a stage-2-only op.
+RedirectMapOp	Stage 2 expands redirect_map with when into cond_br, unconditional redirect_map and verdict (the same op accepted at stage 1).
+RedirectOp	Stage 2 expands redirect with when into cond_br, unconditional redirect and verdict (the same op accepted at stage 1).
+RefAtomicAddOp	Created on the true edge of stage-2 ebpf.map.atomic_add expansion; also valid directly at stage 1.
+SkRedirectOp	Stage 2 expands sk.redirect with when into cond_br, unconditional sk.redirect and verdict (the same op accepted at stage 1).
+VerdictOp	Created at stage 2 when expanding verdict.if, false when edges, and tail_call fallback (the same op accepted at stage 1).

@@ -1,0 +1,106 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "example-v13-btfid",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": false,
+    "core_poisons_missing_field": false,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "ref_ctr",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "btf_id",
+    "fsession_load": "btf_id",
+    "ksyscall_attach": "prefix"
+  },
+  "queries": {
+    "attach_targets": {
+      "trace_fsession/func:bpf_fentry_test1": {
+        "value": true
+      }
+    },
+    "kfunc_protos": {
+      "bpf_session_cookie/ptr:u64(ptr:void)": {
+        "diffs": []
+      },
+      "bpf_session_is_return/bool(ptr:void)": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "tracing/trace_fsession": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "array": {
+        "value": true
+      },
+      "datasec": {
+        "value": true
+      },
+      "func": {
+        "value": true
+      },
+      "func_global": {
+        "value": true
+      },
+      "func_proto": {
+        "value": true
+      },
+      "int": {
+        "value": true
+      },
+      "ptr": {
+        "value": true
+      },
+      "struct": {
+        "value": true
+      },
+      "var": {
+        "value": true
+      }
+    },
+    "helper": {
+      "tracing/get_current_pid_tgid": {
+        "value": true
+      },
+      "tracing/map_lookup_elem": {
+        "value": true
+      }
+    },
+    "kfunc_loads": {
+      "[\"kfunc-v1\",\"bpf_session_cookie\",\"ptr:u64\",[\"ptr:void\"],\"tracing\",26,\"fsession\",\"fsession/bpf_fentry_test1\",0,\"trace_fsession\",\"func\",\"bpf_fentry_test1\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"trace_fsession\\\",\\\"Target\\\":\\\"func:bpf_fentry_test1\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"func\\\",\\\"TargetValue\\\":\\\"bpf_fentry_test1\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "unknown": "finite exact-profile recipe unavailable"
+      },
+      "[\"kfunc-v1\",\"bpf_session_is_return\",\"bool\",[\"ptr:void\"],\"tracing\",26,\"fsession\",\"fsession/bpf_fentry_test1\",0,\"trace_fsession\",\"func\",\"bpf_fentry_test1\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"trace_fsession\\\",\\\"Target\\\":\\\"func:bpf_fentry_test1\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"func\\\",\\\"TargetValue\\\":\\\"bpf_fentry_test1\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "unknown": "finite exact-profile recipe unavailable"
+      }
+    },
+    "map_type": {
+      "array": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "tracing": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

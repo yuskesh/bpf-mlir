@@ -1,0 +1,10 @@
+ebpf-requirements 12
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	r	kprobe	2
+attach	r	uretprobe_multi	2
+arch	r	x86_64
+ctxfield	r	pt_regs	ax	80	8
+binary	r	sha256	05b02201595c1bec26b7128fa35042825a8fb06e12bed2fa14740d9059830589
+mtarget	r	0	c_probe_target
+mtarget	r	1	main.probe_target
+btf	int

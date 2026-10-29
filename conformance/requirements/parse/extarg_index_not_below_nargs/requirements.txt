@@ -1,0 +1,8 @@
+ebpf-requirements 11
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	x	ext	28
+attach	x	freplace	xdp_sub
+extret	x	1	i32
+extarg	x	0	u32
+extarg	x	1	-
+btf	int

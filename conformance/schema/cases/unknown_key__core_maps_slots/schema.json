@@ -1,0 +1,98 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "prog_array",
+        "max_entries": 4,
+        "note": "prog_array slots 0/1 target chain, set by the loader through tailslot requirements; slots 2/3 are undeclared and empty",
+        "record": "",
+        "slots": [
+          {
+            "index": 0,
+            "program": "chain",
+            "zz_unknown": 1
+          },
+          {
+            "index": 1,
+            "program": "chain"
+          }
+        ],
+        "symbol": "progs",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 4,
+        "note": "Indices 0/1 count entry/fallback in entry; indices 2/3 count entry/fallback in chain",
+        "record": "",
+        "symbol": "cnt",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "",
+        "kind": "xdp",
+        "maps": [
+          "progs",
+          "cnt"
+        ],
+        "name": "chain",
+        "note": "Program used in slots 0/1, chaining to its own slot 1"
+      },
+      {
+        "attach_target": "",
+        "kind": "xdp",
+        "maps": [
+          "progs",
+          "cnt"
+        ],
+        "name": "entry",
+        "note": "Entry program uses packet byte 14 as the tail-call index"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

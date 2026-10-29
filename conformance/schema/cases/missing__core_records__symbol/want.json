@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.records: missing or non-string \"symbol\""
+}

@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "r32",
+      "field": "global",
+      "declared": "rodata i32",
+      "elf": "global r32: the VAR type u32 has signed=false (declared true)"
+    }
+  ]
+}

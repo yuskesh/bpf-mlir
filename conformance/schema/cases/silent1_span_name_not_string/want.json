@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.signals: \"span_name\" must be a string"
+}

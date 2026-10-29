@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "",
+      "field": "format",
+      "declared": "the ELF BTF cannot be read for the record check: the .BTF is corrupt: the string table does not end with NUL",
+      "elf": ""
+    }
+  ]
+}

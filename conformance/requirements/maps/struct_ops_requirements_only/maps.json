@@ -1,0 +1,24 @@
+{
+  "maps": [
+    {
+      "name": "dummy_ops",
+      "kind": "struct_ops",
+      "key": "u32",
+      "value": "-",
+      "max_entries": 1,
+      "struct_ops": {
+        "type": "bpf_dummy_ops",
+        "ops": [
+          {
+            "member": "test_1",
+            "program": "test_1"
+          },
+          {
+            "member": "test_2",
+            "program": "test_2"
+          }
+        ]
+      }
+    }
+  ]
+}

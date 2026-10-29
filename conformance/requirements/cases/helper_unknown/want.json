@@ -1,0 +1,12 @@
+{
+  "result": "ok",
+  "unmet": [
+    {
+      "kind": "helper_unknown",
+      "program": "prog",
+      "name": "map_lookup_elem",
+      "id": 1,
+      "blocks_load": false
+    }
+  ]
+}

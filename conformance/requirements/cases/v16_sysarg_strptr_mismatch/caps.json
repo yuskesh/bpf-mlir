@@ -1,0 +1,70 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "example-v13-btfid",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": false,
+    "core_poisons_missing_field": false,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "ref_ctr",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "btf_id",
+    "fsession_load": "btf_id",
+    "ksyscall_attach": "prefix"
+  },
+  "queries": {
+    "arch": {
+      "": {
+        "text": "x86_64"
+      }
+    },
+    "kernel_symbol": {
+      "__x64_sys_prctl": {
+        "value": true
+      }
+    },
+    "struct_field": {
+      "pt_regs.di/112/8": {
+        "diffs": []
+      }
+    },
+    "syscall_args": {
+      "prctl/1/i32": {
+        "diffs": []
+      },
+      "prctl/2/strptr": {
+        "diffs": [
+          "not a char pointer"
+        ]
+      }
+    }
+  },
+  "privileged_queries": {
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "kprobe": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

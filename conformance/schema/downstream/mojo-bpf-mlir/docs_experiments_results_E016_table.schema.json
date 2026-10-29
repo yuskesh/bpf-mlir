@@ -1,0 +1,320 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "RA",
+        "id": 0,
+        "size": 24,
+        "min_size": 24,
+        "alignment": 8,
+        "required_through": "t64",
+        "note": "Mojo struct RA",
+        "fields": [
+          {
+            "name": "h8",
+            "offset": 0,
+            "expose": "int",
+            "note": "Mojo field h8",
+            "type": {
+              "kind": "int",
+              "bits": 8,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 1
+            }
+          },
+          {
+            "name": "s8",
+            "offset": 1,
+            "expose": "int",
+            "note": "Mojo field s8",
+            "type": {
+              "kind": "int",
+              "bits": 8,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 1
+            }
+          },
+          {
+            "name": "u8b",
+            "offset": 3,
+            "expose": "int",
+            "note": "Mojo field u8b",
+            "type": {
+              "kind": "int",
+              "bits": 8,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 1
+            }
+          },
+          {
+            "name": "s16",
+            "offset": 4,
+            "expose": "int",
+            "note": "Mojo field s16",
+            "type": {
+              "kind": "int",
+              "bits": 16,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 2
+            }
+          },
+          {
+            "name": "u16",
+            "offset": 6,
+            "expose": "int",
+            "note": "Mojo field u16",
+            "type": {
+              "kind": "int",
+              "bits": 16,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 2
+            }
+          },
+          {
+            "name": "s32",
+            "offset": 8,
+            "expose": "int",
+            "note": "Mojo field s32",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "u32",
+            "offset": 12,
+            "expose": "int",
+            "note": "Mojo field u32",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "t64",
+            "offset": 16,
+            "expose": "int",
+            "note": "Mojo field t64",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      },
+      {
+        "symbol": "RB",
+        "id": 1,
+        "size": 16,
+        "min_size": 16,
+        "alignment": 8,
+        "required_through": "t32",
+        "note": "Mojo struct RB",
+        "fields": [
+          {
+            "name": "s64",
+            "offset": 0,
+            "expose": "int",
+            "note": "Mojo field s64",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 8
+            }
+          },
+          {
+            "name": "m16",
+            "offset": 8,
+            "expose": "int",
+            "note": "Mojo field m16",
+            "type": {
+              "kind": "int",
+              "bits": 16,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 2
+            }
+          },
+          {
+            "name": "t32",
+            "offset": 12,
+            "expose": "int",
+            "note": "Mojo field t32",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 4
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "AIn",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "RA"
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "RA",
+        "note": "Mojo comptime AIn"
+      },
+      {
+        "symbol": "AOut",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "RA"
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "RA",
+        "note": "Mojo comptime AOut"
+      },
+      {
+        "symbol": "BIn",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "RB"
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "RB",
+        "note": "Mojo comptime BIn"
+      },
+      {
+        "symbol": "BOut",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "RB"
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "RB",
+        "note": "Mojo comptime BOut"
+      },
+      {
+        "symbol": "Out",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 11,
+        "flags": 0,
+        "record": "",
+        "note": "Mojo comptime Out"
+      }
+    ],
+    "programs": [
+      {
+        "name": "rd",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "AIn",
+          "BIn",
+          "Out"
+        ],
+        "note": "Mojo def rd"
+      },
+      {
+        "name": "mk",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "AIn",
+          "AOut",
+          "BIn",
+          "BOut"
+        ],
+        "note": "Mojo def mk"
+      },
+      {
+        "name": "wr",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "AIn",
+          "BIn"
+        ],
+        "note": "Mojo def wr"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

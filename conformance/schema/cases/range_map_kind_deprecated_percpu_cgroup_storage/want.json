@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"counts\": map kind \"percpu_cgroup_storage\" (BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE) is deprecated by the kernel and not supported — use \"cgrp_storage\" (BPF_MAP_TYPE_CGRP_STORAGE — cgroup local storage; the kernel's replacement is cgrp_storage plus a local percpu kptr, and this compiler has no percpu kptr, so \"cgrp_storage\" gives one value per cgroup, not per CPU) (kernel-source audit)"
+}

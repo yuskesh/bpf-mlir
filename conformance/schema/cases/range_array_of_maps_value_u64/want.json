@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"outer\": a array_of_maps map needs a u32 value (the inner map's fd — the kernel's value_size is 4)"
+}

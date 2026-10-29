@@ -1,0 +1,28 @@
+//===- HandVerdicts.def - return values without UAPI names -------*- C++ -*-===//
+//
+// Hand-maintained verdict families without UAPI enum or define names. Values
+// follow kernel behavior: verifier return ranges and hook interpretation, like
+// KernelABI.h done constants. UAPI-named families belong in abi/uapi.tsv instead.
+// Additions require kernel-source evidence and observed kernel acceptance.
+// Columns: family, verdict spelling, int32 value, evidence.
+//===----------------------------------------------------------------------===//
+// clang-format off
+// Cgroup families normally require verifier returns 0..1 (kernel/bpf/verifier.c
+// check_return_code in 7.1.8; cgroup_skb egress allows 0..3). Zero denies with
+// EPERM or packet drop; one allows.
+EBPF_HAND_VERDICT("cgroup",        "deny",  0,  "kernel/bpf/verifier.c check_return_code (retval_range 0..1) — 0 denies")
+EBPF_HAND_VERDICT("cgroup",        "allow", 1,  "kernel/bpf/verifier.c check_return_code (retval_range 0..1) — 1 allows")
+// socket_filter returns accepted byte count (net/core/filter.c sk_filter_trim_cap):
+// zero drops, while a count at least len accepts the whole packet.
+EBPF_HAND_VERDICT("socket_filter", "drop",  0,  "net/core/filter.c sk_filter_trim_cap — 0 drops the packet")
+EBPF_HAND_VERDICT("socket_filter", "keep",  -1, "net/core/filter.c sk_filter_trim_cap — maximum u32 (0xffffffff) accepts every packet byte")
+// cgroup_skb egress (BPF_CGROUP_INET_EGRESS) permits 0..3: bit 0 keeps, bit 1
+// signals congestion. kernel/bpf/cgroup.c __cgroup_bpf_run_filter_skb maps
+// 0 to drop/-EPERM, 1 to keep/NET_XMIT_SUCCESS, 2 to drop/NET_XMIT_DROP,
+// and 3 to keep/NET_XMIT_CN.
+EBPF_HAND_VERDICT("cgroup_skb_egress", "deny",     0, "kernel/bpf/cgroup.c __cgroup_bpf_run_filter_skb (egress) — 0 drops the packet (-EPERM)")
+EBPF_HAND_VERDICT("cgroup_skb_egress", "allow",    1, "kernel/bpf/cgroup.c __cgroup_bpf_run_filter_skb (egress) — 1 transmits (NET_XMIT_SUCCESS)")
+EBPF_HAND_VERDICT("cgroup_skb_egress", "deny_cn",  2, "kernel/bpf/cgroup.c __cgroup_bpf_run_filter_skb (egress) — 2 drops and signals congestion (NET_XMIT_DROP); verifier.c permits 0..3 only for egress")
+EBPF_HAND_VERDICT("cgroup_skb_egress", "allow_cn", 3, "kernel/bpf/cgroup.c __cgroup_bpf_run_filter_skb (egress) — 3 transmits and signals congestion (NET_XMIT_CN); verifier.c permits 0..3 only for egress")
+// clang-format on
+#undef EBPF_HAND_VERDICT

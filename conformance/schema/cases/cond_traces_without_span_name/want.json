@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\": a traces signal needs a span_name"
+}

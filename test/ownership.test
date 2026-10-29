@@ -1,0 +1,3 @@
+# A path that omits reservation consumption must be rejected.
+# RUN: not ebpf-opt --ebpf-verify-ownership %S/Inputs/ownership.mlir 2>&1 | FileCheck %s
+# CHECK: a ring buffer reservation is consumed in only some of this operation's regions

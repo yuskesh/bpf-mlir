@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [],
+    "maps": [
+      {
+        "symbol": "EtherCounts",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 6,
+        "flags": 0,
+        "record": "",
+        "note": "Mojo comptime EtherCounts"
+      },
+      {
+        "symbol": "ProtoCounts",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 256,
+        "flags": 0,
+        "record": "",
+        "note": "Mojo comptime ProtoCounts"
+      }
+    ],
+    "programs": [
+      {
+        "name": "count_packets",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "EtherCounts",
+          "ProtoCounts"
+        ],
+        "note": "Mojo def count_packets"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

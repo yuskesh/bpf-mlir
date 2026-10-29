@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"count_packets\": arch and params are only for kprobe, uprobe, kretprobe, uretprobe, perf_event, kprobe_multi, kretprobe_multi, uprobe_multi, uretprobe_multi, usdt and ksyscall programs"
+}

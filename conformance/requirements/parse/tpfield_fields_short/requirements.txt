@@ -1,0 +1,6 @@
+ebpf-requirements 11
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	t	tracepoint	5
+attach	t	trace_tp	syscalls/sys_enter_getppid
+tpfield	t	__syscall_nr	8	4
+btf	int

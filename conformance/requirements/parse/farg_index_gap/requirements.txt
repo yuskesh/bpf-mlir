@@ -1,0 +1,6 @@
+ebpf-requirements 8
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	f	tracing	26
+attach	f	trace_fentry	wake_up_new_task
+farg	f	1	task_struct
+btf	int

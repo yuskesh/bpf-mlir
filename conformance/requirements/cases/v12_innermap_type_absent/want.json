@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "map_type",
+      "program": "outer",
+      "name": "percpu_hash",
+      "id": 5,
+      "blocks_load": true
+    }
+  ]
+}

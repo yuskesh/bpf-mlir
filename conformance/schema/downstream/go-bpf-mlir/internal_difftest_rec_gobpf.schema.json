@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "Rec",
+        "id": 0,
+        "size": 40,
+        "min_size": 40,
+        "alignment": 8,
+        "required_through": "",
+        "note": "Go type Rec",
+        "fields": [
+          {
+            "name": "len",
+            "offset": 0,
+            "expose": "int",
+            "note": "Go field Len",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "tiny",
+            "offset": 4,
+            "expose": "int",
+            "note": "Go field Tiny",
+            "type": {
+              "kind": "int",
+              "bits": 8,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 1
+            }
+          },
+          {
+            "name": "small",
+            "offset": 5,
+            "expose": "int",
+            "note": "Go field Small",
+            "type": {
+              "kind": "int",
+              "bits": 8,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 1
+            }
+          },
+          {
+            "name": "short",
+            "offset": 6,
+            "expose": "int",
+            "note": "Go field Short",
+            "type": {
+              "kind": "int",
+              "bits": 16,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 2
+            }
+          },
+          {
+            "name": "signed",
+            "offset": 8,
+            "expose": "int",
+            "note": "Go field Signed",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "total",
+            "offset": 16,
+            "expose": "int",
+            "note": "Go field Total",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          },
+          {
+            "name": "hist",
+            "offset": 24,
+            "expose": "int",
+            "note": "Go field Hist",
+            "type": {
+              "kind": "array",
+              "count": 4,
+              "element": {
+                "kind": "int",
+                "bits": 16,
+                "signed": false,
+                "endianness": "little",
+                "alignment": 2
+              }
+            }
+          },
+          {
+            "name": "count",
+            "offset": 32,
+            "expose": "int",
+            "note": "Go field Count",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "In",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "Rec"
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var In"
+      },
+      {
+        "symbol": "Out",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "Rec"
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Out"
+      }
+    ],
+    "programs": [
+      {
+        "name": "runProg",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "In",
+          "Out"
+        ],
+        "note": "Go func runProg"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

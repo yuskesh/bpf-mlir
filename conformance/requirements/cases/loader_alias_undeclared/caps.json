@@ -1,0 +1,94 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "example-undeclared",
+    "kprobe_alias_prefix": {},
+    "uprobe_reopens_path": false,
+    "core_poisons_missing_field": false,
+    "btf_rewrite": null
+  },
+  "queries": {
+    "arch": {
+      "": {
+        "text": "x86_64"
+      }
+    },
+    "func_param": {
+      "do_sys_poll/3/u32": {
+        "diffs": []
+      }
+    },
+    "kernel_symbol": {
+      "__x64_do_sys_poll": {
+        "value": false
+      },
+      "do_sys_poll": {
+        "value": true
+      }
+    },
+    "struct_field": {
+      "pt_regs.dx/96/8": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "btf_feature": {
+      "array": {
+        "value": true
+      },
+      "datasec": {
+        "value": true
+      },
+      "func": {
+        "value": true
+      },
+      "func_global": {
+        "value": true
+      },
+      "func_proto": {
+        "value": true
+      },
+      "int": {
+        "value": true
+      },
+      "ptr": {
+        "value": true
+      },
+      "struct": {
+        "value": true
+      },
+      "var": {
+        "value": true
+      }
+    },
+    "helper": {
+      "kprobe/get_current_pid_tgid": {
+        "value": true
+      },
+      "kprobe/map_lookup_elem": {
+        "value": true
+      },
+      "kprobe/map_update_elem": {
+        "value": true
+      }
+    },
+    "map_type": {
+      "hash": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "kprobe": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

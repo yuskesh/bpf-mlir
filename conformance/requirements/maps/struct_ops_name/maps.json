@@ -1,0 +1,40 @@
+{
+  "maps": [
+    {
+      "name": "out",
+      "kind": "array",
+      "key": "u32",
+      "value": "u32",
+      "max_entries": 4
+    },
+    {
+      "name": "g13cc",
+      "kind": "struct_ops",
+      "key": "u32",
+      "value": "-",
+      "max_entries": 1,
+      "struct_ops": {
+        "type": "tcp_congestion_ops",
+        "name": "other",
+        "ops": [
+          {
+            "member": "init",
+            "program": "g13_init"
+          },
+          {
+            "member": "ssthresh",
+            "program": "g13_ssthresh"
+          },
+          {
+            "member": "cong_avoid",
+            "program": "g13_cong_avoid"
+          },
+          {
+            "member": "undo_cwnd",
+            "program": "g13_undo_cwnd"
+          }
+        ]
+      }
+    }
+  ]
+}

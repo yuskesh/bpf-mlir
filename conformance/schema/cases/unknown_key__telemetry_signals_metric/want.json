@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec_total\" metric: unknown key \"zz_unknown\" (known: kind, unit, temporality, monotonic, scale, zero_threshold, bucket_rule)"
+}

@@ -1,0 +1,100 @@
+{
+  "core": {
+    "kernel_types": [
+      {
+        "fields": [
+          {
+            "name": "pid",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          }
+        ],
+        "name": "task_struct",
+        "note": "sched_pi_setprio(tsk, pi_task); pi_task may be NULL during deboost"
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "cfg[0] = observed task pid, the boosted main task",
+        "symbol": "cfg",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 4,
+        "note": "out[0] = non-NULL pi_task count; out[1] = NULL count; out[2] = last pi_task pid; out[3] = last tsk pid",
+        "symbol": "out",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "args": [
+          "task_struct",
+          {
+            "kind": "struct",
+            "name": "task_struct",
+            "nulable": true
+          }
+        ],
+        "attach_target": "sched_pi_setprio",
+        "kind": "tp_btf",
+        "maps": [
+          "cfg",
+          "out"
+        ],
+        "name": "prog",
+        "note": "sched_pi_setprio tracepoint contract"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

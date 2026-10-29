@@ -1,0 +1,6 @@
+ebpf-requirements 5
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	prog	xdp	6
+map	vals	array	2	u32	record:val	1	0
+map	trie	lpm_trie	11	record:lpm_key	u32	16	1
+btf	int

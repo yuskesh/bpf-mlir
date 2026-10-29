@@ -1,0 +1,27 @@
+ebpf-requirements 7
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	a	kprobe	2
+program	b	tracing	26
+program	c	tracing	26
+program	d	kprobe	2
+program	e	xdp	6
+helper	a	get_current_pid_tgid	14
+map	progs	prog_array	3	u32	u32	2	0
+kfield	b	task_struct	pid	i32
+attach	a	kprobe	do_sys_poll
+arch	a	x86_64
+ctxfield	a	pt_regs	dx	96	8
+kprobearg	a	3	u32
+attach	b	trace_raw_tp	sched_process_fork
+arg	b	0	task_struct
+attach	c	trace_fexit	do_sys_poll
+retsig	c	1	i32
+attach	d	uprobe	probe_target
+arch	d	x86_64
+ctxfield	d	pt_regs	di	112	8
+binary	d	sha256	5a57b4994db32696dfad6c0105aaceb52e6505e0374fd556ae3fbd37c1e2c35c
+uprobearg	d	1	u32
+attach	e	tcx	ingress
+btf
+argtag	e	arg:nonnull	mem
+tailslot	progs	0	e

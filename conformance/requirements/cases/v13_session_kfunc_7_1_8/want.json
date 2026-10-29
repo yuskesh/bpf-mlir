@@ -1,0 +1,12 @@
+{
+  "result": "ok",
+  "unmet": [
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s",
+      "name": "bpf_session_is_return",
+      "id": 0,
+      "blocks_load": false
+    }
+  ]
+}

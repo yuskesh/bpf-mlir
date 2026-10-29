@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"tp\": fields \"__syscall_nr\" needs a type"
+}

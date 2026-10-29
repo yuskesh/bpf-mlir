@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry: missing or non-array \"signals\""
+}

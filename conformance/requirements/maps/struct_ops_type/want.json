@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "dummy_ops",
+      "field": "struct_ops",
+      "declared": "type=tcp_congestion_ops;test_1=test_1;test_2=test_2;",
+      "elf": "type=bpf_dummy_ops;test_1=test_1;test_2=test_2;"
+    }
+  ]
+}

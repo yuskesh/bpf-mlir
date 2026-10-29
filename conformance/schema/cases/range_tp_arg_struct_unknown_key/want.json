@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": struct args entries take only \"kind\", \"name\" and \"nullable\", got \"nulable\""
+}

@@ -1,0 +1,59 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22-usdt-ksyscall",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "ref_ctr",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "prefix"
+  },
+  "queries": {
+    "attach_targets": {
+      "sk_skb_stream_verdict/map:sock": {
+        "value": true
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "sk_skb/sk_skb_stream_verdict": {
+        "value": false
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {
+      "sockmap": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "sk_skb": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

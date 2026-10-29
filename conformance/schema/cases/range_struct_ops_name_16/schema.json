@@ -1,0 +1,138 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 4,
+        "note": "Indices 0/1/2/3 count init, ssthresh, undo_cwnd and whether cong_avoid ran",
+        "record": "",
+        "symbol": "out",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "struct_ops",
+        "max_entries": 1,
+        "note": "TCP congestion-operations table in .struct_ops.link; the runner sets name to g12r\u003cpid\u003e\u003carm\u003e before load",
+        "record": "",
+        "struct_ops": {
+          "name": "g12cc_sixteen_ch",
+          "ops": [
+            {
+              "member": "init",
+              "program": "g12_init"
+            },
+            {
+              "member": "ssthresh",
+              "program": "g12_ssthresh"
+            },
+            {
+              "member": "cong_avoid",
+              "program": "g12_cong_avoid"
+            },
+            {
+              "member": "undo_cwnd",
+              "program": "g12_undo_cwnd"
+            }
+          ],
+          "type": "tcp_congestion_ops"
+        },
+        "symbol": "g12cc"
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "g12cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g12_init",
+        "nargs": 1,
+        "note": "init returns void with signature void(struct sock *)",
+        "ret": "void"
+      },
+      {
+        "attach_target": "g12cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g12_ssthresh",
+        "nargs": 1,
+        "note": "ssthresh returns u32 with signature u32(struct sock *)",
+        "ret": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "attach_target": "g12cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g12_undo_cwnd",
+        "nargs": 1,
+        "note": "undo_cwnd returns u32 with signature u32(struct sock *)",
+        "ret": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "attach_target": "g12cc",
+        "kind": "struct_ops",
+        "maps": [
+          "out"
+        ],
+        "name": "g12_cong_avoid",
+        "nargs": 3,
+        "note": "cong_avoid returns void with signature void(struct sock *, u32, u32)",
+        "ret": "void"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

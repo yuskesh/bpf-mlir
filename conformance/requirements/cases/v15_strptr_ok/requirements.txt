@@ -1,0 +1,6 @@
+ebpf-requirements 15
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	k	tracing	26
+helper	k	probe_read_kernel_str	115
+kfield	k	linux_binprm	filename	strptr
+btf	int

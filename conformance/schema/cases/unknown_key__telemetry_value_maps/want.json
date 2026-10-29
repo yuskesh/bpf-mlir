@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.value_maps: unknown key \"zz_unknown\" (known: id, unknown, arch_invariant, btf_mode, btf_anchor, btf_prefix, btf_omit, authority, note, entries)"
+}

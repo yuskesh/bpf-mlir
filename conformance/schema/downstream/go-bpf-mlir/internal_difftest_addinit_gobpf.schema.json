@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "Key",
+        "id": 0,
+        "size": 8,
+        "min_size": 8,
+        "alignment": 4,
+        "required_through": "",
+        "note": "Go type Key",
+        "fields": [
+          {
+            "name": "a",
+            "offset": 0,
+            "expose": "int",
+            "note": "Go field A",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "b",
+            "offset": 4,
+            "expose": "int",
+            "note": "Go field B",
+            "type": {
+              "kind": "int",
+              "bits": 16,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 2
+            }
+          }
+        ]
+      },
+      {
+        "symbol": "Rec",
+        "id": 1,
+        "size": 8,
+        "min_size": 8,
+        "alignment": 8,
+        "required_through": "",
+        "note": "Go type Rec",
+        "fields": [
+          {
+            "name": "n",
+            "offset": 0,
+            "expose": "int",
+            "note": "Go field N",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "Flows",
+        "kind": "hash",
+        "key": {
+          "kind": "record_ref",
+          "symbol": "Key"
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 1024,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Flows"
+      },
+      {
+        "symbol": "Small",
+        "kind": "hash",
+        "key": {
+          "kind": "record_ref",
+          "symbol": "Key"
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 2,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Small"
+      },
+      {
+        "symbol": "Stat",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Stat"
+      },
+      {
+        "symbol": "RC",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "Rec"
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var RC"
+      }
+    ],
+    "programs": [
+      {
+        "name": "runProg",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "Flows",
+          "Small",
+          "Stat",
+          "RC"
+        ],
+        "note": "Go func runProg"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

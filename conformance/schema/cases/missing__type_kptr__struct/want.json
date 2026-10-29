@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"kv\" field \"t\": missing or non-string \"struct\""
+}

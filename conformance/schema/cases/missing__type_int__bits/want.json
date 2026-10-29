@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"hdr\" field \"kind\": missing or non-integer \"bits\""
+}

@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "sysarg",
+      "program": "p",
+      "name": "2 of syscall execve (strarray)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

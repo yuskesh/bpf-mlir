@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"vals\" value: record_ref \"nope\" is not declared in core.records"
+}

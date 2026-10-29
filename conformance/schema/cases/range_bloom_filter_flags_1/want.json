@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"b\": a bloom_filter map takes flags 0 or 64 (BPF_F_ZERO_SEED), got 1"
+}

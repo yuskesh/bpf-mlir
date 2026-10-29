@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry.bounds_sets: missing or non-string \"id\""
+}

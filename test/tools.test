@@ -1,0 +1,7 @@
+# Each shipped CLI must exist and recognize its documented help entry.
+# RUN: ebpf-compile --help | FileCheck --check-prefix=COMPILE %s
+# RUN: ebpf-opt --help | FileCheck --check-prefix=OPT %s
+# RUN: ebpf-schema-check --help | FileCheck --check-prefix=SCHEMA %s
+# COMPILE: ebpf-compile
+# OPT: ebpf-opt
+# SCHEMA: ebpf-schema-check

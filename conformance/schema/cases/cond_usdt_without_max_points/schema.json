@@ -1,0 +1,186 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "kind": "ringbuf",
+        "max_entries": 4096,
+        "note": "Per-site events",
+        "record": "ev",
+        "symbol": "events"
+      }
+    ],
+    "programs": [
+      {
+        "arch": "x86_64",
+        "attach_target": "p1d:hit",
+        "binary_sha256": "dfcc266ae8f61999aa3ff75957dced4410cc0cfa78b15699d3ca2a70568504e7",
+        "kind": "usdt",
+        "maps": [],
+        "name": "uhit",
+        "note": "p1d:hit(u32, u64), three sites: site1, site2 and constants in main",
+        "params": [
+          {
+            "n": 1,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "n": 2,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "semaphore": "none"
+      },
+      {
+        "arch": "x86_64",
+        "attach_target": "p1d:guarded",
+        "binary_sha256": "dfcc266ae8f61999aa3ff75957dced4410cc0cfa78b15699d3ca2a70568504e7",
+        "kind": "usdt",
+        "maps": [],
+        "max_points": 2,
+        "name": "ugrd",
+        "note": "p1d:guarded(i32, u64), one site guarded by a semaphore",
+        "params": [
+          {
+            "n": 1,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "n": 2,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "semaphore": "required"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "prog",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "cookie",
+            "note": "",
+            "offset": 8,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "v1",
+            "note": "",
+            "offset": 16,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "int",
+            "name": "st1",
+            "note": "",
+            "offset": 24,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "int",
+            "name": "v2",
+            "note": "",
+            "offset": 32,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "st2",
+            "note": "",
+            "offset": 40,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 48,
+        "note": "Per-site USDT event: program 0 is p1d:hit, program 1 is p1d:guarded; cookie is the site index; arguments 1/2 are widened to 64 bits with status",
+        "required_through": "",
+        "size": 48,
+        "symbol": "ev"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

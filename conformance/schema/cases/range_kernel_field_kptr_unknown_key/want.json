@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"task_struct\" field \"real_parent\": a kptr field type takes only \"kind\" and \"struct\", got \"strukt\""
+}

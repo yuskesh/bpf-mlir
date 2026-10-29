@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"st_b\" value element: missing or non-string \"kind\""
+}

@@ -1,0 +1,7 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	ret	kprobe	2
+attach	ret	uretprobe	probe_target
+arch	ret	x86_64
+ctxfield	ret	pt_regs	ax	80	8
+binary	ret	sha256	3fc0f71dd85ddfae174d0eaba8b6677e17afd8d75ea2d884ce069abe9b101de1

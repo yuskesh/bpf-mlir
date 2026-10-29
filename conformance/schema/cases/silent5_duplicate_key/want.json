@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "schema: duplicate key \"version\" in one JSON object (the JSON parser would keep only the last value)"
+}

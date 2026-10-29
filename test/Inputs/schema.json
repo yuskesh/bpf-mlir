@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "coverage": {"programs": "omitted", "maps": "complete", "records": "complete", "telemetry": "complete"},
+  "core": {"records": [], "maps": [], "programs": []},
+  "telemetry": {"clocks": [], "value_maps": [], "bounds_sets": [], "signals": []},
+  "extensions": {}
+}

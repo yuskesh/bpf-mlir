@@ -1,0 +1,33 @@
+{
+  "records": {
+    "val": {
+      "size": 12,
+      "members": [
+        {
+          "name": "lock",
+          "offset": 0,
+          "type": "u32"
+        },
+        {
+          "name": "a",
+          "offset": 4,
+          "type": "u32"
+        },
+        {
+          "name": "b",
+          "offset": 8,
+          "type": "u32"
+        }
+      ]
+    }
+  },
+  "maps": [
+    {
+      "name": "vals",
+      "kind": "array",
+      "key": "u32",
+      "value": "record:val",
+      "max_entries": 1
+    }
+  ]
+}

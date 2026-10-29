@@ -1,0 +1,4 @@
+{
+  "key": "temporality",
+  "path": "telemetry.signals[].metric"
+}

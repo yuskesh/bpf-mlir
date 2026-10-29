@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.kernel_types: \"u32\" is reserved (an integer or unread tp_btf argument spelling)"
+}

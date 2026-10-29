@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "arch_unknown",
+      "program": "p",
+      "name": "x86_64",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

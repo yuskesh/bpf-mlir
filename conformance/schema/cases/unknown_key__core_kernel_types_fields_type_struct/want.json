@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"task_struct\" field \"nested\": unknown key \"zz_unknown\" (known: kind, struct)"
+}

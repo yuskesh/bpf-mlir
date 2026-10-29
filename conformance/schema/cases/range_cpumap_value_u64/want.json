@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"cpus\": a cpumap map needs a u32 key (the CPU) and a u32 value (the qsize)"
+}

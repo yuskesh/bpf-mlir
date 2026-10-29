@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"box\": a record with a kptr field cannot be a map key"
+}

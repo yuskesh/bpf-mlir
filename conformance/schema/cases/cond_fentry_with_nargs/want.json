@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": nargs and ret are only for fexit, fmod_ret, ext and struct_ops programs"
+}

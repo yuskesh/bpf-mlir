@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "r16",
+      "field": "global",
+      "declared": "rodata u32",
+      "elf": "global r16: the symbol size is 2 (declared 4); global r16: the VAR type u16 has size 2 (declared 4)"
+    }
+  ]
+}

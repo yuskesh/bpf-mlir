@@ -1,0 +1,26 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "task",
+      "name": "bpf_task_acquire",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed",
+      "program": "task",
+      "name": "bpf_task_from_pid",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "task",
+      "name": "bpf_task_release",
+      "id": 0,
+      "blocks_load": false
+    }
+  ]
+}

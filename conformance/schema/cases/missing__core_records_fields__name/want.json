@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"hdr\" field: missing or non-string \"name\""
+}

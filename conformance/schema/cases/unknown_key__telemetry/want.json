@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "telemetry: unknown key \"zz_unknown\" (known: signals, clocks, value_maps, bounds_sets)"
+}

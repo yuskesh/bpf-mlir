@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "program_type",
+      "program": "prog",
+      "name": "xdp",
+      "id": 6,
+      "blocks_load": true
+    }
+  ]
+}

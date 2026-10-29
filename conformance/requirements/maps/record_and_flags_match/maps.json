@@ -1,0 +1,20 @@
+{
+  "maps": [
+    {
+      "name": "vals",
+      "kind": "array",
+      "key": "u32",
+      "value": "record:val",
+      "max_entries": 1,
+      "flags": 0
+    },
+    {
+      "name": "trie",
+      "kind": "lpm_trie",
+      "key": "record:lpm_key",
+      "value": "u32",
+      "max_entries": 16,
+      "flags": 1
+    }
+  ]
+}

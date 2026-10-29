@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "cfg",
+      "field": "value",
+      "declared": "u64",
+      "elf": "u32"
+    }
+  ]
+}

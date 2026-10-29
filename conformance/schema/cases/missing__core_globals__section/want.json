@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "global \"target_tgid\": missing or non-string \"section\""
+}

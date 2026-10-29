@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "nope",
+      "field": "global_missing_in_elf",
+      "declared": "rodata u32",
+      "elf": ""
+    }
+  ]
+}

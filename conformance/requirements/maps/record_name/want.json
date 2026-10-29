@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "vals",
+      "field": "value",
+      "declared": "record:other",
+      "elf": "record:val"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "map_type",
+      "program": "vals",
+      "name": "array",
+      "id": 2,
+      "blocks_load": true
+    }
+  ]
+}

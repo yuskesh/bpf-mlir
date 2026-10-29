@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "attach_type",
+      "program": "s",
+      "name": "sk_skb_stream_verdict",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "farg",
+      "program": "l",
+      "name": "3 of bpf_lsm_socket_bind (i32)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

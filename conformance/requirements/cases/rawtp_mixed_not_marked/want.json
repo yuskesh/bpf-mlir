@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "arg_nullable",
+      "program": "prog",
+      "name": "sched_switch",
+      "id": 2,
+      "blocks_load": true
+    }
+  ]
+}

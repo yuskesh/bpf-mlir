@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "record:outer",
+      "field": "decl",
+      "declared": "member type record:inner — the nested record inner must be declared in records too",
+      "elf": ""
+    }
+  ]
+}

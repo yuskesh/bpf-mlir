@@ -1,0 +1,87 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid; the value counts calls",
+        "record": "",
+        "symbol": "counts",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid; the value is the last first-argument ufds pointer as eight bytes, matching the C raw-pointer fixture",
+        "record": "",
+        "symbol": "last",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "arch": "x86_64",
+        "attach_target": "do_sys_poll",
+        "kind": "kprobe",
+        "maps": [
+          "counts",
+          "last"
+        ],
+        "name": "prog",
+        "note": "At do_sys_poll kprobe entry, read the first argument ufds (struct pollfd __user *) as an eight-byte value without dereferencing it",
+        "params": [
+          {
+            "n": 1,
+            "type": {
+              "kind": "ptr",
+              "zz_unknown": 1
+            }
+          }
+        ]
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

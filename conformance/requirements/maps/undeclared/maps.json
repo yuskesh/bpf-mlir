@@ -1,0 +1,18 @@
+{
+  "maps": [
+    {
+      "name": "cfg",
+      "kind": "array",
+      "key": "u32",
+      "value": "u32",
+      "max_entries": 1
+    },
+    {
+      "name": "counts",
+      "kind": "array",
+      "key": "u32",
+      "value": "u64",
+      "max_entries": 3
+    }
+  ]
+}

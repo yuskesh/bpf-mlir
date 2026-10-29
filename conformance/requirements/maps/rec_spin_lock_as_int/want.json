@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "record:val",
+      "field": "record",
+      "declared": "size=12;lock:0:u32;a:4:u32;b:8:u32;",
+      "elf": "size=12;lock:0:bpf_spin_lock;a:4:u32;b:8:u32;"
+    }
+  ]
+}

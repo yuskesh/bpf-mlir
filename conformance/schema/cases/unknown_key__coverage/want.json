@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "coverage: unknown key \"zz_unknown\" (known: programs, maps, records, telemetry)"
+}

@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "tpfield",
+      "program": "t",
+      "name": "syscalls/sys_enter_openat.filename (offset 24, 8 bytes, strptr)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

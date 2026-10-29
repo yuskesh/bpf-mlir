@@ -1,0 +1,123 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid; the value counts probe_target calls, matching the C uprobe fixture",
+        "record": "",
+        "symbol": "counts",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid; the value sums the first argument a (u32)",
+        "record": "",
+        "symbol": "suma",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid; the value sums the second argument b",
+        "record": "",
+        "symbol": "sumb",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "arch": "x86_64",
+        "attach_target": "main",
+        "kind": "uprobe",
+        "maps": [
+          "counts",
+          "suma",
+          "sumb"
+        ],
+        "name": "prog",
+        "note": "Uprobe on a different symbol, main; its DWARF declares zero arguments as a type control, and it is not called after attach",
+        "params": [
+          {
+            "n": 1,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "n": 2,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ]
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

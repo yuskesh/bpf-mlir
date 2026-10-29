@@ -1,0 +1,4 @@
+ebpf-requirements 3
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	e	xdp	6
+attach	a	kprobe	do_sys_poll

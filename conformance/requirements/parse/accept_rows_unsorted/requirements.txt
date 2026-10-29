@@ -1,0 +1,6 @@
+ebpf-requirements 5
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	z	xdp	6
+program	a	xdp	6
+btf	ptr
+btf	int

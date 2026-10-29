@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": a fexit program needs nargs and ret (the signature of the kernel function — its return value sits after nargs arguments)"
+}

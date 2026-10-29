@@ -1,0 +1,5 @@
+ebpf-requirements 5
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	prog	xdp	6
+map	ur	user_ringbuf	31	-	record:sample	4096	0
+btf	int

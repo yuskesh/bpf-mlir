@@ -1,0 +1,5 @@
+ebpf-requirements 8
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	r	kprobe	2
+attach	r	uretprobe_multi	2
+btf	int

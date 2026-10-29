@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.records field: \"expose\" must be a string"
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"g12cc\": struct_ops type must be one of \"tcp_congestion_ops\", \"bpf_dummy_ops\", \"sched_ext_ops\", \"io_uring_bpf_ops\" (the struct_ops types the compiler supports — StructOpsTypes.def), got \"hid_bpf_ops\""
+}

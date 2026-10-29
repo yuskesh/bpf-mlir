@@ -1,0 +1,4 @@
+{
+  "key": "clock",
+  "path": "telemetry.signals[].timing"
+}

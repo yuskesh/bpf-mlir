@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec_total\": a metrics signal needs a \"metric\" block"
+}

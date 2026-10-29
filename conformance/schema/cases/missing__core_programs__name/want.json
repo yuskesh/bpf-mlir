@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.programs: missing or non-string \"name\""
+}

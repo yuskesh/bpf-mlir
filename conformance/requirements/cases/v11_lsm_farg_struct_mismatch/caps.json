@@ -1,0 +1,67 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none"
+  },
+  "queries": {
+    "attach_targets": {
+      "lsm_mac/lsm:socket_bind": {
+        "value": true
+      }
+    },
+    "func_args": {
+      "bpf_lsm_socket_bind(socket,-,-)": {
+        "diffs": [
+          "argument 0 (sock) of kernel function bpf_lsm_socket_bind points to Struct:\"sock\" in the target BTF, not struct socket"
+        ]
+      }
+    },
+    "func_param": {
+      "bpf_lsm_socket_bind/3/i32": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "lsm/lsm_mac": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "lsm": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

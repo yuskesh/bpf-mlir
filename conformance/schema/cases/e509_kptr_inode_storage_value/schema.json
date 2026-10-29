@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "kernel_types": [
+      {
+        "name": "task_struct",
+        "note": "Referenced kptr target named through vmlinux, and tgid read from the acquired reference through CO-RE",
+        "fields": [
+          {
+            "name": "tgid",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 4
+            }
+          }
+        ]
+      }
+    ],
+    "records": [
+      {
+        "symbol": "kv",
+        "id": 0,
+        "size": 16,
+        "min_size": 16,
+        "alignment": 8,
+        "required_through": "",
+        "note": "Map-value record: t is a referenced kptr with BTF PTR -\u003e TYPE_TAG kptr -\u003e STRUCT task_struct",
+        "fields": [
+          {
+            "name": "t",
+            "offset": 0,
+            "type": {
+              "kind": "kptr",
+              "struct": "task_struct"
+            }
+          },
+          {
+            "name": "n",
+            "offset": 8,
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "cfg",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 32,
+          "signed": true,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "cfg[0] = pid used by bpf_task_from_pid, supplied by runner setup"
+      },
+      {
+        "symbol": "box",
+        "kind": "inode_storage",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "kv"
+        },
+        "max_entries": 0,
+        "flags": 1,
+        "record": "",
+        "note": "Map value holding a deposited reference; freeing the map releases any remaining reference through the kernel destructor"
+      },
+      {
+        "symbol": "out",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 6,
+        "flags": 0,
+        "record": "",
+        "note": "out[0] = NULL from_pid; out[1] = prior reference on deposit; out[2] = no prior reference; out[3] = acquired tgid; out[4] = prior reference on return; out[5] = NULL acquisition"
+      }
+    ],
+    "programs": [
+      {
+        "name": "kp",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "cfg",
+          "box",
+          "out"
+        ],
+        "note": "Test-run only; no attach"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}
+

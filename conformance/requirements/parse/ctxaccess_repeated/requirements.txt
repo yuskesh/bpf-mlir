@@ -1,0 +1,24 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	g	cgroup_skb	8
+program	r	raw_tracepoint	17
+program	k	kprobe	2
+program	u	kprobe	2
+program	s	sk_skb	14
+program	t	sched_cls	3
+map	sock	sockmap	15	u32	u32	2	0
+attach	g	cgroup_inet_ingress	cgroup
+attach	r	raw_tp	rawtp:sched_switch
+attach	k	kretprobe	do_sys_poll
+arch	k	x86_64
+ctxfield	k	pt_regs	ax	80	8
+attach	u	uretprobe	probe_target
+arch	u	x86_64
+ctxfield	u	pt_regs	ax	80	8
+binary	u	sha256	5a57b4994db32696dfad6c0105aaceb52e6505e0374fd556ae3fbd37c1e2c35c
+attach	s	sk_skb_stream_verdict	map:sock
+attach	t	tcx	ingress
+btf	int
+ctxaccess	g	cgroup_inet_ingress	__sk_buff	len	r	4
+ctxaccess	t	tcx_ingress	__sk_buff	mark	w	4
+ctxaccess	g	cgroup_inet_ingress	__sk_buff	len	r	4

@@ -1,0 +1,26 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "usdt_probe",
+      "program": "u",
+      "name": "p1d:hit at pc 0x1179",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "usdt_probe",
+      "program": "u",
+      "name": "p1d:hit at pc 0x1190",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "usdt_probe",
+      "program": "u",
+      "name": "p1d:hit at pc 0x1234",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

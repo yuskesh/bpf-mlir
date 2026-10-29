@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.globals: missing or non-string \"name\""
+}

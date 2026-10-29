@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"task_struct\" field \"nested\": missing or non-string \"kind\""
+}

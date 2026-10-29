@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": params entry needs a type"
+}

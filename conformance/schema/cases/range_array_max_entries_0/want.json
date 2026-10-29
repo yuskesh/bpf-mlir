@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"counts\": max_entries must be positive"
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"tcp_sock\" field: unknown key \"zz_unknown\" (known: name, type, note)"
+}

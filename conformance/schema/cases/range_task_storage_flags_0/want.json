@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"ts\": a task_storage map needs flags 1 (BPF_F_NO_PREALLOC) and no other flag — the kernel refuses it otherwise, got 0"
+}

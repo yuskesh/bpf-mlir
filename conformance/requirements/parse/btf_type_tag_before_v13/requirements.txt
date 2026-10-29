@@ -1,0 +1,6 @@
+ebpf-requirements 12
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	x	xdp	6
+btf	int
+btf	ptr
+btf	type_tag

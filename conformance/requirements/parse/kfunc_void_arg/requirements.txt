@@ -1,0 +1,7 @@
+ebpf-requirements 13
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	k	xdp	6
+kfunc	k	bpf_rcu_read_lock	void
+kfunc	k	bpf_task_from_pid	ptr:task_struct	i32
+kfunc	k	bpf_task_release	void	void
+btf	int

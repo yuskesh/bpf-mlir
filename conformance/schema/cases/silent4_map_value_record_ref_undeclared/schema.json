@@ -1,0 +1,124 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "Shared array",
+        "record": "",
+        "symbol": "vals",
+        "value": {
+          "kind": "record_ref",
+          "symbol": "nope"
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "percpu_array",
+        "max_entries": 1,
+        "note": "Per-CPU array",
+        "record": "",
+        "symbol": "pvals",
+        "value": {
+          "kind": "record_ref",
+          "symbol": "ctr"
+        }
+      }
+    ],
+    "programs": [],
+    "records": [
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "plain",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "atom",
+            "note": "",
+            "offset": 8,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "atom32",
+            "note": "",
+            "offset": 16,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "pad",
+            "note": "",
+            "offset": 20,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 24,
+        "note": "plain uses field.load/store increments; atom uses u64 atomics; atom32 uses u32 atomics; pad is padding",
+        "required_through": "",
+        "size": 24,
+        "symbol": "ctr"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "omitted",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "helper",
+      "program": "prog",
+      "name": "get_current_pid_tgid",
+      "id": 14,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "records": {
+    "fkey": {
+      "size": 24,
+      "members": [
+        {
+          "name": "proto",
+          "offset": 0,
+          "type": "u8"
+        },
+        {
+          "name": "addr",
+          "offset": 4,
+          "type": "i32"
+        },
+        {
+          "name": "port",
+          "offset": 8,
+          "type": "u16"
+        },
+        {
+          "name": "id",
+          "offset": 16,
+          "type": "u64"
+        }
+      ]
+    },
+    "rec": {
+      "size": 24,
+      "members": [
+        {
+          "name": "a",
+          "offset": 0,
+          "type": "u32"
+        },
+        {
+          "name": "b",
+          "offset": 8,
+          "type": "u64"
+        },
+        {
+          "name": "c",
+          "offset": 16,
+          "type": "u16"
+        },
+        {
+          "name": "d",
+          "offset": 18,
+          "type": "u8"
+        }
+      ]
+    }
+  },
+  "maps": [
+    {
+      "name": "flows",
+      "kind": "hash",
+      "key": "record:fkey",
+      "value": "u64",
+      "max_entries": 16
+    },
+    {
+      "name": "out",
+      "kind": "array",
+      "key": "u32",
+      "value": "u64",
+      "max_entries": 4
+    },
+    {
+      "name": "recs",
+      "kind": "array",
+      "key": "u32",
+      "value": "record:rec",
+      "max_entries": 2
+    },
+    {
+      "name": "vals",
+      "kind": "array",
+      "key": "u32",
+      "value": "u64",
+      "max_entries": 8
+    }
+  ]
+}

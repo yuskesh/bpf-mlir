@@ -1,0 +1,5 @@
+ebpf-requirements 9
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	l	sk_lookup	30
+attach	l	sk_lookup	netns
+btf	int

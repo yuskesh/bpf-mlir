@@ -1,0 +1,5 @@
+ebpf-requirements 5
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+helper	a	get_current_pid_tgid	14
+program	a	kprobe	2
+btf	int

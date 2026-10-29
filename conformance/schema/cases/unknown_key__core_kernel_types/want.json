@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.kernel_types: unknown key \"zz_unknown\" (known: name, fields, note)"
+}

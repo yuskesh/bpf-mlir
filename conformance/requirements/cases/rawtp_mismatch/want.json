@@ -1,0 +1,33 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "attach",
+      "program": "on_fork",
+      "name": "sched_process_fork",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "arg_nullable_unknown",
+      "program": "on_fork",
+      "name": "sched_process_fork",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "arg_nullable_unknown",
+      "program": "on_fork",
+      "name": "sched_process_fork",
+      "id": 1,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfield",
+      "program": "",
+      "name": "",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

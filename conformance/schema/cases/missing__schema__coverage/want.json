@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "schema: \"coverage\" is required — it says what this schema makes canonical. Omitting it would let a missing declaration silently disable checking."
+}

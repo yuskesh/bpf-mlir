@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\" attribute: unknown key \"zz_unknown\" (known: key, stability, source, presence, note)"
+}

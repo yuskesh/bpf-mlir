@@ -1,0 +1,26 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "usdtarg",
+      "program": "u",
+      "name": "2 of p1d:hit at pc 0x1179 (u32)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "usdtarg",
+      "program": "u",
+      "name": "2 of p1d:hit at pc 0x1190 (u32)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "usdtarg",
+      "program": "u",
+      "name": "2 of p1d:hit at pc 0x1234 (u32)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"hdr\" field: unknown key \"zz_unknown\" (known: name, type, offset, expose, note)"
+}

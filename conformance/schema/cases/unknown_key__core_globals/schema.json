@@ -1,0 +1,69 @@
+{
+  "core": {
+    "globals": [
+      {
+        "name": "target_tgid",
+        "note": "Target task tgid, set and frozen by the loader before load",
+        "section": "rodata",
+        "type": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "zz_unknown": 1
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 1024,
+        "note": "The key is tgid",
+        "record": "",
+        "symbol": "counts",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "do_sys_poll",
+        "kind": "fentry",
+        "maps": [
+          "counts"
+        ],
+        "name": "prog",
+        "note": "Entry to do_sys_poll; count only tasks matching target_tgid in .rodata"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

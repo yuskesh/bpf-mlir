@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"events\": a ringbuf map has no key/value"
+}

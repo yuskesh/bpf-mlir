@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"count_packets\": args is only for tp_btf, fentry, fmod_ret, lsm, ext, struct_ops, lsm_s and lsm_cgroup programs"
+}

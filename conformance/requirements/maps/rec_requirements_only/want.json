@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "",
+      "field": "format",
+      "declared": "records are declared, but only the requirements section was given (the record check needs the ELF BTF)",
+      "elf": ""
+    }
+  ]
+}

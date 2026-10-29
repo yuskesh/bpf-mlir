@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core: unknown key \"zz_unknown\" (known: programs, maps, records, kernel_types, globals)"
+}

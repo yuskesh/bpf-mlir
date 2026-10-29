@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\" params type: missing or non-string \"kind\""
+}

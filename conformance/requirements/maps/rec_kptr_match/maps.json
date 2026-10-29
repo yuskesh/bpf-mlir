@@ -1,0 +1,42 @@
+{
+  "records": {
+    "kv": {
+      "size": 16,
+      "members": [
+        {
+          "name": "t",
+          "offset": 0,
+          "type": "kptr:task_struct"
+        },
+        {
+          "name": "n",
+          "offset": 8,
+          "type": "u64"
+        }
+      ]
+    }
+  },
+  "maps": [
+    {
+      "name": "box",
+      "kind": "array",
+      "key": "u32",
+      "value": "record:kv",
+      "max_entries": 1
+    },
+    {
+      "name": "cfg",
+      "kind": "array",
+      "key": "u32",
+      "value": "i32",
+      "max_entries": 1
+    },
+    {
+      "name": "out",
+      "kind": "array",
+      "key": "u32",
+      "value": "u64",
+      "max_entries": 6
+    }
+  ]
+}

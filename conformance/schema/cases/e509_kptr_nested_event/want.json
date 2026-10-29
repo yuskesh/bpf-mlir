@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"box\": a record with a kptr field cannot be carried by a ring buffer / perf event map"
+}

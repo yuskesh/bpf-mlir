@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "coverage: missing or non-string \"records\""
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"outer\" field \"in\": a nested record with a kptr field must be at an offset that is a multiple of 8"
+}

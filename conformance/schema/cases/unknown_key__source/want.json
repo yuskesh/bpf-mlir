@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\" attribute \"process.pid\" source: unknown key \"zz_unknown\" (known: kind, name, from, detail)"
+}

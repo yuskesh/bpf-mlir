@@ -1,0 +1,96 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none"
+  },
+  "queries": {
+    "kfunc_protos": {
+      "bpf_task_acquire/ptr:task_struct(ptr:task_struct)": {
+        "diffs": []
+      },
+      "bpf_task_from_pid/ptr:task_struct(i32)": {
+        "diffs": []
+      },
+      "bpf_task_release/void(ptr:task_struct)": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "cgroup_sock/cgroup_inet_sock_create": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "array": {
+        "value": true
+      },
+      "datasec": {
+        "value": true
+      },
+      "func": {
+        "value": true
+      },
+      "func_global": {
+        "value": true
+      },
+      "func_proto": {
+        "value": true
+      },
+      "int": {
+        "value": true
+      },
+      "ptr": {
+        "value": true
+      },
+      "struct": {
+        "value": true
+      },
+      "var": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "kfunc_loads": {
+      "[\"kfunc-v1\",\"bpf_task_acquire\",\"ptr:task_struct\",[\"ptr:task_struct\"],\"cgroup_sock\",9,\"cgroup_sock\",\"cgroup/sock_create\",0,\"cgroup_inet_sock_create\",\"cgroup\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"cgroup_inet_sock_create\\\",\\\"Target\\\":\\\"cgroup\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"cgroup\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_task_from_pid\",\"ptr:task_struct\",[\"i32\"],\"cgroup_sock\",9,\"cgroup_sock\",\"cgroup/sock_create\",0,\"cgroup_inet_sock_create\",\"cgroup\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"cgroup_inet_sock_create\\\",\\\"Target\\\":\\\"cgroup\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"cgroup\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_task_release\",\"void\",[\"ptr:task_struct\"],\"cgroup_sock\",9,\"cgroup_sock\",\"cgroup/sock_create\",0,\"cgroup_inet_sock_create\",\"cgroup\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"cgroup_inet_sock_create\\\",\\\"Target\\\":\\\"cgroup\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"cgroup\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      }
+    },
+    "map_type": {},
+    "prog_type": {
+      "cgroup_sock": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"hdr\": missing or non-integer \"size\""
+}

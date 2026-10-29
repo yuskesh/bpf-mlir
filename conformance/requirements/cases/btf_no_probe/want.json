@@ -1,0 +1,61 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "array",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "datasec",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "func",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "func_global",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "func_proto",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "int",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "ptr",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "var",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

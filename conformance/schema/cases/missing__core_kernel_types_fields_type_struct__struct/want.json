@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"task_struct\" field \"nested\": embedded struct needs a nonempty struct name"
+}

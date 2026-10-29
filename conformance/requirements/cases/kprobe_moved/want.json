@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "ctxfield",
+      "program": "prog",
+      "name": "pt_regs.dx (offset 96, 8 bytes)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kprobearg",
+      "program": "prog",
+      "name": "3 of do_sys_poll (u32)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

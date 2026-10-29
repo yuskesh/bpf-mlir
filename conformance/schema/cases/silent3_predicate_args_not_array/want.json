@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\" drop_when: \"args\" must be an array"
+}

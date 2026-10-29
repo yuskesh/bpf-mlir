@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "retsig_unknown",
+      "program": "prog",
+      "name": "do_sys_poll",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

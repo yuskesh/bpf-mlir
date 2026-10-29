@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "Cmd",
+        "id": 0,
+        "size": 16,
+        "min_size": 16,
+        "alignment": 8,
+        "required_through": "",
+        "note": "Go type Cmd",
+        "fields": [
+          {
+            "name": "op",
+            "offset": 0,
+            "expose": "int",
+            "note": "Go field Op",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "i",
+            "offset": 4,
+            "expose": "int",
+            "note": "Go field I",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "v",
+            "offset": 8,
+            "expose": "int",
+            "note": "Go field V",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      },
+      {
+        "symbol": "R",
+        "id": 1,
+        "size": 40,
+        "min_size": 40,
+        "alignment": 4,
+        "required_through": "",
+        "note": "Go type R",
+        "fields": [
+          {
+            "name": "arr",
+            "offset": 0,
+            "expose": "int",
+            "note": "Go field Arr",
+            "type": {
+              "kind": "array",
+              "count": 8,
+              "element": {
+                "kind": "int",
+                "bits": 32,
+                "signed": false,
+                "endianness": "little",
+                "alignment": 4
+              }
+            }
+          },
+          {
+            "name": "h",
+            "offset": 32,
+            "expose": "int",
+            "note": "Go field H",
+            "type": {
+              "kind": "array",
+              "count": 4,
+              "element": {
+                "kind": "int",
+                "bits": 16,
+                "signed": false,
+                "endianness": "little",
+                "alignment": 2
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "Ctl",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "Cmd"
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Ctl"
+      },
+      {
+        "symbol": "M",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "R"
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var M"
+      },
+      {
+        "symbol": "Out",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 2,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Out"
+      }
+    ],
+    "programs": [
+      {
+        "name": "runProg",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "Ctl",
+          "M",
+          "Out"
+        ],
+        "note": "Go func runProg"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

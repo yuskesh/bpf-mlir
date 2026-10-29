@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "uprobe_symbol",
+      "program": "u",
+      "name": "p1d_nosuch",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "uprobearg_unknown",
+      "program": "u",
+      "name": "2 of p1d_nosuch (u64)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

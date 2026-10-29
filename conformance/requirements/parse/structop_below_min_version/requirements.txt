@@ -1,0 +1,4 @@
+ebpf-requirements 10
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	c	struct_ops	27
+structop	c	tcp_congestion_ops	cong_avoid

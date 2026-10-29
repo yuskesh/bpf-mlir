@@ -1,0 +1,267 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 16,
+        "note": "Observed task thread pid",
+        "record": "",
+        "symbol": "watch",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "hash",
+        "max_entries": 16,
+        "note": "Per-task counters",
+        "record": "",
+        "symbol": "tasks",
+        "value": {
+          "kind": "record_ref",
+          "symbol": "task_val"
+        }
+      },
+      {
+        "flags": 0,
+        "kind": "ringbuf",
+        "max_entries": 4096,
+        "note": "Event for a newly observed task",
+        "record": "event",
+        "symbol": "events"
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "stack_trace",
+        "max_entries": 64,
+        "note": "Kernel stack IP array of depth 32, resolved in userspace using event status",
+        "record": "",
+        "symbol": "stacks",
+        "value": {
+          "count": 32,
+          "element": {
+            "alignment": 8,
+            "bits": 64,
+            "endianness": "little",
+            "kind": "int",
+            "signed": false
+          },
+          "kind": "array"
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "do_sys_poll",
+        "kind": "fentry",
+        "maps": [
+          "watch",
+          "tasks",
+          "stacks"
+        ],
+        "name": "prog",
+        "nargs": 1,
+        "note": "Per-task stack-observation workload"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "calls",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "first_ns",
+            "note": "",
+            "offset": 8,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "last_ns",
+            "note": "",
+            "offset": 16,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 24,
+        "note": "Same layout as struct task_val in the C stack fixture",
+        "required_through": "",
+        "size": 24,
+        "symbol": "task_val"
+      },
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "tgid",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "pid",
+            "note": "",
+            "offset": 4,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "first_ns",
+            "note": "",
+            "offset": 8,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "stack_status",
+            "note": "Raw get_stackid status",
+            "offset": 16,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "int",
+            "name": "comm",
+            "note": "",
+            "offset": 24,
+            "type": {
+              "count": 16,
+              "element": {
+                "alignment": 1,
+                "bits": 8,
+                "endianness": "little",
+                "kind": "int",
+                "signed": false
+              },
+              "kind": "array"
+            }
+          },
+          {
+            "expose": "int",
+            "name": "comm_status",
+            "note": "",
+            "offset": 40,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "int",
+            "name": "_pad",
+            "note": "0",
+            "offset": 44,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "id": 1,
+        "min_size": 48,
+        "note": "Event structure: 48 bytes without holes",
+        "required_through": "",
+        "size": 48,
+        "symbol": "event"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

@@ -1,0 +1,35 @@
+// Per-command maximum record sizes for ebpf.sys.bpf attributes. KernelABI.cpp
+// consumes this table; abigen tests compare it against three kernel BTF extracts.
+//
+// bpf_sys_bpf passes KERNEL_BPFPTR to __sys_bpf, so __aligned_u64 pointer fields
+// would be read as kernel pointers. Record integers cannot become pointers:
+// restrict size to the first pointer field offset, or struct end if none.
+// __sys_bpf zeroes attr before copying size bytes, so fields outside the record
+// remain zero. UAPI structs append fields, keeping later additions outside it.
+//
+// SYSBPF_ATTR(cmd, max_bytes, anchor, first_ptr, source)
+// cmd: ABI bpfcmd name; max_bytes: maximum record bytes.
+// anchor: field uniquely identifying the command's anonymous bpf_attr struct.
+// first_ptr: first pointer field, or '-' for no pointers (7.1.8 struct end).
+// source: include/uapi/linux/bpf.h lines for 7.1.8, 6.12.111 and 6.6.157.
+//
+// BTF does not distinguish __aligned_u64 from pointers; first_ptr supplies that
+// semantic fact. Tests require its offset to equal max_bytes when present;
+// otherwise the kernel struct must end at or before max_bytes.
+
+#ifndef SYSBPF_ATTR
+#error "define SYSBPF_ATTR before including SysBpfAttr.def"
+#endif
+
+// MAP_CREATE (bpf.h:1511/1463/1378). Only 7.1.8 has excl_prog_hash (:1554),
+// read by make_bpfptr(attr->excl_prog_hash, uattr.is_kernel). The 6.12/6.6
+// structs end at 80/72 bytes.
+SYSBPF_ATTR("map_create", 80, "map_type", "excl_prog_hash", "7.1.8 :1554 / 6.12 - / 6.6 -")
+// MAP_*_ELEM/MAP_FREEZE (bpf.h:1559/1505/1408). Freeze reads only map_fd
+// (LAST_FIELD map_fd); the following key (:1561/1507/1410) is a pointer.
+SYSBPF_ATTR("map_freeze", 8, "next_key", "key", "7.1.8 :1561 / 6.12 :1507 / 6.6 :1410")
+// *_GET_*_ID (next_id:1713/1639/1538) has no pointers. Size is 16 bytes through
+// fd_by_id_token_fd in 7.1.8, or 12 bytes in 6.12/6.6.
+SYSBPF_ATTR("map_get_fd_by_id", 16, "next_id", "-", "7.1.8 :1713 / 6.12 :1639 / 6.6 :1538")
+
+#undef SYSBPF_ATTR

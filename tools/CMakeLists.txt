@@ -1,0 +1,6 @@
+add_subdirectory(ebpf-opt)
+add_subdirectory(ebpf-compile)
+add_subdirectory(ebpf-schema-check)
+if(BPF_MLIR_BUILD_CAPI)
+  add_subdirectory(bpf-mlir-capi-smoke)
+endif()

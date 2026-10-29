@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.maps: missing or non-string \"symbol\""
+}

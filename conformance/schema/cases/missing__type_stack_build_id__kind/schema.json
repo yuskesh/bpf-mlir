@@ -1,0 +1,78 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 32,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "stack_trace",
+        "max_entries": 64,
+        "note": "Build-ID user stack of depth 16, with bpf_stack_build_id elements",
+        "record": "",
+        "symbol": "st_b",
+        "value": {
+          "count": 16,
+          "element": {},
+          "kind": "array"
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 8,
+        "note": "Indices 0/2/6 hold u_ip/f_ip/k_ip IDs; indices 3/5/7 hold counts, matching the C user-stack fixture",
+        "record": "",
+        "symbol": "out",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": true
+        }
+      }
+    ],
+    "programs": [
+      {
+        "arch": "x86_64",
+        "attach_target": "target",
+        "binary_sha256": "1c52e2ac4ea5714c67e8691c8991a35e9d64629049bdea16ba69df59cdb084bf",
+        "kind": "uprobe",
+        "maps": [
+          "st_b",
+          "out"
+        ],
+        "name": "u_bid",
+        "note": "Fixture target entry; binary_sha256 identifies fixture_fp, not checked by the runner",
+        "params": []
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

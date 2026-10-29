@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "extra",
+      "field": "missing_in_elf",
+      "declared": "hash",
+      "elf": ""
+    }
+  ]
+}

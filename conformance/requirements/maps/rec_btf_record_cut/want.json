@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "",
+      "field": "format",
+      "declared": "the ELF BTF cannot be read for the record check: the .BTF is corrupt: a type record (kind 15, vlen 1) runs past the type section (offset 1212)",
+      "elf": ""
+    }
+  ]
+}

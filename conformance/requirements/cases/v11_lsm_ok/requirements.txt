@@ -1,0 +1,8 @@
+ebpf-requirements 11
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	l	lsm	29
+attach	l	trace_lsm	socket_bind
+farg	l	0	socket
+farg	l	1	-
+farg	l	2	i32
+btf	int

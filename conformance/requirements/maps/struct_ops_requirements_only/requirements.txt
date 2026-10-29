@@ -1,0 +1,19 @@
+ebpf-requirements 11
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	test_1	struct_ops	27
+program	test_2	struct_ops	27
+map	dummy_ops	struct_ops	26	u32	-	1	0
+attach	test_1	trace_struct_ops	dummy_ops
+structop	test_1	bpf_dummy_ops	test_1
+retsig	test_1	1	i32
+farg	test_1	0	bpf_dummy_ops_state
+attach	test_2	trace_struct_ops	dummy_ops
+structop	test_2	bpf_dummy_ops	test_2
+retsig	test_2	5	i32
+farg	test_2	0	bpf_dummy_ops_state
+farg	test_2	1	i32
+farg	test_2	2	u16
+farg	test_2	3	u8
+farg	test_2	4	u64
+btf	func_proto
+btf	struct

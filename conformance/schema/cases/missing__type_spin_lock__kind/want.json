@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"val\" field \"lock\": missing or non-string \"kind\""
+}

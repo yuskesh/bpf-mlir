@@ -1,0 +1,3 @@
+# Invalid schema input must fail before any object is emitted.
+# RUN: not ebpf-schema-check %S/Inputs/invalid.json 2>&1 | FileCheck %s
+# CHECK: version

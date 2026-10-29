@@ -1,0 +1,99 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "Lock and two fields satisfying invariant a == b",
+        "record": "",
+        "symbol": "vals",
+        "value": {
+          "kind": "record_ref",
+          "symbol": "val"
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "",
+        "kind": "xdp",
+        "maps": [
+          "vals"
+        ],
+        "name": "prog",
+        "note": "Under the vals[0] lock, increment both a and b"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 4,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "lock",
+            "note": "struct bpf_spin_lock",
+            "offset": 0,
+            "type": {
+              "kind": "spin_lock",
+              "zz_unknown": 1
+            }
+          },
+          {
+            "expose": "int",
+            "name": "a",
+            "note": "",
+            "offset": 4,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "b",
+            "note": "",
+            "offset": 8,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 12,
+        "note": "Same layout as struct val in the C spin-lock fixture",
+        "required_through": "",
+        "size": 12,
+        "symbol": "val"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

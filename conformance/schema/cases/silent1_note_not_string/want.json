@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.maps: \"note\" must be a string"
+}

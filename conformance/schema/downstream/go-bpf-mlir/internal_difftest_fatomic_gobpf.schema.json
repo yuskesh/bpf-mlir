@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "C",
+        "id": 0,
+        "size": 32,
+        "min_size": 32,
+        "alignment": 8,
+        "required_through": "",
+        "note": "Go type C",
+        "fields": [
+          {
+            "name": "n",
+            "offset": 0,
+            "expose": "int",
+            "note": "Go field N",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          },
+          {
+            "name": "p",
+            "offset": 8,
+            "expose": "int",
+            "note": "Go field P",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          },
+          {
+            "name": "a",
+            "offset": 16,
+            "expose": "int",
+            "note": "Go field A",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "s",
+            "offset": 20,
+            "expose": "int",
+            "note": "Go field S",
+            "type": {
+              "kind": "int",
+              "bits": 32,
+              "signed": true,
+              "endianness": "little",
+              "alignment": 4
+            }
+          },
+          {
+            "name": "b",
+            "offset": 24,
+            "expose": "int",
+            "note": "Go field B",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "Delta",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Delta"
+      },
+      {
+        "symbol": "Shared",
+        "kind": "array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "C"
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Shared"
+      },
+      {
+        "symbol": "PerCPU",
+        "kind": "percpu_array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "C"
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Go var PerCPU"
+      },
+      {
+        "symbol": "Hsh",
+        "kind": "hash",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "C"
+        },
+        "max_entries": 4,
+        "flags": 0,
+        "record": "",
+        "note": "Go var Hsh"
+      }
+    ],
+    "programs": [
+      {
+        "name": "runProg",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "Delta",
+          "Shared",
+          "PerCPU",
+          "Hsh"
+        ],
+        "note": "Go func runProg"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

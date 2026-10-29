@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "global \"target_tgid\": section must be \"rodata\" or \"bss\", got \"data\""
+}

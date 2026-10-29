@@ -1,0 +1,18 @@
+{
+  "maps": [
+    {
+      "name": "outer",
+      "kind": "array_of_maps",
+      "key": "u32",
+      "value": "u32",
+      "max_entries": 3
+    },
+    {
+      "name": "out",
+      "kind": "array",
+      "key": "u32",
+      "value": "u64",
+      "max_entries": 3
+    }
+  ]
+}

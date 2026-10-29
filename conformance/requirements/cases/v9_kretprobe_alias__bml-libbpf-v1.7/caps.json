@@ -1,0 +1,111 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "bml-libbpf-v1.7",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "keep",
+      "enum64": "keep",
+      "func_global": "keep",
+      "type_tag": "keep"
+    }
+  },
+  "queries": {
+    "arch": {
+      "": {
+        "text": "x86_64"
+      }
+    },
+    "attach_targets": {
+      "raw_tp/rawtp:sched_switch": {
+        "value": true
+      },
+      "sk_skb_stream_verdict/map:sock": {
+        "value": true
+      }
+    },
+    "kernel_symbol": {
+      "__x64_do_sys_poll": {
+        "value": true
+      },
+      "do_sys_poll": {
+        "value": true
+      }
+    },
+    "struct_field": {
+      "pt_regs.ax/80/8": {
+        "diffs": []
+      }
+    },
+    "uprobe_binary": {
+      "u": {
+        "file": "../../bin/fixture"
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "cgroup_skb/cgroup_inet_ingress": {
+        "value": true
+      },
+      "sched_cls/tcx_ingress": {
+        "value": true
+      },
+      "sk_skb/sk_skb_stream_verdict": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "ctx_access": {
+      "cgroup_skb/cgroup_inet_ingress/__sk_buff.len/r/4": {
+        "value": true
+      },
+      "sched_cls/tcx_ingress/__sk_buff.mark/w/4": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {
+      "sockmap": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "cgroup_skb": {
+        "value": true
+      },
+      "kprobe": {
+        "value": true
+      },
+      "raw_tracepoint": {
+        "value": true
+      },
+      "sched_cls": {
+        "value": true
+      },
+      "sk_skb": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    },
+    "tcx": {
+      "": {
+        "value": true
+      }
+    }
+  }
+}

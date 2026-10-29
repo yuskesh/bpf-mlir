@@ -1,0 +1,91 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "note": "rec[0] contains N bytes of the child's comm",
+        "record": "",
+        "symbol": "rec",
+        "value": {
+          "kind": "record_ref",
+          "symbol": "ev"
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "sock/inet_sock_set_state",
+        "fields": [
+          {
+            "name": "daddr_v6",
+            "offset": 56,
+            "type": {
+              "elem": "u8",
+              "kind": "array",
+              "n": 16,
+              "zz_unknown": 1
+            }
+          }
+        ],
+        "kind": "tracepoint",
+        "maps": [
+          "rec"
+        ],
+        "name": "prog",
+        "note": "Tracepoint byte-array field contract"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 1,
+        "fields": [
+          {
+            "expose": "bytes",
+            "name": "comm",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "count": 16,
+              "element": {
+                "alignment": 1,
+                "bits": 8,
+                "endianness": "little",
+                "kind": "int",
+                "signed": false
+              },
+              "kind": "array"
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 16,
+        "note": "Copy the child's comm",
+        "required_through": "",
+        "size": 16,
+        "symbol": "ev"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "record:d3",
+      "field": "record",
+      "declared": "size=48;xx:0:u32;o:8:record:outer;",
+      "elf": "size=48;x:0:u32;o:8:record:outer;"
+    }
+  ]
+}

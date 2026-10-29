@@ -1,0 +1,40 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "attach_unknown",
+      "program": "on_fork",
+      "name": "sched_process_fork",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "arg_nullable_unknown",
+      "program": "on_fork",
+      "name": "sched_process_fork",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "arg_nullable_unknown",
+      "program": "on_fork",
+      "name": "sched_process_fork",
+      "id": 1,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfield_unknown",
+      "program": "on_fork",
+      "name": "task_struct.pid (i32)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kfield_unknown",
+      "program": "on_fork",
+      "name": "task_struct.tgid (i32)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

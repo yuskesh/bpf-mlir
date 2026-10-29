@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": fields array type needs elem u8 / i8 and integer n from 1 to 64"
+}

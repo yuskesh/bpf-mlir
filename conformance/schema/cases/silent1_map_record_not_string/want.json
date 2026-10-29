@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.maps: \"record\" must be a string"
+}

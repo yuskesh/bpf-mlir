@@ -1,0 +1,116 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "kind": "ringbuf",
+        "max_entries": 4096,
+        "note": "Ring buffer for events",
+        "record": "ev",
+        "symbol": "events"
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "syscalls/sys_enter_execve",
+        "fields": [
+          {
+            "name": "argv",
+            "offset": 24,
+            "type": {
+              "kind": "user_str_array",
+              "zz_unknown": 1
+            }
+          }
+        ],
+        "kind": "tracepoint",
+        "maps": [],
+        "name": "prog",
+        "note": "Typed argv contract"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "expose": "int",
+            "name": "tag",
+            "note": "",
+            "offset": 0,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "pad",
+            "note": "",
+            "offset": 4,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "expose": "int",
+            "name": "status",
+            "note": "Raw probe_read_user_str status",
+            "offset": 8,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "expose": "str",
+            "name": "s",
+            "note": "User string, NUL-terminated and followed by zeros",
+            "offset": 16,
+            "type": {
+              "count": 16,
+              "element": {
+                "alignment": 1,
+                "bits": 8,
+                "endianness": "little",
+                "kind": "int",
+                "signed": false
+              },
+              "kind": "array"
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 32,
+        "note": "Same layout as struct ev in the C user-string fixture",
+        "required_through": "",
+        "size": 32,
+        "symbol": "ev"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

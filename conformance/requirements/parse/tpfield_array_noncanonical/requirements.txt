@@ -1,0 +1,6 @@
+ebpf-requirements 17
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	t	tracepoint	5
+attach	t	trace_tp	sock/inet_sock_set_state
+tpfield	t	daddr	36	4	[04]u8
+btf	int

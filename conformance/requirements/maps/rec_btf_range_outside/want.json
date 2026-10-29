@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "",
+      "field": "format",
+      "declared": "the ELF BTF cannot be read for the record check: the .BTF is corrupt: the header (length 24, types 0+1236, strings 1236+1579) is outside the 1579-byte section",
+      "elf": ""
+    }
+  ]
+}

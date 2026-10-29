@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "btf_feature",
+      "program": "",
+      "name": "func_global",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "btf_feature_unknown",
+      "program": "",
+      "name": "loader rewrites",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "attach",
+      "program": "m",
+      "name": "bpf_modify_return_test",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "r16",
+      "field": "global",
+      "declared": "rodata u16",
+      "elf": "global r16: the DATASEC offset is 6 (raw 4 + .rel.BTF; the ELF symbol is at 2)"
+    }
+  ]
+}

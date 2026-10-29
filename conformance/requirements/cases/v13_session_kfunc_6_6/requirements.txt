@@ -1,0 +1,6 @@
+ebpf-requirements 13
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	s	kprobe	2
+attach	s	trace_kprobe_session	func:bpf_fentry_test1
+kfunc	s	bpf_session_is_return	bool	ptr:void
+btf	int

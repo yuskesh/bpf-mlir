@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "coverage": {
+    "programs": "complete",
+    "maps": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "core": {
+    "records": [
+      {
+        "symbol": "Stat",
+        "id": 0,
+        "size": 16,
+        "min_size": 16,
+        "alignment": 8,
+        "required_through": "bytes",
+        "note": "Mojo struct Stat",
+        "fields": [
+          {
+            "name": "packets",
+            "offset": 0,
+            "expose": "int",
+            "note": "Mojo field packets",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          },
+          {
+            "name": "bytes",
+            "offset": 8,
+            "expose": "int",
+            "note": "Mojo field bytes",
+            "type": {
+              "kind": "int",
+              "bits": 64,
+              "signed": false,
+              "endianness": "little",
+              "alignment": 8
+            }
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "symbol": "PerProto",
+        "kind": "percpu_array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "record_ref",
+          "symbol": "Stat"
+        },
+        "max_entries": 256,
+        "flags": 0,
+        "record": "Stat",
+        "note": "Mojo comptime PerProto"
+      },
+      {
+        "symbol": "Other",
+        "kind": "percpu_array",
+        "key": {
+          "kind": "int",
+          "bits": 32,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 4
+        },
+        "value": {
+          "kind": "int",
+          "bits": 64,
+          "signed": false,
+          "endianness": "little",
+          "alignment": 8
+        },
+        "max_entries": 1,
+        "flags": 0,
+        "record": "",
+        "note": "Mojo comptime Other"
+      }
+    ],
+    "programs": [
+      {
+        "name": "protostat",
+        "kind": "xdp",
+        "attach_target": "",
+        "maps": [
+          "PerProto",
+          "Other"
+        ],
+        "note": "Mojo def protostat"
+      }
+    ]
+  },
+  "telemetry": {
+    "clocks": [],
+    "value_maps": [],
+    "bounds_sets": [],
+    "signals": []
+  },
+  "extensions": {}
+}

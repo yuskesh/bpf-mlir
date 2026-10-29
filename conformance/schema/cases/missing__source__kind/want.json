@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\" attribute \"process.pid\" source: missing or non-string \"kind\""
+}

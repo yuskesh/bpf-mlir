@@ -1,0 +1,7 @@
+ebpf-requirements 8
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	c	tracing	26
+attach	c	trace_fexit	do_sys_poll
+retsig	c	1	i32
+farg	c	0	task_struct
+btf	int

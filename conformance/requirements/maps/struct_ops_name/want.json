@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "g13cc",
+      "field": "struct_ops",
+      "declared": "type=tcp_congestion_ops;name=other;cong_avoid=g13_cong_avoid;init=g13_init;ssthresh=g13_ssthresh;undo_cwnd=g13_undo_cwnd;",
+      "elf": "type=tcp_congestion_ops;name=g13cc;cong_avoid=g13_cong_avoid;init=g13_init;ssthresh=g13_ssthresh;undo_cwnd=g13_undo_cwnd;"
+    }
+  ]
+}

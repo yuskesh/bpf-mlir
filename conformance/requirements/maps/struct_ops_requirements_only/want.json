@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "dummy_ops",
+      "field": "format",
+      "declared": "struct_ops is declared, but only the requirements section was given (the struct_ops check needs the ELF)",
+      "elf": ""
+    }
+  ]
+}

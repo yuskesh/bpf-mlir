@@ -1,0 +1,11 @@
+{
+  "result": "map_mismatch",
+  "problems": [
+    {
+      "map": "trie",
+      "field": "flags_undeclared",
+      "declared": "",
+      "elf": "1"
+    }
+  ]
+}

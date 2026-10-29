@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "farg_unknown",
+      "program": "f",
+      "name": "wake_up_new_task",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

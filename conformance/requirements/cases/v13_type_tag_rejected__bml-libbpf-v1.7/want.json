@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "btf_feature",
+      "program": "",
+      "name": "type_tag",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

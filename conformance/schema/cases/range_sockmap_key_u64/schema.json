@@ -1,0 +1,77 @@
+{
+  "core": {
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 8,
+        "note": "Indices 0/1/2 hold last skb len, receiving local_port and invocation count",
+        "record": "",
+        "symbol": "seen",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "sockmap",
+        "max_entries": 2,
+        "note": "sk_skb attach target; userspace supplies the receiving socket FD",
+        "record": "",
+        "symbol": "socks",
+        "value": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "socks",
+        "kind": "sk_skb",
+        "maps": [
+          "seen",
+          "socks"
+        ],
+        "name": "sv",
+        "note": "Read sk_skb stream_verdict len/local_port and return drop/pass"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

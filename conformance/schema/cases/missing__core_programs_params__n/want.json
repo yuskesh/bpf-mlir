@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": params n must be an integer \u003e= 1 (the argument number, 1-based)"
+}

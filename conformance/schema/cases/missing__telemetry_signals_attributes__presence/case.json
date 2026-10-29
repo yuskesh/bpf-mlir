@@ -1,0 +1,4 @@
+{
+  "key": "presence",
+  "path": "telemetry.signals[].attributes[]"
+}

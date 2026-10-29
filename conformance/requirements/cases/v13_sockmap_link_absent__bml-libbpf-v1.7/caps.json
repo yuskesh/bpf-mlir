@@ -1,0 +1,54 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "bml-libbpf-v1.7",
+    "kprobe_alias_prefix": {
+      "x86_64": ""
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "keep",
+      "enum64": "keep",
+      "func_global": "keep",
+      "type_tag": "keep"
+    }
+  },
+  "queries": {
+    "attach_targets": {
+      "sk_skb_stream_verdict/map:sock": {
+        "value": true
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "sk_skb/sk_skb_stream_verdict": {
+        "value": false
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {
+      "sockmap": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "sk_skb": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

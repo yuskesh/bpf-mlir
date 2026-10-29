@@ -1,0 +1,9 @@
+import os
+import lit.formats
+
+config.name = "bpf-mlir source distribution"
+config.test_format = lit.formats.ShTest(execute_external=False)
+config.suffixes = [".test"]
+config.test_source_root = "@CMAKE_CURRENT_SOURCE_DIR@"
+config.test_exec_root = "@CMAKE_CURRENT_BINARY_DIR@"
+config.environment["PATH"] = "@CMAKE_BINARY_DIR@/bin:@LLVM_TOOLS_BINARY_DIR@:" + os.environ.get("PATH", "")

@@ -1,0 +1,15 @@
+{
+  "name": "cilium-v0.22",
+  "kprobe_alias_prefix": {
+    "x86_64": "__x64_"
+  },
+  "uprobe_reopens_path": true,
+  "core_poisons_missing_field": true,
+  "btf_rewrite": {
+    "decl_tag": "rewrite",
+    "enum64": "rewrite",
+    "func_global": "rewrite",
+    "type_tag": "rewrite"
+  }
+}
+{}

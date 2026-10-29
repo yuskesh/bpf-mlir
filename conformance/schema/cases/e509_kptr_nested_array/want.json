@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "record \"outer\" field \"in\": a record with a kptr field cannot be an array element"
+}

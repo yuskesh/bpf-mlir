@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"tcp_sock\": missing or non-array \"fields\""
+}

@@ -1,0 +1,6 @@
+ebpf-requirements 8
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	k	kprobe	2
+attach	k	kretprobe	do_sys_poll
+arch	k	x86_64
+btf	int

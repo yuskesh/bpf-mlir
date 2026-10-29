@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"g12cc\" struct_ops: missing or non-string \"name\""
+}

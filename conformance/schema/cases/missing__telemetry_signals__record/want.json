@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec\": missing or non-string \"record\""
+}

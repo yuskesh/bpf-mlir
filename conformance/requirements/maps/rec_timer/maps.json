@@ -1,0 +1,48 @@
+{
+  "records": {
+    "val": {
+      "size": 56,
+      "members": [
+        {
+          "name": "t",
+          "offset": 0,
+          "type": "bpf_timer"
+        },
+        {
+          "name": "count",
+          "offset": 16,
+          "type": "u64"
+        },
+        {
+          "name": "st_init",
+          "offset": 24,
+          "type": "i64"
+        },
+        {
+          "name": "st_cb",
+          "offset": 32,
+          "type": "i64"
+        },
+        {
+          "name": "st_start",
+          "offset": 40,
+          "type": "i64"
+        },
+        {
+          "name": "armed",
+          "offset": 48,
+          "type": "u64"
+        }
+      ]
+    }
+  },
+  "maps": [
+    {
+      "name": "vals",
+      "kind": "array",
+      "key": "u32",
+      "value": "record:val",
+      "max_entries": 1
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "format": "ebpf-caps 10",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none"
+  },
+  "queries": {
+    "arch": {
+      "": {
+        "text": "x86_64"
+      }
+    },
+    "attach_targets": {
+      "raw_tp/rawtp:sched_switch": {
+        "value": true
+      },
+      "sk_skb_stream_verdict/map:sock": {
+        "value": true
+      }
+    },
+    "kernel_symbol": {
+      "__x64_do_sys_poll": {
+        "value": false
+      },
+      "do_sys_poll": {
+        "value": true
+      }
+    },
+    "struct_field": {
+      "pt_regs.ax/80/8": {
+        "diffs": []
+      }
+    },
+    "uprobe_binary": {
+      "u": {
+        "file": "../../bin/fixture"
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "cgroup_skb/cgroup_inet_ingress": {
+        "value": false
+      },
+      "sched_cls/tcx_ingress": {
+        "value": true
+      },
+      "sk_skb/sk_skb_stream_verdict": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "int": {
+        "value": true
+      }
+    },
+    "ctx_access": {
+      "cgroup_skb/cgroup_inet_ingress/__sk_buff.len/r/4": {
+        "value": true
+      },
+      "sched_cls/tcx_ingress/__sk_buff.mark/w/4": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {
+      "sockmap": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "cgroup_skb": {
+        "value": true
+      },
+      "kprobe": {
+        "value": true
+      },
+      "raw_tracepoint": {
+        "value": true
+      },
+      "sched_cls": {
+        "value": true
+      },
+      "sk_skb": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    },
+    "tcx": {
+      "": {
+        "value": true
+      }
+    }
+  }
+}

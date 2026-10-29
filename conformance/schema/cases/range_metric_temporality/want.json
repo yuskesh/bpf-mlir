@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "signal \"exec_total\": metric temporality must be \"delta\" or \"cumulative\", got \"sometimes\""
+}

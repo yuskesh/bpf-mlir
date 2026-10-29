@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "program \"prog\": a sched_cls program needs attach_target \"ingress\" or \"egress\" (the tcx direction), got \"sideways\""
+}
