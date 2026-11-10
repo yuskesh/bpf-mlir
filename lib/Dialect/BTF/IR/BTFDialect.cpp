@@ -52,6 +52,10 @@ StructOp resolve(RefAttr ref, Operation *from) {
 std::optional<uint64_t> mlir::btf::sizeInBits(Attribute type, Operation *from) {
   if (auto i = dyn_cast<IntAttr>(type))
     return i.getBits();
+  if (auto e = dyn_cast<EnumAttr>(type))
+    return e.getBits();
+  if (isa<ULongAttr>(type)) // ENUM64, 8 bytes.
+    return 64;
   if (isa<PtrAttr>(type))
     return 64;
   if (auto c = dyn_cast<ConstAttr>(type))
@@ -73,7 +77,7 @@ std::optional<uint64_t> mlir::btf::sizeInBits(Attribute type, Operation *from) {
 LogicalResult mlir::btf::verifyType(Attribute type, Operation *from,
                                     StringRef what) {
   auto err = [&]() { return from->emitOpError() << what << ": "; };
-  if (isa<IntAttr>(type))
+  if (isa<IntAttr, EnumAttr, ULongAttr>(type))
     return success();
   if (auto p = dyn_cast<PtrAttr>(type)) {
     if (isa<VoidAttr>(p.getPointee()))
@@ -142,6 +146,13 @@ LogicalResult IntAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   if (bits != 8 && bits != 16 && bits != 32 && bits != 64)
     return emitError() << "integer width must be 8 / 16 / 32 / 64 bits, got "
                        << bits;
+  return success();
+}
+
+LogicalResult EnumAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               uint64_t bits) {
+  if (bits != 8 && bits != 16 && bits != 32 && bits != 64)
+    return emitError() << "enum width must be 8 / 16 / 32 / 64 bits, got " << bits;
   return success();
 }
 

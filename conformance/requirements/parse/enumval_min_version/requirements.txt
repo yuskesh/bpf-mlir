@@ -1,0 +1,5 @@
+ebpf-requirements 19
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	a	struct_ops	27
+program	b	struct_ops	27
+enumval	a	scx_dsq_id_flags	SCX_DSQ_LOCAL	0x8000000000000002

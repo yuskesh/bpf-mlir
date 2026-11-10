@@ -1,0 +1,412 @@
+{
+  "core": {
+    "globals": [
+      {
+        "name": "fifo_sched",
+        "section": "rodata",
+        "type": {
+          "alignment": 1,
+          "bits": 8,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "name": "vtime_now",
+        "section": "bss",
+        "type": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "name": "uei",
+        "record": "user_exit_info",
+        "section": "data"
+      }
+    ],
+    "kernel_types": [
+      {
+        "fields": [
+          {
+            "name": "scx",
+            "type": {
+              "kind": "struct",
+              "struct": "sched_ext_entity"
+            }
+          }
+        ],
+        "name": "task_struct"
+      },
+      {
+        "fields": [
+          {
+            "name": "slice",
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "name": "dsq_vtime",
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "name": "weight",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "name": "sched_ext_entity"
+      },
+      {
+        "fields": [
+          {
+            "name": "kind",
+            "type": {
+              "bits": 32,
+              "kind": "enum",
+              "zz_unknown": 1
+            }
+          },
+          {
+            "name": "exit_code",
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "name": "reason",
+            "type": {
+              "kind": "strptr"
+            }
+          },
+          {
+            "name": "msg",
+            "type": {
+              "kind": "strptr"
+            }
+          }
+        ],
+        "name": "scx_exit_info"
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "percpu_array",
+        "max_entries": 2,
+        "note": "[local, global] queueing counts, as scx_simple.bpf.c",
+        "record": "",
+        "symbol": "stats",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      },
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "struct_ops",
+        "max_entries": 1,
+        "record": "",
+        "struct_ops": {
+          "flags": 8,
+          "name": "simple",
+          "ops": [
+            {
+              "member": "select_cpu",
+              "program": "simple_select_cpu"
+            },
+            {
+              "member": "enqueue",
+              "program": "simple_enqueue"
+            },
+            {
+              "member": "dispatch",
+              "program": "simple_dispatch"
+            },
+            {
+              "member": "running",
+              "program": "simple_running"
+            },
+            {
+              "member": "stopping",
+              "program": "simple_stopping"
+            },
+            {
+              "member": "enable",
+              "program": "simple_enable"
+            },
+            {
+              "member": "init",
+              "program": "simple_init"
+            },
+            {
+              "member": "exit",
+              "program": "simple_exit"
+            }
+          ],
+          "timeout_ms": 5000,
+          "type": "sched_ext_ops"
+        },
+        "symbol": "simple_ops"
+      }
+    ],
+    "programs": [
+      {
+        "args": [
+          "task_struct",
+          {
+            "alignment": 4,
+            "bits": 32,
+            "endianness": "little",
+            "kind": "int",
+            "signed": true
+          },
+          {
+            "alignment": 8,
+            "bits": 64,
+            "endianness": "little",
+            "kind": "int",
+            "signed": false
+          }
+        ],
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [
+          "stats"
+        ],
+        "name": "simple_select_cpu",
+        "nargs": 3,
+        "ret": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": true
+        }
+      },
+      {
+        "args": [
+          "task_struct",
+          {
+            "alignment": 8,
+            "bits": 64,
+            "endianness": "little",
+            "kind": "int",
+            "signed": false
+          }
+        ],
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [
+          "stats"
+        ],
+        "name": "simple_enqueue",
+        "nargs": 2,
+        "ret": "void"
+      },
+      {
+        "args": [
+          null,
+          null
+        ],
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [],
+        "name": "simple_dispatch",
+        "nargs": 2,
+        "ret": "void"
+      },
+      {
+        "args": [
+          "task_struct"
+        ],
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [],
+        "name": "simple_running",
+        "nargs": 1,
+        "ret": "void"
+      },
+      {
+        "args": [
+          "task_struct",
+          null
+        ],
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [],
+        "name": "simple_stopping",
+        "nargs": 2,
+        "ret": "void"
+      },
+      {
+        "args": [
+          "task_struct"
+        ],
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [],
+        "name": "simple_enable",
+        "nargs": 1,
+        "ret": "void"
+      },
+      {
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [],
+        "name": "simple_init",
+        "nargs": 0,
+        "ret": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": true
+        },
+        "sleepable": true
+      },
+      {
+        "args": [
+          "scx_exit_info"
+        ],
+        "attach_target": "simple_ops",
+        "kind": "struct_ops",
+        "maps": [],
+        "name": "simple_exit",
+        "nargs": 1,
+        "ret": "void"
+      }
+    ],
+    "records": [
+      {
+        "alignment": 8,
+        "fields": [
+          {
+            "name": "kind",
+            "offset": 0,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "name": "exit_cpu",
+            "offset": 4,
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "name": "exit_code",
+            "offset": 8,
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          },
+          {
+            "name": "reason",
+            "offset": 16,
+            "type": {
+              "count": 128,
+              "element": {
+                "alignment": 1,
+                "bits": 8,
+                "endianness": "little",
+                "kind": "int",
+                "signed": true
+              },
+              "kind": "array"
+            }
+          },
+          {
+            "name": "msg",
+            "offset": 144,
+            "type": {
+              "count": 1024,
+              "element": {
+                "alignment": 1,
+                "bits": 8,
+                "endianness": "little",
+                "kind": "int",
+                "signed": true
+              },
+              "kind": "array"
+            }
+          }
+        ],
+        "id": 0,
+        "min_size": 1168,
+        "note": "The C struct user_exit_info from the sched_ext user exit-info header, without the dump buffer",
+        "required_through": "",
+        "size": 1168,
+        "symbol": "user_exit_info"
+      }
+    ]
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

@@ -1,5 +1,5 @@
 {
-  "format": "ebpf-caps 10",
+  "format": "ebpf-caps 20",
   "loader": {
     "name": "cilium-v0.22",
     "kprobe_alias_prefix": {
@@ -17,7 +17,12 @@
     "sockmap_attach": "link",
     "lsm_cgroup_load": "none",
     "fsession_load": "none",
-    "ksyscall_attach": "none"
+    "ksyscall_attach": "none",
+    "hidden_data_vars": "no_mmap",
+    "typed_ksym": "kallsyms_addr",
+    "kconfig": "strong_only",
+    "arena_cast": "corrupt",
+    "arena_premmap": "none"
   },
   "queries": {
     "attach_targets": {

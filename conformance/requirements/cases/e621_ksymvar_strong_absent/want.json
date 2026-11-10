@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "ksymvar",
+      "program": "",
+      "name": "__preempt_count",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

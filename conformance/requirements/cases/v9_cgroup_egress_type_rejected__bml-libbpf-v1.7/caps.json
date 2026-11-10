@@ -1,5 +1,5 @@
 {
-  "format": "ebpf-caps 10",
+  "format": "ebpf-caps 20",
   "probed_as": {
     "uid": 0,
     "cap_eff": "000001ffffffffff"
@@ -16,7 +16,9 @@
       "enum64": "keep",
       "func_global": "keep",
       "type_tag": "keep"
-    }
+    },
+    "arena_cast": "preserve",
+    "arena_premmap": "create_then_mmap"
   },
   "queries": {},
   "privileged_queries": {

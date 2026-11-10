@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "fibflags_unknown",
+      "program": "fwd",
+      "name": "none (mask 0)",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "fibflags_unknown",
+      "program": "fwd",
+      "name": "direct (mask 1)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

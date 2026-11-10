@@ -58,5 +58,10 @@ EBPF_MAP_KIND(Xskmap,         "xskmap",           true)
 EBPF_MAP_KIND(DevmapHash,     "devmap_hash",      true)  // Userspace supplies cgroup FDs. Programs use dedicated ancestry helpers only;
 // BTF has untyped key_size/value_size.
 EBPF_MAP_KIND(CgroupArray,    "cgroup_array",     true)
+// arena is shared memory of max_entries pages at the user address
+// map_extra, with no key/value. The handle is !ebpf.map<"arena", none, none>
+// (MLIR none for both, like keyless maps' key), used only to derive the
+// window base; checkMapKind rejects the ordinary map.* operations.
+EBPF_MAP_KIND(Arena,          "arena",            true)
 
 #undef EBPF_MAP_KIND

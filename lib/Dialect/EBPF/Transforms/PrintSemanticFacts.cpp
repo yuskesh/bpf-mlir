@@ -455,7 +455,7 @@ struct Printer {
       if (!st)
         return std::nullopt;
       std::string err;
-      FailureOr<RecordTemplate> t = resolveRecordTemplate(sc, st, indexTemplate(field), err);
+      FailureOr<RecordTemplate> t = resolveRecordTemplate(sc, st, indexTemplate(field), err, /*recordLeaf=*/true);
       if (failed(t))
         return std::nullopt;
       SmallVector<uint64_t, 2> counts;

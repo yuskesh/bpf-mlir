@@ -1,0 +1,8 @@
+ebpf-requirements 31
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	tracing	26
+helper	p	d_path	147
+attach	p	trace_fentry	vfs_getattr
+farg	p	0	path
+helper_target	p	d_path	147	trace_fentry	vfs_getattr	0	path
+helper_target	p	d_path	147	trace_fentry	vfs_getattr	0	path

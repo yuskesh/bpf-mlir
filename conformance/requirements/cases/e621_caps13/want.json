@@ -1,0 +1,75 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "typed_ksym_loader_unknown",
+      "program": "",
+      "name": "__preempt_count",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "ksymvar_unknown",
+      "program": "",
+      "name": "__preempt_count",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "typed_ksym_loader_unknown",
+      "program": "",
+      "name": "cpufreq_cpu_data",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "ksymvar_unknown",
+      "program": "",
+      "name": "cpufreq_cpu_data",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "typed_ksym_loader_unknown",
+      "program": "",
+      "name": "cpufreq_update_util_data",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "ksymvar_unknown",
+      "program": "",
+      "name": "cpufreq_update_util_data",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kconfig_loader_unknown",
+      "program": "",
+      "name": "CONFIG_NO_HZ_IDLE",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kconfig_unknown",
+      "program": "",
+      "name": "CONFIG_NO_HZ_IDLE",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kconfig_loader_unknown",
+      "program": "",
+      "name": "CONFIG_NR_CPUS",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kconfig_unknown",
+      "program": "",
+      "name": "CONFIG_NR_CPUS",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

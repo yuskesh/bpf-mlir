@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"e492ops\": struct_ops \"dispatch_max_batch\" 2147483648 \u003e 2147483647 (sched_ext_ops.dispatch_max_batch — kernel/sched/ext.c bpf_scx_init_member: \u003e INT_MAX is -E2BIG (7.1.8:7579, 6.12.111:5700; 7.3.1 ext/ext.c:8182))"
+}

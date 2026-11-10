@@ -1,0 +1,179 @@
+{
+  "core": {
+    "kconfig": [
+      {
+        "name": "CONFIG_NO_HZ_IDLE",
+        "type": "bool",
+        "weak": true
+      },
+      {
+        "name": "CONFIG_BPF_SYSCALL",
+        "type": "tristate",
+        "weak": true
+      },
+      {
+        "name": "CONFIG_DEFAULT_HOSTNAME0",
+        "type": "char",
+        "weak": true
+      },
+      {
+        "name": "CONFIG_NR_CPUS",
+        "type": "i32"
+      },
+      {
+        "name": "CONFIG_HZ",
+        "type": "u64",
+        "weak": true
+      }
+    ],
+    "kernel_types": [
+      {
+        "fields": [
+          {
+            "name": "pid",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          }
+        ],
+        "name": "task_struct"
+      },
+      {
+        "fields": [
+          {
+            "name": "cur",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          },
+          {
+            "name": "max",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "name": "cpufreq_policy"
+      },
+      {
+        "fields": [
+          {
+            "name": "x",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": true
+            }
+          }
+        ],
+        "name": "update_util_data"
+      }
+    ],
+    "ksyms": [
+      {
+        "name": "cpufreq_cpu_data",
+        "per_cpu": true,
+        "slot": {
+          "struct": "cpufreq_policy"
+        }
+      },
+      {
+        "name": "cpufreq_update_util_data",
+        "per_cpu": true,
+        "slot": {
+          "kind": "ptr",
+          "struct": "update_util_data"
+        },
+        "weak": true
+      },
+      {
+        "name": "hw_pressure",
+        "per_cpu": true,
+        "slot": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "weak": true
+      },
+      {
+        "name": "__preempt_count",
+        "per_cpu": true,
+        "slot": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "weak": true
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 1,
+        "symbol": "out",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "args": [
+          "task_struct",
+          "task_struct"
+        ],
+        "attach_target": "sched_process_fork",
+        "kind": "tp_btf",
+        "maps": [
+          "out"
+        ],
+        "name": "on_fork"
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

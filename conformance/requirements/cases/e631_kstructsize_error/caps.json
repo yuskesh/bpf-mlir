@@ -1,0 +1,142 @@
+{
+  "format": "ebpf-caps 20",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none",
+    "hidden_data_vars": "no_mmap",
+    "typed_ksym": "kallsyms_addr",
+    "kconfig": "strong_only",
+    "arena_cast": "corrupt",
+    "arena_premmap": "none"
+  },
+  "queries": {
+    "kfunc_protos": {
+      "bpf_cpumask_and/bool(ptr:bpf_cpumask,ptr:cpumask,ptr:cpumask)": {
+        "diffs": []
+      },
+      "bpf_cpumask_clear_cpu/void(u32,ptr:bpf_cpumask)": {
+        "diffs": []
+      },
+      "bpf_cpumask_copy/void(ptr:bpf_cpumask,ptr:cpumask)": {
+        "diffs": []
+      },
+      "bpf_cpumask_empty/bool(ptr:cpumask)": {
+        "diffs": []
+      },
+      "bpf_cpumask_intersects/bool(ptr:cpumask,ptr:cpumask)": {
+        "diffs": []
+      },
+      "bpf_cpumask_set_cpu/void(u32,ptr:bpf_cpumask)": {
+        "diffs": []
+      },
+      "bpf_cpumask_test_and_clear_cpu/bool(u32,ptr:bpf_cpumask)": {
+        "diffs": []
+      },
+      "bpf_cpumask_test_cpu/bool(u32,ptr:cpumask)": {
+        "diffs": []
+      }
+    },
+    "kstruct_size": {
+      "bpf_cpumask": {
+        "error": "struct bpf_cpumask is not a STRUCT"
+      }
+    }
+  },
+  "privileged_queries": {
+    "btf_feature": {
+      "array": {
+        "value": true
+      },
+      "const": {
+        "value": true
+      },
+      "datasec": {
+        "value": true
+      },
+      "func": {
+        "value": true
+      },
+      "func_global": {
+        "value": true
+      },
+      "func_proto": {
+        "value": true
+      },
+      "int": {
+        "value": true
+      },
+      "ptr": {
+        "value": true
+      },
+      "struct": {
+        "value": true
+      },
+      "var": {
+        "value": true
+      }
+    },
+    "helper": {
+      "syscall/map_lookup_elem": {
+        "value": true
+      }
+    },
+    "kfunc_loads": {
+      "[\"kfunc-v1\",\"bpf_cpumask_and\",\"bool\",[\"ptr:bpf_cpumask\",\"ptr:cpumask\",\"ptr:cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_cpumask_clear_cpu\",\"void\",[\"u32\",\"ptr:bpf_cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_cpumask_copy\",\"void\",[\"ptr:bpf_cpumask\",\"ptr:cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_cpumask_empty\",\"bool\",[\"ptr:cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_cpumask_intersects\",\"bool\",[\"ptr:cpumask\",\"ptr:cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_cpumask_set_cpu\",\"void\",[\"u32\",\"ptr:bpf_cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_cpumask_test_and_clear_cpu\",\"bool\",[\"u32\",\"ptr:bpf_cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      },
+      "[\"kfunc-v1\",\"bpf_cpumask_test_cpu\",\"bool\",[\"u32\",\"ptr:cpumask\"],\"syscall\",31,\"syscall\",\"syscall\",16,\"-\",\"none\",\"\",\"{\\\"Program\\\":\\\"\\\",\\\"AttachType\\\":\\\"syscall\\\",\\\"Target\\\":\\\"none\\\",\\\"Args\\\":null,\\\"RetNargs\\\":-1,\\\"RetType\\\":\\\"\\\",\\\"Arch\\\":\\\"\\\",\\\"CtxFields\\\":null,\\\"KprobeArgs\\\":null,\\\"BinarySHA256\\\":\\\"\\\",\\\"UprobeArgs\\\":null,\\\"FArgs\\\":null,\\\"Generic\\\":true,\\\"TargetKind\\\":\\\"none\\\",\\\"TargetValue\\\":\\\"\\\",\\\"TPBufferType\\\":\\\"\\\",\\\"TPFields\\\":null,\\\"ExtNargs\\\":-1,\\\"ExtRet\\\":\\\"\\\",\\\"ExtArgs\\\":null,\\\"StructOpStruct\\\":\\\"\\\",\\\"StructOpMember\\\":\\\"\\\",\\\"MultiN\\\":0,\\\"MTargets\\\":null,\\\"USDTSem\\\":\\\"\\\",\\\"USDTArgs\\\":null,\\\"SysArgs\\\":null,\\\"MTargetArgs\\\":null}\"]": {
+        "value": true
+      }
+    },
+    "map_type": {
+      "array": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "syscall": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

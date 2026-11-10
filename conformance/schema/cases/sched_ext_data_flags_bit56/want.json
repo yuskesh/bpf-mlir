@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"e492ops\": struct_ops \"flags\" 72057594037927944 sets bits 0xff00000000000000 (sched_ext_ops.flags — kernel/sched/ext.c bpf_scx_init_member: bits outside SCX_OPS_ALL_FLAGS are -EINVAL (7.1.8:7584); __SCX_OPS_INTERNAL_MASK 0xff \u003c\u003c 56 is outside it on every kernel (7.1.8 ext_internal.h:202))"
+}

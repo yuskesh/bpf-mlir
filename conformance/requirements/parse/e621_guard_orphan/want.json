@@ -1,0 +1,5 @@
+{
+  "accept": false,
+  "row": "kfield",
+  "rule": "guard_orphan"
+}

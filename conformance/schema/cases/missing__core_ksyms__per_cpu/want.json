@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "ksym \"cpufreq_cpu_data\": needs \"per_cpu\": true (a per-CPU kernel variable)"
+}

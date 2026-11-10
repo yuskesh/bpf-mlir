@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "ksym \"cpufreq_cpu_data\": a ptr slot needs a \"struct\" name"
+}

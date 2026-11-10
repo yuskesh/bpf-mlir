@@ -4,14 +4,21 @@
 // dialects; schema and cross-stage checks remain in their owning passes.
 //===----------------------------------------------------------------------===//
 #include "bpf-mlir/Dialect/EBPF/IR/EBPFDialect.h"
-#include "bpf-mlir/Support/ProgramKinds.h"
-#include "bpf-mlir/Support/LocalStorage.h"
-#include "bpf-mlir/Support/KeylessMaps.h"
-#include "bpf-mlir/Support/Usdt.h"
-#include "bpf-mlir/Support/RejectedMapKinds.h"
 #include "bpf-mlir/Dialect/BPFABI/KernelABI.h"
+#include "bpf-mlir/Support/DPathTargets.h"
+#include "bpf-mlir/Support/KernelFieldPath.h"
+#include "bpf-mlir/Support/KeylessMaps.h"
+#include "bpf-mlir/Support/LocalStorage.h"
+#include "bpf-mlir/Support/LoopBudget.h"
+#include "bpf-mlir/Support/LoweringOnlyKfuncs.h"
+#include "bpf-mlir/Support/ProgramKinds.h"
+#include "bpf-mlir/Support/RejectedMapKinds.h"
+#include "bpf-mlir/Support/ScxContract.h"
+#include "bpf-mlir/Support/TraceFormat.h"
+#include "bpf-mlir/Support/Usdt.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/Matchers.h"
 #include "llvm/ADT/DenseSet.h"
@@ -29,6 +36,17 @@ using namespace mlir::ebpf;
 #include "bpf-mlir/Dialect/EBPF/IR/EBPFOpsTypes.cpp.inc"
 
 #include "bpf-mlir/Dialect/EBPF/IR/EBPFOpsInterfaces.cpp.inc"
+
+// an ebpf.timer.callback whose owners (the programs whose
+// set_callback names it) are all sched_ext_ops programs (struct_ops). Its body
+// is a top like an ebpf.func body: the ops whose acceptance depends on the
+// context (kfunc.call, the iterators, rcu.region, the kptr ops) close inside
+// it, and their kind, program type, sleepable and RCU rules are checked per
+// owner context by ebpf-verify-call-contexts / ebpf-verify-schema.
+static bool scxOwnedTimerCallback(Operation *op);
+// A top of the context-dependent ops: an ebpf.program, an ebpf.func or such a
+// callback.
+static bool isOpsTop(Operation *op) { return isa<ProgramOp, SubprogramOp>(op) || scxOwnedTimerCallback(op); }
 
 // program attach is a string or a multi-probe name array; omitted means neither.
 static ParseResult parseProgramAttach(OpAsmParser &parser, StringAttr &attach, ArrayAttr &attachList) {
@@ -64,6 +82,29 @@ static void printProgramAttach(OpAsmPrinter &p, Operation *, StringAttr attach, 
     llvm::interleaveComma(attachList, p, [&](Attribute a) { p.printAttributeWithoutType(a); });
     p << "]";
   }
+}
+// kfield.ptr's base is a kptr (as before, printed stripped) or a nonnull kref (printed in full). Any other type
+// keeps the parse error the single-constraint form gave (e603-scx-b1 N14).
+static ParseResult parseKFieldPtrBase(OpAsmParser &parser, Type &t) {
+  llvm::SMLoc loc = parser.getCurrentLocation();
+  Type full;
+  OptionalParseResult r = parser.parseOptionalType(full);
+  if (r.has_value()) {
+    if (failed(*r))
+      return failure();
+    if (!isa<KPtrType, KRefType>(full))
+      return parser.emitError(loc) << "invalid kind of type specified: expected ebpf.kptr, but found " << full;
+    t = full;
+    return success();
+  }
+  t = KPtrType::parse(parser);
+  return success(static_cast<bool>(t));
+}
+static void printKFieldPtrBase(OpAsmPrinter &p, Operation *, Type t) {
+  if (auto k = dyn_cast<KPtrType>(t))
+    p.printStrippedAttrOrType(k);
+  else
+    p << t;
 }
 
 #define GET_OP_CLASSES
@@ -269,7 +310,7 @@ LogicalResult verifyReservationUses(Region &region) {
       auto kc = dyn_cast<KFieldCopyOp>(inner); // Include kfield.copy into reservations; borrowed destinations are allowed.
       auto tc = dyn_cast<TpFieldCopyOp>(inner);
       if (isa<RingbufReserveOp, RingbufIfReservedOp, RingbufSubmitOp,
-              RingbufDiscardOp, RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, UserReadStrOp, UserReadOp, KernelReadStrOp,
+              RingbufDiscardOp, RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, CtxStackOp, KernelDPathOp, StrSnprintfOp, UserReadStrOp, UserCopyOp, UserCopyTaskOp, UserReadOp, KernelReadStrOp,
               RingbufReserveDynptrOp, RingbufSubmitDynptrOp, RingbufDiscardDynptrOp>(inner) || // Include dynptr reservation and consumption.
           (kc && kc.writesReservation()) || (tc && tc.writesReservation())) {
         bad = true;
@@ -285,6 +326,80 @@ LogicalResult verifyReservationUses(Region &region) {
 }
 
 } // namespace
+
+// ops that exist only for a particular attach row (kind × FLAGS), looked up
+// by tag. The kind's OPS column cannot express this: the ordinary fentry/{} row
+// must not get them. Today only the sleepable fentry row has a tag.
+static bool attachAllows(ProgramOp prog, StringRef tag) {
+  struct Row {
+    StringLiteral kind, flags;
+    ArrayRef<StringLiteral> tags;
+  };
+  static constexpr StringLiteral kSleepableFentryTags[] = {"user.copy", "user.addr", "user.copy_task"};
+  static constexpr Row kRows[] = {{"fentry", "sleepable", kSleepableFentryTags}};
+  for (const Row &r : kRows)
+    if (prog.getKind() == r.kind && prog.getAttachFlags() == r.flags && llvm::is_contained(r.tags, tag))
+      return true;
+  return false;
+}
+
+// the closed whitelist of operations a sleepable fentry body may contain
+// (stage ① names; stage-② internal operations and cf are what ebpf-expand-regions
+// makes of them). Everything else is refused by name: sleepable changes what the
+// verifier allows (RCU, kptr references, helpers), so an op that was validated
+// for an ordinary fentry is not assumed valid here. The list is the set the
+// cells use; extend it only with a measured reason.
+static bool sleepableFentryAllowsOp(Operation *op) {
+  if (isa<Stage2InternalOp>(op))
+    return true;
+  StringRef dialect = op->getName().getDialectNamespace();
+  if (dialect == "arith" || dialect == "cf")
+    return true;
+  // the only kfuncs of a sleepable fentry body (the task of user.copy_task).
+  if (auto call = dyn_cast<KfuncCallOp>(op))
+    return call.getCallee() == "bpf_task_from_pid" || call.getCallee() == "bpf_task_release";
+  static const char *const kNames[] = {"ebpf.user.copy_task",    "ebpf.task.current_btf",  "ebpf.kref.check",         "ebpf.user.copy",         "ebpf.user.addr",         "ebpf.global.load",        "ebpf.record.make",
+                                       "ebpf.ringbuf.reserve",   "ebpf.ringbuf.if_reserved", "ebpf.ringbuf.store_record", "ebpf.ringbuf.store_field",
+                                       "ebpf.ringbuf.submit",    "ebpf.ringbuf.discard",   "ebpf.verdict",            "ebpf.yield"};
+  return llvm::is_contained(kNames, op->getName().getStringRef());
+}
+
+// The body of a sleepable fentry: only whitelisted operations, no user_addr
+// block argument, no nested function/callback/loop (the leak routes of).
+static LogicalResult verifySleepableFentryBody(ProgramOp prog) {
+  bool bad = false;
+  prog.getBody().walk([&](Operation *op) {
+    if (!sleepableFentryAllowsOp(op)) {
+      bad = true;
+      op->emitOpError() << "is not allowed in a sleepable fentry program (the `fentry` x `sleepable` attach row admits only "
+                           "ebpf.user.copy, ebpf.user.copy_task, ebpf.user.addr, ebpf.task.current_btf, ebpf.kref.check, ebpf.kfunc.call of bpf_task_from_pid / bpf_task_release, ebpf.global.load, ebpf.record.make, ebpf.ringbuf.{reserve,if_reserved,store_record,store_field,submit,discard}, "
+                           "ebpf.verdict, ebpf.yield and arith)";
+      return WalkResult::interrupt();
+    }
+    for (Region &region : op->getRegions())
+      for (Block &block : region)
+        for (BlockArgument arg : block.getArguments())
+          if (isa<UserAddrType>(arg.getType())) {
+            bad = true;
+            op->emitOpError() << "a !ebpf.user_addr cannot be a block argument";
+            return WalkResult::interrupt();
+          }
+    return WalkResult::advance();
+  });
+  return failure(bad);
+}
+
+// The placement shared by ebpf.user.addr and ebpf.user.copy: directly in the
+// body of a fentry program written `sleepable` (not in a func, callback or loop).
+static LogicalResult verifySleepableFentryPlacement(Operation *op, StringRef tag) {
+  auto prog = op->getParentOfType<ProgramOp>();
+  if (!prog || !attachAllows(prog, tag))
+    return op->emitOpError() << "is only for a `fentry` program written `sleepable` (attach row FLAGS sleepable); an ordinary fentry/<function> program cannot sleep, so the helper is refused there";
+  for (Operation *p = op->getParentOp(); p && p != prog.getOperation(); p = p->getParentOp())
+    if (isa<SubprogramOp, LoopCallbackOp, TimerCallbackOp, UserRingbufCallbackOp, LoopOp, MapForEachOp, BpfLoopOp>(p))
+      return op->emitOpError() << "is not supported inside a func, callback or loop (the sleepable context is not carried into them)";
+  return success();
+}
 
 // Programs.
 LogicalResult ProgramOp::verify() {
@@ -326,10 +441,12 @@ LogicalResult ProgramOp::verify() {
                          << " programs; write `attach \"<name>\"`";
   }
   bool explicitEmpty = getAttach() && getAttach()->empty();
-  if (explicitEmpty || !bpfmlir::lookupProgramAttach(*info, getAttachValue())) {
+  if (getSleepable() && !bpfmlir::lookupProgramAttach(*info, getAttachValue(), getAttachFlags()))
+    return emitOpError() << "`sleepable` is not available for a " << getKind() << " program with this attach (ProgramAttaches.def has no sleepable row for it)";
+  if (explicitEmpty || !bpfmlir::lookupProgramAttach(*info, getAttachValue(), getAttachFlags())) {
     // Enumerated attachment suggestions in diagnostic order.
     auto valuesText = [&] {
-      llvm::SmallVector<llvm::StringRef, 4> vals = bpfmlir::attachValuesOf(*info);
+      auto vals = bpfmlir::attachDiagnosticValuesOf(*info, getAttachValue());
       std::string out;
       for (size_t i = 0; i < vals.size(); ++i)
         out += (i ? (i + 1 == vals.size() ? " or " : ", ") : "") + ("`attach \"" + vals[i] + "\"`").str();
@@ -346,7 +463,8 @@ LogicalResult ProgramOp::verify() {
     case bpfmlir::AttachForm::UserSymbol:
       return emitOpError() << "a " << getKind() << " program needs `attach \"<symbol>\"` (the function symbol in the user binary)";
     case bpfmlir::AttachForm::TcxDirection:
-      return emitOpError() << "a " << getKind() << " program needs " << valuesText() << " (the tcx direction)";
+      return emitOpError() << "a " << getKind() << " program needs " << valuesText()
+                           << (getAttachValue().starts_with("netkit_") ? " (the netkit direction)" : " (the tcx direction)");
     case bpfmlir::AttachForm::CgroupDirection: // cgroup_skb (cgroup_inet_ingress / egress)
       return emitOpError() << "a " << getKind() << " program needs " << valuesText() << " (the cgroup attach direction)";
     case bpfmlir::AttachForm::SockoptHook: // cgroup_sockopt (cgroup_getsockopt / cgroup_setsockopt)
@@ -468,6 +586,8 @@ LogicalResult ProgramOp::verify() {
                            << term->getName();
   }
 
+  if (getSleepable() && failed(verifySleepableFentryBody(*this)))
+    return failure();
   return verifyReservationUses(getBody());
 }
 
@@ -525,6 +645,9 @@ LogicalResult checkMapKind(Operation *op, MapType map) {
                              << "; its entries are set by userspace";
   if (map.getKind() == "cpumap")
     return op->emitOpError() << "a " << map.getKind() << " map is only used by ebpf.redirect_map; its entries are set by userspace";
+  // arena memory is addressed through its window base, not by key.
+  if (map.getKind() == "arena")
+    return op->emitOpError() << "an arena map has no key/value; it is only used by ebpf.arena.base (the program's window on the arena memory)";
   // prog_array is used only by tail_call; loaders populate declared slots.
   if (map.getKind() == "prog_array")
     return op->emitOpError() << "a prog_array is only used by ebpf.tail_call; its slots are set by the loader";
@@ -688,6 +811,47 @@ static LogicalResult checkLookupScope(Operation *op, StringRef tag) {
       return op->emitOpError() << "is only in the program body or ebpf.if / ebpf.sock.ref_check";
   return success();
 }
+// the checked reference may come from sock.map_lookup or sock.lookup_*, so
+// sock.ref_check / sock.release are allowed in a kind holding either OPS token.
+// Each acquiring op still checks its own token (sched_cls has no sock.map_lookup).
+static LogicalResult checkSockRefScope(Operation *op) {
+  auto holds = [](const bpfmlir::ProgramKindInfo &k) {
+    return bpfmlir::kindAllows(k, "sock.map_lookup") || bpfmlir::kindAllows(k, "sock.lookup");
+  };
+  auto p = op->getParentOfType<ProgramOp>();
+  const bpfmlir::ProgramKindInfo *k = p ? bpfmlir::lookupProgramKind(p.getKind()) : nullptr;
+  if (!k || !holds(*k))
+    return op->emitOpError() << "is only for " << bpfmlir::joinProgramKinds(holds, "", ", ", " and ") << " programs";
+  for (Operation *a = op->getParentOp(); a != p; a = a->getParentOp())
+    if (!isa<IfOp, SockRefCheckOp>(a))
+      return op->emitOpError() << "is only in the program body or ebpf.if / ebpf.sock.ref_check";
+  return success();
+}
+// An acquired nullable socket is only checked (② is_present / assume_present).
+static LogicalResult checkAcquiredSockUses(Value result) {
+  bool stage2 = llvm::any_of(result.getUsers(), [](Operation *u) { return isa<IsPresentOp, AssumePresentOp>(u); });
+  for (Operation *u : result.getUsers())
+    if (stage2 ? !isa<IsPresentOp, AssumePresentOp>(u) : !isa<SockRefCheckOp>(u))
+      return u->emitOpError() << "uses an unchecked socket reference; check it with ebpf.sock.ref_check first";
+  return success(); // Whole-CFG ownership verification enforces exactly one check.
+}
+// sk_lookup_tcp / _udp on the own entry context; the tuple is a
+// record.make result (the exact view is checked by ebpf-verify-records).
+static LogicalResult verifySockLookup(Operation *op, Value ctx, Value tuple, Value result) {
+  if (failed(checkLookupScope(op, "sock.lookup")))
+    return failure();
+  auto prog = op->getParentOfType<ProgramOp>();
+  if (prog.getBody().empty() || prog.getBody().front().getNumArguments() == 0 ||
+      ctx != prog.getBody().front().getArgument(0))
+    return op->emitOpError() << "requires the entry context of its program";
+  if (!tuple.getDefiningOp<RecordMakeOp>())
+    return op->emitOpError("tuple must be an ebpf.record.make result (a struct bpf_sock_tuple view; map values and "
+                           "borrowed records are not accepted)");
+  return checkAcquiredSockUses(result);
+}
+LogicalResult SockLookupTcpOp::verify() { return verifySockLookup(*this, getCtx(), getTuple(), getResult()); }
+LogicalResult SockLookupUdpOp::verify() { return verifySockLookup(*this, getCtx(), getTuple(), getResult()); }
+LogicalResult SockSkcLookupTcpOp::verify() { return verifySockLookup(*this, getCtx(), getTuple(), getResult()); }
 static LogicalResult checkSocketMapKey(Operation *op, Value mapV, Value key) {
   auto m = cast<MapType>(mapV.getType());
   if (m.getKind() != "sockmap" && m.getKind() != "sockhash")
@@ -700,14 +864,10 @@ static LogicalResult checkSocketMapKey(Operation *op, Value mapV, Value key) {
 LogicalResult SockMapLookupOp::verify() {
   if (failed(checkLookupScope(*this, "sock.map_lookup")) || failed(checkSocketMapKey(*this, getMap(), getKey())))
     return failure();
-  bool stage2 = llvm::any_of(getResult().getUsers(), [](Operation *u) { return isa<IsPresentOp, AssumePresentOp>(u); });
-  for (Operation *u : getResult().getUsers())
-    if (stage2 ? !isa<IsPresentOp, AssumePresentOp>(u) : !isa<SockRefCheckOp>(u))
-      return u->emitOpError() << "uses an unchecked socket reference; check it with ebpf.sock.ref_check first";
-  return success(); // Whole-CFG ownership verification enforces exactly one check.
+  return checkAcquiredSockUses(getResult());
 }
 LogicalResult SockRefCheckOp::verify() {
-  if (failed(checkLookupScope(*this, "sock.map_lookup")) || failed(verifyRegionResultWidths(*this)))
+  if (failed(checkSockRefScope(*this)) || failed(verifyRegionResultWidths(*this)))
     return failure();
   if (getPresentRegion().empty() || getAbsentRegion().empty())
     return emitOpError() << "both the present and absent regions must have a body";
@@ -781,7 +941,7 @@ LogicalResult SysBpfOp::verify() {
 }
 LogicalResult SysCloseOp::verify() { return checkSyscallEntry(*this, getCtx(), "sys.close"); }
 LogicalResult SockReleaseOp::verify() {
-  if (failed(checkLookupScope(*this, "sock.map_lookup")))
+  if (failed(checkSockRefScope(*this)))
     return failure();
   if (auto a = dyn_cast<BlockArgument>(getPtr())) {
     auto c = dyn_cast_or_null<SockRefCheckOp>(a.getOwner()->getParentOp());
@@ -977,19 +1137,218 @@ static LogicalResult verifyRegionResultWidths(Operation *op) {
 }
 
 // kptr.check present has one kptr<S> argument, absent none; both arms yield.
+// a guard's i1 (ksym.exists / core.type_exists / core.field_exists) is
+// only the direct condition of one ebpf.if — the verifier prunes the false
+// branch only for that compare, and the requirements guard rows bind to the
+// then region (requirements_format.md §9).
+static LogicalResult verifyGuardUse(Operation *op, StringRef what) {
+  Value r = op->getResult(0);
+  if (!r.hasOneUse())
+    return op->emitOpError() << "the " << what
+                             << " guard must have exactly one use, the condition of an ebpf.if (write !a || !b as nested ebpf.if)";
+  Operation *u = *r.getUsers().begin();
+  auto ifo = dyn_cast<IfOp>(u);
+  // After stage ② the ebpf.if is cf.cond_br on the same i1 (operand 0).
+  bool expandedIf = u->getName().getStringRef() == "cf.cond_br" && u->getOperand(0) == r;
+  if (!expandedIf && (!ifo || ifo.getCond() != r))
+    return op->emitOpError() << "the " << what << " guard is used by " << u->getName()
+                             << "; it may only be the condition of an ebpf.if (stores, arith, call arguments and yield are rejected)";
+  return success();
+}
+
+LogicalResult KsymExistsOp::verify() { return verifyGuardUse(*this, "ksym.exists"); }
+
+LogicalResult CoreTypeExistsOp::verify() {
+  if (getStructName().empty())
+    return emitOpError() << "the struct name must not be empty";
+  return verifyGuardUse(*this, "core.type_exists");
+}
+
+LogicalResult CoreFieldExistsOp::verify() {
+  if (getStructName().empty() || getField().empty())
+    return emitOpError() << "the struct name and field must not be empty";
+  return verifyGuardUse(*this, "core.field_exists");
+}
+
+// an untrusted kernel address (a per-CPU slot's pointer value, or
+// a kaddr.read / kaddr.container_of result) is used only by the kaddr ops —
+// never by arithmetic, stores, call arguments, yield or loop carries.
+static LogicalResult verifyKAddrUses(Value v, StringRef what) {
+  for (OpOperand &use : v.getUses()) {
+    Operation *u = use.getOwner();
+    // a bss kaddr global caches the address (the stored value only).
+    if (isa<KAddrNonNullOp, KAddrEqOp, KAddrReadOp, KAddrStrncmpOp, KAddrContainerOfOp, GlobalStoreOp>(u))
+      continue;
+    return u->emitOpError() << "uses the untrusted !ebpf.kaddr " << what
+                            << "; only ebpf.kaddr.nonnull / ebpf.kaddr.eq / ebpf.kaddr.read / ebpf.kaddr.strncmp / ebpf.kaddr.container_of may use it "
+                               "(and ebpf.global.store, which caches it in a bss kaddr global)";
+  }
+  return success();
+}
+
+// the compiler-owned bpf_strncmp literal (a NUL-terminated .rodata value).
+static LogicalResult verifyStrncmpLiteral(Operation *op, StringRef lit) {
+  if (lit.empty() || lit.size() > 64)
+    return op->emitOpError() << "the strncmp literal must be 1 to 64 bytes, got " << lit.size();
+  if (lit.contains('\0'))
+    return op->emitOpError() << "the strncmp literal must not contain NUL (the compiler appends the terminator)";
+  return success();
+}
+
+// the kaddr reads / strncmp / container_of live in the body of an
+// ebpf.program or a static ebpf.func (H1 — a global func is verified alone by
+// the kernel, and the callback bodies are not opened). The nearest isolated
+// ancestor decides.
+static LogicalResult verifyKAddrPlacement(Operation *op) {
+  Operation *p = op->getParentOp();
+  while (p && !p->hasTrait<OpTrait::IsIsolatedFromAbove>())
+    p = p->getParentOp();
+  if (p && isa<ProgramOp>(p))
+    return success();
+  if (auto f = dyn_cast_or_null<SubprogramOp>(p)) {
+    if (f.getLinkage() == "static")
+      return success();
+    return op->emitOpError() << "is only in the body of an ebpf.program or a static ebpf.func, not the global ebpf.func @"
+                             << f.getSymName();
+  }
+  return op->emitOpError() << "is only in the body of an ebpf.program or a static ebpf.func, not in "
+                           << (p ? p->getName().getStringRef() : StringRef("a module"));
+}
+
+// an op reading through kaddr<"S"> needs a struct S (kaddr<""> is void *).
+static LogicalResult verifyKAddrBase(Operation *op, Value a) {
+  if (cast<KAddrType>(a.getType()).getStructName().empty())
+    return op->emitOpError() << "cannot read through !ebpf.kaddr<\"\"> (a void * — only ebpf.kaddr.nonnull / ebpf.kaddr.eq take it)";
+  return success();
+}
+
+LogicalResult KAddrReadOp::verify() {
+  if (failed(verifyKAddrPlacement(*this)))
+    return failure();
+  if (failed(verifyKAddrBase(*this, getAddr())))
+    return failure();
+  if (!bpfmlir::validKernelFieldPath(getField()))
+    return emitOpError() << "kernel field path must have 1 to 3 identifier segments, got \"" << getField() << "\"";
+  Type t = getValue().getType();
+  auto it = dyn_cast<IntegerType>(t);
+  if (!isa<KAddrType>(t) && !(it && llvm::is_contained({8u, 16u, 32u, 64u}, it.getWidth())))
+    return emitOpError() << "reads an i8 / i16 / i32 / i64 or !ebpf.kaddr field, got " << t;
+  if (isa<KAddrType>(t))
+    return verifyKAddrUses(getValue(), "read result");
+  return success();
+}
+
+LogicalResult KAddrStrncmpOp::verify() {
+  if (failed(verifyKAddrPlacement(*this)))
+    return failure();
+  if (failed(verifyKAddrBase(*this, getAddr())))
+    return failure();
+  if (!bpfmlir::validKernelFieldPath(getField()))
+    return emitOpError() << "kernel field path must have 1 to 3 identifier segments, got \"" << getField() << "\"";
+  return verifyStrncmpLiteral(*this, getLiteral());
+}
+
+// D1: bpf_strncmp's arg 1 is ARG_PTR_TO_MEM | MEM_RDONLY, which takes a BTF pointer only as
+// PTR_TO_BTF_ID | PTR_TRUSTED (7.3.1 helpers.c:581, verifier.c:8162-8176). The trusted origins the compiler can show:
+// task.current_btf (RET_PTR_TO_BTF_ID_TRUSTED) and an ebpf.ctx.arg of a kind whose arguments the verifier trusts
+// (prog_args_trusted — tp_btf (TpArgs) and struct_ops (OpsSig)), directly or through kptr.check (① the present block
+// argument, ② assume_present). A field traversal (kfield.ptr — SAFE_RCU / MEM_RCU, verifier.c:5869 / :6117) stays
+// untrusted after the NULL check, and other ctx.arg / ctx.field pointers are not shown trusted: rejected by name.
+static LogicalResult verifyStrncmpTrusted(KFieldStrncmpOp op) {
+  Value v = op.getPtr();
+  Value src = v;
+  if (auto ap = v.getDefiningOp<AssumePresentOp>())
+    src = ap.getValue();
+  else if (auto ba = dyn_cast<BlockArgument>(v))
+    if (auto kc = dyn_cast_or_null<KPtrCheckOp>(ba.getOwner()->getParentOp()); kc && ba.getOwner() == &kc.getPresentRegion().front())
+      src = kc.getPtr();
+  if (src.getDefiningOp<TaskCurrentBtfOp>())
+    return success();
+  auto arg = src.getDefiningOp<CtxArgOp>();
+  const bpfmlir::ProgramKindInfo *k = arg ? bpfmlir::lookupProgramKind(cast<ContextType>(arg.getCtx().getType()).getKind()) : nullptr;
+  if (k && (k->sig == bpfmlir::SigFamily::TpArgs || k->sig == bpfmlir::SigFamily::OpsSig))
+    return success();
+  Operation *def = src.getDefiningOp();
+  return op.emitOpError() << "needs a trusted pointer (bpf_strncmp takes PTR_TO_BTF_ID only with PTR_TRUSTED): the pointer must be "
+                             "ebpf.task.current_btf or an ebpf.ctx.arg of a tp_btf or struct_ops program (directly or through "
+                             "ebpf.kptr.check), but it comes from "
+                          << (def ? "'" + def->getName().getStringRef().str() + "'" : std::string("a block argument"))
+                          << (arg ? " of a kind whose arguments are not trusted" : "");
+}
+
+LogicalResult KFieldStrncmpOp::verify() {
+  if (failed(verifyKAddrPlacement(*this)))
+    return failure();
+  if (failed(verifyStrncmpTrusted(*this)))
+    return failure();
+  if (!bpfmlir::validKernelFieldPath(getField()))
+    return emitOpError() << "kernel field path must have 1 to 3 identifier segments, got \"" << getField() << "\"";
+  if (getLen() < 1 || getLen() > 64)
+    return emitOpError() << "len must be 1 to 64 (bpf_strncmp's size is ARG_CONST_SIZE, not 0), got " << getLen();
+  return verifyStrncmpLiteral(*this, getLiteral());
+}
+
+LogicalResult KAddrContainerOfOp::verify() {
+  if (failed(verifyKAddrPlacement(*this)))
+    return failure();
+  if (failed(verifyKAddrBase(*this, getAddr())))
+    return failure();
+  if (getStructName().empty())
+    return emitOpError() << "the containing struct name must not be empty";
+  if (!bpfmlir::validKernelFieldPath(getField()))
+    return emitOpError() << "kernel field path must have 1 to 3 identifier segments, got \"" << getField() << "\"";
+  if (cast<KAddrType>(getResult().getType()).getStructName() != getStructName())
+    return emitOpError() << "the result must be !ebpf.kaddr<\"" << getStructName() << "\">, got " << getResult().getType();
+  return verifyKAddrUses(getResult(), "container_of result");
+}
+
+LogicalResult KsymPerCpuLoadOp::verify() {
+  if (failed(verifyRegionResultWidths(*this)))
+    return failure();
+  if (getPresentRegion().empty() || getAbsentRegion().empty())
+    return emitOpError() << "both the present and absent regions must have a body";
+  Block &present = getPresentRegion().front();
+  if (present.getNumArguments() != 1)
+    return emitOpError() << "the present region must take exactly one argument (the slot value), got " << present.getNumArguments();
+  Type t = present.getArgument(0).getType();
+  auto it = dyn_cast<IntegerType>(t);
+  if (!isa<KAddrType>(t) && !(it && llvm::is_contained({8u, 16u, 32u, 64u}, it.getWidth())))
+    return emitOpError() << "the present region argument must be i8 / i16 / i32 / i64 or !ebpf.kaddr<\"S\">, got " << t;
+  if (isa<KAddrType>(t) && failed(verifyKAddrUses(present.getArgument(0), "slot value")))
+    return failure();
+  if (getAbsentRegion().front().getNumArguments() != 0)
+    return emitOpError() << "the absent region must take no arguments (bpf_per_cpu_ptr returned NULL), got "
+                         << getAbsentRegion().front().getNumArguments();
+  for (Region *r : {&getPresentRegion(), &getAbsentRegion()})
+    if (r->front().empty() || !isa<YieldOp>(r->front().back()))
+      return emitOpError() << "each region must end with ebpf.yield";
+  return success();
+}
+
+LogicalResult KsymPerCpuBrOp::verify() {
+  Block *p = getPresent();
+  if (p->getNumArguments() != 1)
+    return emitOpError() << "the present successor must take exactly one argument (the slot value)";
+  if (getAbsent()->getNumArguments() != 0)
+    return emitOpError() << "the absent successor must take no arguments";
+  return success();
+}
+
 LogicalResult KPtrCheckOp::verify() {
   if (failed(verifyRegionResultWidths(*this)))
     return failure();
-  auto in = cast<KPtrOrNullType>(getPtr().getType());
+  // rcu_ptr_or_null<S> checks to rcu_ptr<S> (MEM_RCU stays untrusted).
+  auto rin = dyn_cast<RcuPtrOrNullType>(getPtr().getType());
+  StringRef sname = rin ? rin.getStructName() : cast<KPtrOrNullType>(getPtr().getType()).getStructName();
   if (getPresentRegion().empty() || getAbsentRegion().empty())
     return emitOpError() << "both the present and absent regions must have a body";
   Block &present = getPresentRegion().front();
   if (present.getNumArguments() != 1)
     return emitOpError() << "the present region must take exactly one argument (the checked kernel pointer), got "
                          << present.getNumArguments();
-  auto kp = dyn_cast<KPtrType>(present.getArgument(0).getType());
-  if (!kp || kp.getStructName() != in.getStructName())
-    return emitOpError() << "the present region argument must be !ebpf.kptr<\"" << in.getStructName() << "\">, got "
+  Type want = rin ? Type(RcuPtrType::get(getContext(), sname)) : Type(KPtrType::get(getContext(), sname));
+  if (present.getArgument(0).getType() != want)
+    return emitOpError() << "the present region argument must be !ebpf." << (rin ? "rcu_ptr" : "kptr") << "<\"" << sname << "\">, got "
                          << present.getArgument(0).getType();
   if (getAbsentRegion().front().getNumArguments() != 0)
     return emitOpError() << "the absent region must take no arguments (there is no pointer), got "
@@ -1003,8 +1362,11 @@ LogicalResult KPtrCheckOp::verify() {
 // kref.check shares the checked-region shape with present kref<S>.
 // Kfunc verification owns allowed uses; ownership verification owns path/counts.
 static LogicalResult verifyKRefUses(KRefCheckOp kc);
+static LogicalResult verifyOwnershipInIter(Operation *op, StringRef what);
 LogicalResult KRefCheckOp::verify() {
   if (failed(verifyRegionResultWidths(*this)))
+    return failure();
+  if (failed(verifyOwnershipInIter(*this, "checks an acquired kernel reference")))
     return failure();
   auto in = cast<KRefOrNullType>(getPtr().getType());
   if (getPresentRegion().empty() || getAbsentRegion().empty())
@@ -1020,9 +1382,17 @@ LogicalResult KRefCheckOp::verify() {
   if (getAbsentRegion().front().getNumArguments() != 0)
     return emitOpError() << "the absent region must take no arguments (there is no reference), got "
                          << getAbsentRegion().front().getNumArguments();
-  for (Region *r : {&getPresentRegion(), &getAbsentRegion()})
-    if (r->front().empty() || !isa<YieldOp>(r->front().back()))
-      return emitOpError() << "each region must end with ebpf.yield";
+  // an arm may also end with ebpf.break / ebpf.continue (LAVD's `if (!p) continue` and
+  // release-then-continue); the escape verifier admits it only for ebpf.iter.scx_dsq, and
+  // ownership requires the release before it.
+  int escapes = 0;
+  for (Region *r : {&getPresentRegion(), &getAbsentRegion()}) {
+    if (r->front().empty() || !isa<YieldOp, BreakOp, ContinueOp>(r->front().back()))
+      return emitOpError() << "each region must end with ebpf.yield (ebpf.break / ebpf.continue inside ebpf.iter.scx_dsq)";
+    escapes += isa<BreakOp, ContinueOp>(r->front().back());
+  }
+  if (escapes == 2 && getNumResults() != 0)
+    return emitOpError() << "cannot have results when both regions leave the iteration (no edge reaches the join)";
   return verifyKRefUses(*this);
 }
 
@@ -1043,7 +1413,7 @@ static std::optional<unsigned> kfuncIntBits(StringRef spelling) {
 // Generic kfunc.call supports void/integer/struct-pointer signatures.
 // Session bool, void* and integer-pointer signatures use dedicated session ops.
 static bool kfuncGenericSpelling(StringRef s, bool ret) {
-  if (s == "void")
+  if (s == "void" || s == "bool") // a bool result is i1 (③ reads the low byte, like session.is_return).
     return ret;
   if (kfuncIntBits(s))
     return true;
@@ -1051,11 +1421,58 @@ static bool kfuncGenericSpelling(StringRef s, bool ret) {
   return st && *st != "void" && !kfuncIntBits(*st);
 }
 
+// Uses of a present kernel reference (a kref.check block argument, or a
+// non-NULL acquire result of kfunc.call): kfunc arguments, the pointer of
+// kfield.load / kptr.addr, or the new reference of kptr.xchg.
+static LogicalResult verifyKRefValueUses(Value v) {
+  for (OpOperand &use : v.getUses()) {
+    Operation *u = use.getOwner();
+    // scx.task_cpu (KF_RCU) and kfield.ptr read through the kref without consuming it.
+    if (isa<KfuncCallOp>(u) || (isa<KFieldLoadOp, KPtrAddrOp, KFieldPtrOp, ScxTaskCpuOp>(u) && use.getOperandNumber() == 0))
+      continue;
+    if (isa<UserCopyTaskOp>(u) && use.getOperandNumber() == 2) // the task operand reads through the kref without consuming it.
+      continue;
+    if (auto x = dyn_cast<KPtrXchgOp>(u); x && x.getNewRef() == v) // Transferring to a map consumes ownership.
+      continue;
+    if (auto x = dyn_cast<GlobalKPtrXchgOp>(u); x && x.getNewRef() == v) // transferring to a kptr global too.
+      continue;
+    return u->emitOpError() << "uses the kernel reference " << v.getType()
+                            << "; a kref may only be an argument of ebpf.kfunc.call, the pointer of ebpf.kfield.load or the new "
+                               "reference of ebpf.kptr.xchg (it must not be yielded, passed to ebpf.call or captured)";
+  }
+  return success();
+}
+
+// The one mark that a nullable result has been through ② (its null check
+// expanded into ebpf.is_present / ebpf.assume_present): VerifyStructured owns
+// its uses then, and the ① shape checks (one check use, and for the RCU kptr
+// reads the sleepable section) are not repeated on the expanded form.
+static bool expandedNullCheck(Value r) {
+  return llvm::any_of(r.getUsers(), [](Operation *u) { return isa<IsPresentOp, AssumePresentOp>(u); });
+}
+
 LogicalResult KfuncCallOp::verify() {
   const bpfabi::KfuncABI *k = bpfabi::lookupKfunc(getCallee());
   if (!k)
     return emitOpError() << "calls \"" << getCallee() << "\", which is not in the kfunc table (UAPI table kfunc rows: "
-                         << bpfabi::listKfuncs() << ")";
+                         << bpfabi::listKfuncs(/*genericCandidates=*/true) << ")";
+  // sched_ext kfuncs have their own ops (callback allow table, family);
+  // the generic call would bypass that contract.
+  if (const bpfmlir::ScxKfuncInfo *scx = bpfmlir::lookupScxKfunc(getCallee()))
+    return emitOpError() << "kfunc \"" << getCallee() << "\" is a sched_ext kfunc; call it through ebpf.scx." << scx->op;
+  // kfunc rows only an op's lowering emits (LoweringOnlyKfuncs.def).
+  if (const bpfmlir::LoweringKfuncInfo *lo = bpfmlir::lookupLoweringOnlyKfunc(getCallee()))
+    return emitOpError() << "kfunc \"" << getCallee() << "\" is emitted only by the lowering of " << lo->owner << "; write "
+                         << lo->owner << " instead of calling it directly";
+  // a void * followed by its __sz length is a memory region
+  // (bpf_cpumask_populate); the generic call does not model memory arguments.
+  {
+    auto ps = k->paramList();
+    for (size_t i = 0; i + 1 < ps.size(); ++i)
+      if (StringRef(ps[i].second) == "*void" && StringRef(ps[i + 1].first).ends_with("__sz"))
+        return emitOpError() << "kfunc \"" << getCallee() << "\" takes a memory region (" << ps[i].first << ", " << ps[i + 1].first
+                             << "); the generic ebpf.kfunc.call does not model memory arguments";
+  }
   bool generic = kfuncGenericSpelling(k->ret, /*ret=*/true);
   for (auto &[pname, ptype] : k->paramList())
     generic = generic && kfuncGenericSpelling(ptype, /*ret=*/false);
@@ -1066,16 +1483,26 @@ LogicalResult KfuncCallOp::verify() {
   if (k->flags != "-") {
     SmallVector<StringRef> fs;
     StringRef(k->flags).split(fs, ',');
+    // KF_IMPLICIT_ARGS (7.1.8 / 7.3.1 scx_bpf_task_cgroup) — the kernel
+    // fills the trailing aux argument; the table's params already omit it (the
+    // kfunc-normalized row, the BTF FUNC_PROTO the BPF side calls), as for
+    // ebpf.scx.* lowering. Nothing else to model.
     for (StringRef f : fs)
-      if (f != "acquire" && f != "release" && f != "ret_null" && f != "rcu")
+      if (f != "acquire" && f != "release" && f != "ret_null" && f != "rcu" && f != "implicit_args")
         return emitOpError() << "kfunc \"" << getCallee() << "\" has the flag KF_" << f.upper()
                              << ", which the compiler does not model";
   }
   bool acquire = k->hasFlag("acquire"), release = k->hasFlag("release"), retNull = k->hasFlag("ret_null");
-  // Require program bodies; ownership does not traverse arbitrary regions, funcs or callbacks.
+  if ((acquire || release) && failed(verifyOwnershipInIter(*this, release ? "releases a kernel reference" : "acquires a kernel reference")))
+    return failure();
+  // Require program or function bodies; ownership does not traverse arbitrary
+  // regions or callbacks. in an ebpf.func the ownership closes in the
+  // function (ebpf-verify-ownership walks it); the program type and the regions
+  // of the callers' call sites are checked per reaching context by
+  // ebpf-verify-call-contexts.
   Operation *top = *this;
   for (Operation *p = (*this)->getParentOp(); p; p = p->getParentOp()) {
-    if (isa<ProgramOp>(p)) {
+    if (isOpsTop(p)) { // a sched_ext_ops owner's timer callback too (per owner context).
       top = p;
       break;
     }
@@ -1085,13 +1512,40 @@ LogicalResult KfuncCallOp::verify() {
                               "spin.region and scf.if (the ownership check does not follow them)";
     top = p;
   }
-  auto prog = dyn_cast<ProgramOp>(top);
-  if (!prog)
-    return emitOpError() << "calls a kfunc outside an ebpf.program (ebpf.func and callbacks cannot call kfuncs)";
-  StringRef ptype = programTypeOf(prog.getKind());
-  if (!k->allowsProgType(ptype))
-    return emitOpError() << "kfunc \"" << getCallee() << "\" is not registered for program type " << ptype << " (kind \""
-                         << prog.getKind() << "\"); the kfunc table allows " << k->progTypes << "";
+  if (auto cb = dyn_cast<TimerCallbackOp>(top)) {
+    // a callback has no task argument in current->scx.kf_tasks.
+    if (getCallee() == bpfmlir::kScxTaskCgroupKfunc)
+      return emitOpError() << "calls " << getCallee() << " in ebpf.timer.callback @" << cb.getSymName()
+                           << "; the compiler allows it only in the body of a " << bpfmlir::kScxOpsType
+                           << " member program, on a task argument the kernel puts in current->scx.kf_tasks (a callback has no such "
+                              "argument)";
+  } else if (auto fn = dyn_cast<SubprogramOp>(top)) {
+    // kf_tasks position is a task argument of the member (ctx.arg); a
+    // function has no such argument.
+    if (getCallee() == bpfmlir::kScxTaskCgroupKfunc)
+      return emitOpError() << "calls " << getCallee() << " in ebpf.func @" << fn.getSymName() << "; the compiler allows it only in the body of a "
+                           << bpfmlir::kScxOpsType
+                           << " member program, on a task argument the kernel puts in current->scx.kf_tasks (a function has no such "
+                              "argument)";
+  } else {
+    auto prog = dyn_cast<ProgramOp>(top);
+    if (!prog)
+      return emitOpError() << "calls a kfunc outside an ebpf.program and an ebpf.func (callbacks cannot call kfuncs)";
+    StringRef ptype = programTypeOf(prog.getKind());
+    if (!k->allowsProgType(ptype))
+      return emitOpError() << "kfunc \"" << getCallee() << "\" is not registered for program type " << ptype << " (kind \""
+                           << prog.getKind() << "\"); the kfunc table allows " << k->progTypes << "";
+    // scx_bpf_task_cgroup is
+    // registered for struct_ops / tracing / syscall, but its task must be in
+    // current->scx.kf_tasks — set only while a sched_ext_ops member runs. Outside
+    // struct_ops no task can be (scx_error at run time); ebpf-verify-schema checks
+    // the member and position for struct_ops.
+    if (getCallee() == bpfmlir::kScxTaskCgroupKfunc && ptype != "struct_ops")
+      return emitOpError() << "calls " << getCallee() << " in a program of type " << ptype << " (kind \"" << prog.getKind()
+                           << "\"); the compiler allows it only in a " << bpfmlir::kScxOpsType
+                           << " member, on a task argument the kernel puts in current->scx.kf_tasks (the kernel fails the scheduler "
+                              "with scx_error on any other task)";
+  }
   // Arguments.
   auto params = k->paramList();
   if (params.size() != getArgs().size())
@@ -1114,12 +1568,35 @@ LogicalResult KfuncCallOp::verify() {
       ++released;
       continue;
     }
-    StringRef have = isa<KRefType>(got) ? cast<KRefType>(got).getStructName()
+    // an embedded cpumask (ref.field.addr) is map-value memory the kernel
+    // checks as a fixed-size argument of its sizeof(struct bpf_cpumask) — for
+    // *bpf_cpumask and *cpumask (offset-0 member) arguments of kfuncs that
+    // neither acquire nor release (those take referenced kptrs).
+    if (isa<CpumaskMemType>(got)) {
+      if (s != "bpf_cpumask" && s != "cpumask")
+        return emitOpError() << "kfunc \"" << getCallee() << "\" argument " << i << " (" << pname << ") is a pointer to struct " << s
+                             << "; an embedded cpumask (" << got << ") is only a *bpf_cpumask / *cpumask argument";
+      if (acquire)
+        return emitOpError() << "kfunc \"" << getCallee() << "\" acquires a reference; an embedded cpumask (" << got
+                             << ") is not a referenced object — pass it only to kfuncs that neither acquire nor release";
+      continue;
+    }
+    // a checked RCU pointer is an argument of a KF_RCU kfunc only (the
+    // verifier: "must be referenced or trusted" / "must be a rcu pointer").
+    bool rcuArg = isa<RcuPtrType>(got);
+    StringRef have = isa<KRefType>(got)   ? cast<KRefType>(got).getStructName()
                      : isa<KPtrType>(got) ? cast<KPtrType>(got).getStructName()
+                     : rcuArg             ? cast<RcuPtrType>(got).getStructName()
                                           : StringRef();
-    if (have != s || have.empty())
+    // the verifier walks to the offset-0 member for a non-strict argument
+    // (UAPI firstmember rows); acquire (6.6) and release arguments are strict.
+    bool viaFirst = !acquire && !release && !have.empty() && have != s && bpfabi::isFirstMemberOf(have, s);
+    if ((have != s && !viaFirst) || have.empty())
       return emitOpError() << "kfunc \"" << getCallee() << "\" argument " << i << " (" << pname << ") is a pointer to struct " << s
                            << "; pass !ebpf.kref<\"" << s << "\"> or !ebpf.kptr<\"" << s << "\">, got " << got;
+    if (rcuArg && !k->hasFlag("rcu"))
+      return emitOpError() << "kfunc \"" << getCallee() << "\" is not KF_RCU; argument " << i << " (" << pname << ") is the RCU pointer "
+                           << got << ", which only a KF_RCU kfunc takes (pass an acquired !ebpf.kref<\"" << have << "\">)";
   }
   if (release && released != 1)
     return emitOpError() << "kfunc \"" << getCallee() << "\" is a KF_RELEASE kfunc with " << released
@@ -1129,6 +1606,9 @@ LogicalResult KfuncCallOp::verify() {
   if (ret == "void") {
     if (getNumResults() != 0)
       return emitOpError() << "kfunc \"" << getCallee() << "\" returns void, got " << getNumResults() << " result(s)";
+  } else if (ret == "bool") {
+    if (getNumResults() != 1 || !getResult(0).getType().isInteger(1))
+      return emitOpError() << "kfunc \"" << getCallee() << "\" returns bool (one i1 result)";
   } else if (std::optional<unsigned> bits = kfuncIntBits(ret)) {
     if (getNumResults() != 1 || !getResult(0).getType().isInteger(*bits))
       return emitOpError() << "kfunc \"" << getCallee() << "\" returns " << ret << " (one i" << *bits << " result)";
@@ -1149,7 +1629,7 @@ LogicalResult KfuncCallOp::verify() {
   if (getNumResults() == 1) {
     Value r = getResult(0);
     // VerifyStructured owns uses after expansion into is_present/assume_present.
-    bool stage2 = llvm::any_of(r.getUsers(), [](Operation *u) { return isa<IsPresentOp, AssumePresentOp>(u); });
+    bool stage2 = expandedNullCheck(r);
     if (isa<KRefOrNullType>(r.getType()) && !stage2) {
       unsigned checks = 0;
       for (OpOperand &use : r.getUses()) {
@@ -1164,25 +1644,19 @@ LogicalResult KfuncCallOp::verify() {
         return emitOpError() << "the acquired reference " << r.getType() << " must be checked exactly once by ebpf.kref.check, found "
                              << checks << " (an unchecked reference leaks)";
     }
+    // a non-NULL acquire result (bpf_cpumask_acquire,
+    // scx_bpf_get_online_cpumask) is a present reference from the start.
+    if (isa<KRefType>(r.getType()) && failed(verifyKRefValueUses(r)))
+      return failure();
   }
   return success();
 }
 
 // Present krefs permit kfunc arguments and supported kernel-field operations.
-static LogicalResult verifyKRefUses(KRefCheckOp kc) {
-  Value v = kc.getPresentRegion().front().getArgument(0);
-  for (OpOperand &use : v.getUses()) {
-    Operation *u = use.getOwner();
-    if (isa<KfuncCallOp>(u) || (isa<KFieldLoadOp, KPtrAddrOp>(u) && use.getOperandNumber() == 0))
-      continue;
-    if (auto x = dyn_cast<KPtrXchgOp>(u); x && x.getNewRef() == v) // Transferring to a map consumes ownership.
-      continue;
-    return u->emitOpError() << "uses the kernel reference " << v.getType()
-                            << "; a kref may only be an argument of ebpf.kfunc.call, the pointer of ebpf.kfield.load or the new "
-                               "reference of ebpf.kptr.xchg (it must not be yielded, passed to ebpf.call or captured)";
-  }
-  return success();
-}
+static LogicalResult verifyKRefUses(KRefCheckOp kc) { return verifyKRefValueUses(kc.getPresentRegion().front().getArgument(0)); }
+
+static LogicalResult verifyKPtrXchgShape(Operation *op, Value r, StringRef opName, StringRef from);
+static LogicalResult verifyKPtrLoadRcuShape(Operation *op, Value r, StringRef opName, StringRef what, StringRef from);
 
 // kptr.xchg exchanges a record kptr field and reference. VerifyRecords owns
 // field/type matching, VerifyKPtr owns target declarations, and ownership
@@ -1206,25 +1680,50 @@ LogicalResult KPtrXchgOp::verify() {
       return emitOpError() << "puts a !ebpf.kref<\"" << kr.getStructName() << "\"> into a field whose result is "
                            << getOld().getType() << "; the struct must be the same";
   }
-  // Like kfunc.call, restrict to program bodies covered by ownership traversal.
-  Operation *top = *this;
-  for (Operation *p = (*this)->getParentOp(); p; p = p->getParentOp()) {
-    if (isa<ProgramOp>(p)) {
+  return verifyKPtrXchgShape(*this, getOld(), "ebpf.kptr.xchg", "the map value");
+}
+
+// global.kptr_xchg shares kptr.xchg's placement and result rules; the
+// schema (ebpf-verify-schema) owns the global's section and struct.
+LogicalResult GlobalKPtrXchgOp::verify() {
+  StringRef t = cast<KRefOrNullType>(getOld().getType()).getStructName();
+  if (t != "bpf_cpumask")
+    return emitOpError() << "exchanges a kptr global to struct " << t
+                         << "; the compiler supports kptr globals only for bpf_cpumask";
+  if (Value n = getNewRef()) {
+    auto kr = cast<KRefType>(n.getType());
+    if (kr.getStructName() != t)
+      return emitOpError() << "puts a !ebpf.kref<\"" << kr.getStructName() << "\"> into a global whose result is "
+                           << getOld().getType() << "; the struct must be the same";
+  }
+  return verifyKPtrXchgShape(*this, getOld(), "ebpf.global.kptr_xchg", "the kptr global");
+}
+
+// Shared by kptr.xchg and global.kptr_xchg: placement in a program body
+// covered by ownership traversal, and one kref.check of the removed reference.
+static LogicalResult verifyKPtrXchgShape(Operation *op, Value r, StringRef opName, StringRef from) {
+  // Like kfunc.call, restrict to program or function bodies covered by
+  // ownership traversal (a function's callers per context —
+  // ebpf-verify-call-contexts).
+  Operation *top = op;
+  for (Operation *p = op->getParentOp(); p; p = p->getParentOp()) {
+    if (isOpsTop(p)) { // a sched_ext_ops owner's timer callback too.
       top = p;
       break;
     }
     if (isa<LoopOp, MapForEachOp, SpinRegionOp>(p) || p->getName().getStringRef() == "scf.if")
-      return emitOpError() << "is inside '" << p->getName()
-                           << "'; ebpf.kptr.xchg is only allowed in the body of an ebpf.program outside loops, map.for_each, "
-                              "spin.region and scf.if (the ownership check does not follow them)";
+      return op->emitOpError() << "is inside '" << p->getName()
+                               << "'; " << opName << " is only allowed in the body of an ebpf.program outside loops, map.for_each, "
+                                  "spin.region and scf.if (the ownership check does not follow them)";
     top = p;
   }
-  if (!isa<ProgramOp>(top))
-    return emitOpError() << "is outside an ebpf.program (ebpf.func and callbacks cannot exchange kptrs)";
+  if (!isOpsTop(top))
+    return op->emitOpError() << "is outside an ebpf.program and an ebpf.func (callbacks cannot exchange kptrs)";
+  if (failed(verifyOwnershipInIter(op, "exchanges a kernel reference")))
+    return failure();
   // The removed reference needs one kref.check, like acquire results; expanded
   // checks are verified by VerifyStructured.
-  Value r = getOld();
-  bool stage2 = llvm::any_of(r.getUsers(), [](Operation *u) { return isa<IsPresentOp, AssumePresentOp>(u); });
+  bool stage2 = expandedNullCheck(r);
   if (!stage2) {
     unsigned checks = 0;
     for (OpOperand &use : r.getUses()) {
@@ -1233,14 +1732,90 @@ LogicalResult KPtrXchgOp::verify() {
         continue;
       }
       return use.getOwner()->emitOpError() << "uses an unchecked kernel reference " << r.getType()
-                                           << " taken out of a map value; check it with ebpf.kref.check first";
+                                           << " taken out of " << (from == "the map value" ? "a map value" : "a kptr global")
+                                           << "; check it with ebpf.kref.check first";
     }
     if (checks != 1)
-      return emitOpError() << "the reference taken out of the map value " << r.getType()
-                           << " must be checked exactly once by ebpf.kref.check, found " << checks
-                           << " (an unchecked reference leaks)";
+      return op->emitOpError() << "the reference taken out of " << from << " " << r.getType()
+                               << " must be checked exactly once by ebpf.kref.check, found " << checks
+                               << " (an unchecked reference leaks)";
   }
   return success();
+}
+
+// shared by kptr.load_rcu and global.kptr_load_rcu — placement,
+// the sleepable RCU section, and one kptr.check of the result.
+static LogicalResult verifyKPtrLoadRcuShape(Operation *op, Value r, StringRef opName, StringRef what, StringRef from) {
+  Operation *top = op;
+  bool inRcu = false;
+  for (Operation *p = op->getParentOp(); p; p = p->getParentOp()) {
+    if (isOpsTop(p)) { // a sched_ext_ops owner's timer callback too (its RCU rule per owner context).
+      top = p;
+      break;
+    }
+    if (isa<RcuRegionOp>(p))
+      inRcu = true;
+    if (isa<LoopOp, MapForEachOp, SpinRegionOp>(p) || p->getName().getStringRef() == "scf.if")
+      return op->emitOpError() << "is inside '" << p->getName()
+                               << "'; " << opName << " is only allowed in the body of an ebpf.program outside loops, map.for_each, "
+                                  "spin.region and scf.if";
+    top = p;
+  }
+  if (!isOpsTop(top))
+    return op->emitOpError() << "is outside an ebpf.program and an ebpf.func (callbacks cannot read " << what << ")";
+  // After ② the region is expanded to lock / unlock calls, so the section is
+  // no longer a parent; the ① check covered it (the defect).
+  // in an ebpf.func the sleepable kinds are checked per reaching context
+  // (ebpf-verify-call-contexts; the schema's sleepable struct_ops members:
+  // ebpf-verify-schema).
+  bool stage2 = expandedNullCheck(r);
+  auto prog = dyn_cast<ProgramOp>(top);
+  if (prog && !stage2 && !inRcu && bpfmlir::kindAllows(prog.getKind(), "sleepable"))
+    return op->emitOpError() << "reads a " << (what == "kptr fields" ? "kptr field" : "kptr global") << " in a " << prog.getKind()
+                             << " program, which is loaded sleepable, outside ebpf.rcu.region — the verifier marks it untrusted there "
+                                "(only inside the section)";
+  if (stage2)
+    return success(); // ② expansion: VerifyStructured checks the paths.
+  unsigned checks = 0;
+  for (Operation *u : r.getUsers()) {
+    if (!isa<KPtrCheckOp>(u))
+      return u->emitOpError() << "uses an unchecked " << r.getType() << " read from " << from << "; check it with ebpf.kptr.check first";
+    ++checks;
+  }
+  if (checks != 1)
+    return op->emitOpError() << "the RCU pointer " << r.getType() << " must be checked exactly once by ebpf.kptr.check, found " << checks;
+  return success();
+}
+
+// a kptr field read as MEM_RCU. bpf_cpumask only; one kptr.check use;
+// sleepable kinds (OPS tag `sleepable`) only inside ebpf.rcu.region (struct_ops
+// members declared sleepable: ebpf-verify-schema).
+LogicalResult KPtrLoadRcuOp::verify() {
+  auto b = dyn_cast<BorrowedType>(getRef().getType());
+  if (!b || !isa<RecordType>(b.getPointee()))
+    return emitOpError() << "takes a checked borrow of a map value record (!ebpf.borrowed<!ebpf.record<…>> — the block argument of "
+                            "ebpf.ref.check), got "
+                         << getRef().getType();
+  SmallVector<StringRef> fields;
+  getField().split(fields, '.', -1, true);
+  if (fields.size() > 3 || getField().contains('[') || getField().contains(']') ||
+      llvm::any_of(fields, [](StringRef f) { return f.empty(); }))
+    return emitOpError() << "field \"" << getField()
+                         << "\" must be a non-empty dotted path of at most 3 record fields, without array indices";
+  StringRef s = getPtr().getType().getStructName();
+  if (s != "bpf_cpumask")
+    return emitOpError() << "reads a kptr to struct " << s
+                         << " as an RCU pointer; the compiler supports ebpf.kptr.load_rcu only for bpf_cpumask";
+  return verifyKPtrLoadRcuShape(*this, getPtr(), "ebpf.kptr.load_rcu", "kptr fields", "a map value");
+}
+
+// a kptr global read as MEM_RCU, with kptr.load_rcu's rules.
+LogicalResult GlobalKPtrLoadRcuOp::verify() {
+  StringRef s = getPtr().getType().getStructName();
+  if (s != "bpf_cpumask")
+    return emitOpError() << "reads a kptr global to struct " << s
+                         << " as an RCU pointer; the compiler supports kptr globals only for bpf_cpumask";
+  return verifyKPtrLoadRcuShape(*this, getPtr(), "ebpf.global.kptr_load_rcu", "kptr globals", "a kptr global");
 }
 
 LogicalResult RefCheckOp::verify() {
@@ -1290,11 +1865,11 @@ LogicalResult RefCheckOp::verify() {
     // elements and closed spin regions also end within it. Timer operations
     // pass only the embedded timer pointer; kfield.copy writes bytes without
     // retaining the destination reference.
-    if (!isa<RefLoadOp, RefStoreOp, RefAtomicAddOp, RefFieldLoadOp, RefFieldStoreOp, RefFieldAtomicAddOp, CallOp, RefIndexOp, SpinRegionOp,
-             TimerInitOp, TimerSetCallbackOp, TimerStartOp, KFieldCopyOp, TpFieldCopyOp, MapInnerOp, KPtrXchgOp>(user)) // map.inner for validated outer-map borrows, and kptr.xchg.
+    if (!isa<RefLoadOp, RefStoreOp, RefAtomicAddOp, RefFieldLoadOp, RefFieldStoreOp, RefFieldAtomicAddOp, RefFieldCmpxchgOp, RefFieldAtomicOrOp, RefFieldAddrOp, CallOp, RefIndexOp, SpinRegionOp,
+             TimerInitOp, TimerSetCallbackOp, TimerStartOp, TimerCancelOp, KFieldCopyOp, TpFieldCopyOp, MapInnerOp, KPtrXchgOp, KPtrLoadRcuOp>(user)) // map.inner for validated outer-map borrows, and kptr.xchg.
       return emitOpError() << "a borrowed reference may only be consumed by "
                            << "ebpf.ref.{load,store,atomic_add} (ebpf.ref.field.{load,store} for records), ebpf.ref.index, ebpf.spin.region, "
-                           << "ebpf.timer.{init,set_callback,start}, or passed to ebpf.call, but it is used by '"
+                           << "ebpf.timer.{init,set_callback,start,cancel}, or passed to ebpf.call, but it is used by '"
                            << user->getName()
                            << "' (storing or forwarding it lets it escape the "
                               "check region)";
@@ -1505,6 +2080,428 @@ static bool ownerKindAllows(Operation *op, Value ctx, StringRef tag) {
   return !k.empty() && bpfmlir::kindAllows(k, tag) && cast<ContextType>(ctx.getType()).getKind() == k;
 }
 
+static bool insideStreamCallback(Operation *op) {
+  for (Operation *p = op->getParentOp(); p; p = p->getParentOp())
+    if (isa<LoopCallbackOp, BpfLoopOp, MapForEachOp, TimerCallbackOp,
+            UserRingbufCallbackOp>(p) ||
+        (isa<LoopOp>(p) && cast<LoopOp>(p).getCallback()))
+      return true;
+  return false;
+}
+static LogicalResult verifyStreamContext(Operation *op, Value ctx,
+                                         StringRef tag) {
+  auto prog = op->getParentOfType<ProgramOp>();
+  if (!prog || prog.getBody().empty() ||
+      prog.getBody().front().getNumArguments() == 0 ||
+      ctx != prog.getBody().front().getArgument(0) ||
+      !ownerKindAllows(op, ctx, tag))
+    return op->emitOpError("requires its supported program's entry context "
+                           "(not a static function)");
+  if (insideStreamCallback(op))
+    return op->emitOpError("is not supported in a helper callback");
+  return success();
+}
+LogicalResult SkbLoadBytesOp::verify() {
+  if (failed(verifyStreamContext(*this, getCtx(), "skb.load_bytes")))
+    return failure();
+  if (getLen() < 1 || getLen() > 8)
+    return emitOpError("length must be a constant in 1..8");
+  return success();
+}
+LogicalResult SkbAdjustRoomOp::verify() {
+  if (failed(verifyStreamContext(*this, getCtx(), "skb.adjust_room")))
+    return failure();
+  // sched_cls takes a room mode word (UAPI adjroommode) and stays
+  // outside loops; sk_skb keeps its zero mode/flags contract and loop use.
+  if (cast<ContextType>(getCtx().getType()).getKind() == "sched_cls") {
+    if (getMode() != 0 || getFlags() != 0)
+      return emitOpError("sched_cls selects the mode with the mode word; numeric mode and flags must be zero");
+    if (getRoomMode() && !bpfabi::lookupAdjRoomMode(*getRoomMode()))
+      return emitOpError() << "unknown room mode \"" << *getRoomMode() << "\" (known: \"net\", \"mac\")";
+    if ((*this)->getParentOfType<LoopOp>())
+      return emitOpError("in sched_cls is not allowed inside ebpf.loop (it invalidates packet windows)");
+    return success();
+  }
+  if (getRoomMode())
+    return emitOpError("the mode word is only for sched_cls");
+  if (getMode() != 0 || getFlags() != 0)
+    return emitOpError("sk_skb mode and flags must both be zero");
+  return success();
+}
+
+// sched_cls / xdp packet helpers. Entry context of a program
+// whose kind has the OPS tag, outside loops and helper callbacks.
+static LogicalResult verifyWave3Op(Operation *op, Value ctx, StringRef tag) {
+  auto prog = op->getParentOfType<ProgramOp>();
+  if (!prog || prog.getBody().empty() ||
+      prog.getBody().front().getNumArguments() == 0 ||
+      ctx != prog.getBody().front().getArgument(0) ||
+      !ownerKindAllows(op, ctx, tag))
+    return op->emitOpError() << "requires the entry context of a " << bpfmlir::kindsAllowing(tag)
+                             << " program (not a static function)";
+  if (insideStreamCallback(op))
+    return op->emitOpError("is not supported in a helper callback");
+  if (op->getParentOfType<LoopOp>())
+    return op->emitOpError("is not allowed inside ebpf.loop");
+  return success();
+}
+LogicalResult SkbPullDataOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.resize"); }
+// the new helpers deliberately exclude netkit, which shares sched_cls.
+static LogicalResult verifySkbDatapath(Operation *op, Value ctx, bool allowLoop = false) {
+  if (failed(verifyStreamContext(op, ctx, "skb.datapath")))
+    return failure();
+  auto prog = op->getParentOfType<ProgramOp>();
+  StringRef attach = prog.getAttach() ? *prog.getAttach() : "";
+  if (attach != "ingress" && attach != "egress")
+    return op->emitOpError("requires TCX ingress or egress (not netkit)");
+  if (!allowLoop && op->getParentOfType<LoopOp>())
+    return op->emitOpError("is not allowed inside ebpf.loop");
+  return success();
+}
+LogicalResult SkbVlanPushOp::verify() { return verifySkbDatapath(*this, getCtx()); }
+LogicalResult SkbVlanPopOp::verify() { return verifySkbDatapath(*this, getCtx()); }
+LogicalResult SkbLoadBytesRelativeOp::verify() {
+  if (failed(verifySkbDatapath(*this, getCtx(), true))) return failure();
+  if (getLen() < 1 || getLen() > 8) return emitOpError("len must be in 1..8");
+  if (!bpfabi::lookupHeaderStart(getStart())) return emitOpError("start must be mac or net");
+  return success();
+}
+LogicalResult SkbCheckMtuOp::verify() { return verifySkbDatapath(*this, getCtx()); }
+LogicalResult SkbCsumLevelOp::verify() {
+  if (failed(verifySkbDatapath(*this, getCtx()))) return failure();
+  if (!bpfabi::lookupCsumLevel(getMode())) return emitOpError("mode must be query, inc, dec or reset");
+  return success();
+}
+LogicalResult SkbSetHashOp::verify() { return verifySkbDatapath(*this, getCtx()); }
+LogicalResult SkbSetHashInvalidOp::verify() { return verifySkbDatapath(*this, getCtx()); }
+LogicalResult SkbEcnSetCeOp::verify() { return verifySkbDatapath(*this, getCtx()); }
+
+// tunnel key get / set. The record is the exact 44-byte struct
+// bpf_tunnel_key view of the flags' family (checked in ebpf-verify-records).
+static LogicalResult verifyTunnelKeyOp(Operation *op, Value ctx, StringRef flags, bool forSet, Value in,
+                                       RecordMakeOp &mk) {
+  if (failed(verifySkbDatapath(op, ctx)))
+    return failure();
+  if (!bpfabi::tunnelFlagsValue(flags, forSet))
+    return op->emitOpError() << "flags \"" << flags << "\" are not supported; \"none\" or a comma-separated subset of "
+                             << (forSet ? "tuninfo_ipv6, zero_csum_tx, dont_fragment, seq_number, no_tunnel_key"
+                                        : "tuninfo_ipv6, tuninfo_flags")
+                             << " (each at most once; other flags and dynamic flags are outside the compiler's capability)";
+  mk = in.getDefiningOp<RecordMakeOp>();
+  if (!mk)
+    return op->emitOpError("the record must be an ebpf.record.make result (the helper reads a compiler-owned copy; map values and borrowed records are not accepted)");
+  return success();
+}
+LogicalResult SkbGetTunnelKeyOp::verify() {
+  RecordMakeOp mk;
+  if (failed(verifyTunnelKeyOp(*this, getCtx(), getFlags(), false, getInput(), mk)))
+    return failure();
+  if (getInput().getType() != getOutput().getType())
+    return emitOpError("output record type must equal the input record type");
+  for (Operation *user : getOutput().getUsers())
+    if (!isa<RecordFieldOp>(user))
+      return user->emitOpError() << "uses the output record of ebpf.skb.get_tunnel_key; it may only be read with ebpf.record.field";
+  return success();
+}
+LogicalResult SkbSetTunnelKeyOp::verify() {
+  RecordMakeOp mk;
+  return verifyTunnelKeyOp(*this, getCtx(), getFlags(), true, getKey(), mk);
+}
+LogicalResult SkbChangeTailOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.resize"); }
+LogicalResult SkbChangeHeadOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.resize"); }
+LogicalResult SkbChangeProtoOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.resize"); }
+LogicalResult SkbChangeTypeOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.meta"); }
+LogicalResult CsumUpdateOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.meta"); }
+LogicalResult SkbHashRecalcOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.meta"); }
+LogicalResult SkbCgroupClassidOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.meta"); }
+LogicalResult SkbNetnsCookieOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.meta"); }
+// one OPS tag each; the allowed kinds differ per op.
+LogicalResult SkbSocketUidOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.socket_uid"); }
+LogicalResult SkbCgroupIdOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.cgroup_id"); }
+LogicalResult SkbAncestorCgroupIdOp::verify() { return verifyWave3Op(*this, getCtx(), "skb.ancestor_cgroup_id"); }
+LogicalResult SockOpsCbFlagsSetOp::verify() { return verifyWave3Op(*this, getCtx(), "sock_ops.cb_flags_set"); }
+
+// the closed option table; the placement rules are the wave-3 ones.
+static LogicalResult verifySockOption(Operation *op, Value ctx, StringRef name, bool forGet, StringRef tag = "sock_ops.sockopt") {
+  if (failed(verifyWave3Op(op, ctx, tag)))
+    return failure();
+  const bpfabi::SockOptABI *row = bpfabi::lookupSockOption(name);
+  if (!row) {
+    auto diag = op->emitOpError() << "unknown socket option '" << name << "'; the closed table is ";
+    llvm::interleaveComma(bpfabi::sockOptions(), diag, [&](const bpfabi::SockOptABI &r) { diag << r.Name; });
+    return diag;
+  }
+  if (forGet && !row->Get)
+    return op->emitOpError() << "socket option '" << name << "' is set-only and cannot be read with getsockopt";
+  return success();
+}
+
+LogicalResult SockOpsSetsockoptOp::verify() { return verifySockOption(*this, getCtx(), getOption(), false); }
+
+LogicalResult SockOpsGetsockoptOp::verify() { return verifySockOption(*this, getCtx(), getOption(), true); }
+
+// the same closed table from cgroup_sock_addr, opened only on the two
+// attaches selected; an omitted attach is not opened either.
+static LogicalResult verifySockAddrOption(Operation *op, Value ctx, StringRef name, bool forGet) {
+  if (failed(verifySockOption(op, ctx, name, forGet, "sock_addr.sockopt")))
+    return failure();
+  auto prog = op->getParentOfType<ProgramOp>();
+  std::optional<StringRef> attach = prog.getAttach();
+  if (!attach || (*attach != "connect4" && *attach != "bind4"))
+    return op->emitOpError() << "requires attach \"connect4\" or \"bind4\" written on the program (the two selected attaches), not "
+                             << (attach ? ("attach \"" + *attach + "\"").str() : std::string("no attach"));
+  return success();
+}
+
+LogicalResult SockAddrSetsockoptOp::verify() { return verifySockAddrOption(*this, getCtx(), getOption(), false); }
+
+LogicalResult SockAddrGetsockoptOp::verify() { return verifySockAddrOption(*this, getCtx(), getOption(), true); }
+
+// the closed string-option table and the constant name's bytes.
+LogicalResult SockOpsSetsockoptNameOp::verify() {
+  if (failed(verifyWave3Op(*this, getCtx(), "sock_ops.sockopt")))
+    return failure();
+  if (!bpfabi::lookupSockOptionName(getOption())) {
+    auto diag = emitOpError() << "unknown string socket option '" << getOption() << "'; the closed table is ";
+    llvm::interleaveComma(bpfabi::sockOptionNames(), diag, [&](const bpfabi::SockOptNameABI &r) { diag << r.Name; });
+    return diag;
+  }
+  StringRef name = getLiteral();
+  if (name.empty() || name.size() > bpfabi::kSockOptNameMaxBytes)
+    return emitOpError() << "name of " << name.size() << " bytes; the name is 1.." << bpfabi::kSockOptNameMaxBytes
+                         << " bytes (the compiler's limit: the kernel silently truncates a longer name)";
+  for (size_t i = 0; i < name.size(); ++i) {
+    unsigned char c = name[i];
+    if (c < 0x20 || c == 0x7f)
+      return emitOpError() << "name byte " << i << " is NUL or a control character";
+  }
+  return success();
+}
+LogicalResult XdpBuffLenOp::verify() { return verifyWave3Op(*this, getCtx(), "xdp.bytes"); }
+LogicalResult L4CsumReplaceOp::verify() { return verifyWave3Op(*this, getCtx(), "tc.mutation"); }
+LogicalResult XdpLoadBytesOp::verify() {
+  if (failed(verifyWave3Op(*this, getCtx(), "xdp.bytes")))
+    return failure();
+  if (getLen() < 1 || getLen() > 8)
+    return emitOpError("length must be a constant in 1..8");
+  return success();
+}
+LogicalResult XdpStoreBytesOp::verify() {
+  if (failed(verifyWave3Op(*this, getCtx(), "xdp.bytes")))
+    return failure();
+  unsigned width = cast<IntegerType>(getValue().getType()).getWidth();
+  if (!((getLen() == 1 && width == 8) || (getLen() == 4 && width == 32) ||
+        ((getLen() == 6 || getLen() == 8) && width == 64)))
+    return emitOpError("len/type must be 1/i8, 4/i32, 6/i64 or 8/i64");
+  return success();
+}
+// fib_lookup on the own xdp entry context. Placement is the
+// program body, ebpf.if or packet.check only (verifyWave3Op already rejects
+// loops, callbacks and static functions); the output record feeds only
+// ebpf.record.field. The exact 64-byte view is checked by ebpf-verify-records.
+LogicalResult FibLookupOp::verify() {
+  if (failed(verifyWave3Op(*this, getCtx(), "fib.lookup")))
+    return failure();
+  for (Operation *p = (*this)->getParentOp(); p && !isa<ProgramOp>(p); p = p->getParentOp())
+    if (!isa<IfOp, PacketCheckOp>(p))
+      return emitOpError() << "must be directly in the program body, an ebpf.if or an ebpf.packet.check region (not inside "
+                           << p->getName() << ")";
+  if (getFlags() != "none" && getFlags() != "direct")
+    return emitOpError() << "flags \"" << getFlags()
+                         << "\" are not supported; only \"none\" and \"direct\" (other FIB flags and dynamic flags are outside the compiler's capability)";
+  if (!getInput().getDefiningOp<RecordMakeOp>())
+    return emitOpError("input must be an ebpf.record.make result (the helper reads a compiler-owned copy; map values and borrowed records are not accepted)");
+  if (getInput().getType() != getOutput().getType())
+    return emitOpError("output record type must equal the input record type");
+  for (Operation *user : getOutput().getUsers())
+    if (!isa<RecordFieldOp>(user))
+      return user->emitOpError() << "uses the output record of ebpf.fib.lookup; it may only be read with ebpf.record.field";
+  return success();
+}
+
+// record.field reads only an ebpf.fib.lookup output (not a general
+// record reader). Path syntax here; leaf, index range and type in ebpf-verify-records.
+LogicalResult RecordFieldOp::verify() {
+  auto fib = getRecord().getDefiningOp<FibLookupOp>();
+  auto tun = getRecord().getDefiningOp<SkbGetTunnelKeyOp>();
+  if (!((fib && fib.getOutput() == getRecord()) || (tun && tun.getOutput() == getRecord())))
+    return emitOpError("reads only the output record of ebpf.fib.lookup or ebpf.skb.get_tunnel_key");
+  StringRef p = getPath();
+  StringRef name = p.take_until([](char c) { return c == '['; });
+  if (name.empty() || name.contains('.'))
+    return emitOpError() << "path \"" << p << "\" must name one leaf field, optionally with a constant index";
+  StringRef rest = p.drop_front(name.size());
+  if (!rest.empty()) {
+    unsigned idx;
+    if (!rest.consume_front("[") || !rest.consume_back("]") || rest.empty() || rest.getAsInteger(10, idx))
+      return emitOpError() << "path \"" << p << "\" index must be a constant decimal like \"" << name << "[0]\"";
+  }
+  return success();
+}
+
+// csum_diff takes no context; the program kind must allow it (sched_cls / xdp).
+LogicalResult CsumDiffOp::verify() {
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!prog || !bpfmlir::kindAllows(prog.getKind(), "csum.diff"))
+    return emitOpError() << "requires an enclosing " << bpfmlir::kindsAllowing("csum.diff")
+                         << " program (not a static function)";
+  if (insideStreamCallback(*this))
+    return emitOpError("is not supported in a helper callback");
+  if ((*this)->getParentOfType<LoopOp>())
+    return emitOpError("is not allowed inside ebpf.loop");
+  if (!getFrom() && !getTo())
+    return emitOpError("needs a from or a to value (both absent only returns the seed)");
+  for (Value v : {getFrom(), getTo()})
+    if (v) {
+      unsigned w = cast<IntegerType>(v.getType()).getWidth();
+      if (w != 32 && w != 64)
+        return emitOpError("from / to values must be i32 or i64 (4 or 8 bytes)");
+    }
+  return success();
+}
+LogicalResult TracePrintkOp::verify() {
+  // in an ebpf.func the kind is checked per reaching context
+  // (ebpf-verify-call-contexts).
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  bool inFunc = !prog && (*this)->getParentOfType<SubprogramOp>();
+  if (!inFunc && (!prog || !bpfmlir::kindAllows(prog.getKind(), "trace.printk")))
+    return emitOpError(
+        "requires a supported enclosing program (not a static function)");
+  if (insideStreamCallback(*this))
+    return emitOpError("is not supported in a helper callback");
+  // the %s literals — string attributes without an embedded NUL.
+  std::vector<StringRef> strs;
+  if (ArrayAttr arr = getStrsAttr())
+    for (auto [i, a] : llvm::enumerate(arr)) {
+      auto s = dyn_cast<StringAttr>(a);
+      if (!s)
+        return emitOpError() << "strs element #" << i << " must be a string literal, got " << a;
+      if (s.getValue().contains('\0'))
+        return emitOpError() << "strs element #" << i << " must not contain an embedded NUL";
+      strs.push_back(s.getValue());
+    }
+  std::string error;
+  auto spec = bpfmlir::parseTraceFormat(getFormat(), error);
+  if (!spec)
+    return emitOpError() << error;
+  unsigned nstr = llvm::count_if(*spec, [](const bpfmlir::TraceFormatArg &f) { return f.isString; });
+  unsigned nint = spec->size() - nstr;
+  if (nstr != strs.size())
+    return emitOpError() << "%s conversion count must match the strs count (" << nstr << " %s conversions, " << strs.size()
+                         << " strs elements — %% consumes no literal)";
+  if (nint != getArgs().size())
+    return emitOpError() << "format conversion count must match argument count (" << nint << " integer conversions, "
+                         << getArgs().size() << " integer arguments)";
+  auto arg = getArgs().begin();
+  for (const bpfmlir::TraceFormatArg &format : *spec) {
+    if (format.isString)
+      continue;
+    if (!(*arg).getType().isInteger(format.bits))
+      return emitOpError() << "format conversion requires i" << format.bits;
+    ++arg;
+  }
+  uint64_t bin = bpfmlir::traceBinArgsBytes(strs, nint);
+  if (bin > bpfmlir::kTraceBinArgsBound)
+    return emitOpError() << "needs " << bin << " bytes of bin_args (sum of %s literal length + 1 + 7, plus 8 per integer), "
+                         << "above the compiler's bound " << bpfmlir::kTraceBinArgsBound
+                         << " (a conservative bound over the kernel's MAX_BPRINTF_BIN_ARGS — the kernel may still accept this)";
+  return success();
+}
+
+// ctx-free scalar helpers keep the task.pid_tgid placement (program,
+// static function, B / U loop) but are not opened directly in helper
+// callbacks. Reaching them through a static function called from a callback
+// is not rejected (the kernel checks callbacks with the program's protos).
+static LogicalResult verifyScalarHelperPlacement(Operation *op) {
+  if (insideStreamCallback(op))
+    return op->emitOpError("is not supported in a helper callback");
+  return success();
+}
+LogicalResult CpuIdOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult RandomU32Op::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult NumaNodeIdOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult TaskUidGidOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult Jiffies64Op::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult KtimeBootNsOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult KtimeCoarseNsOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult KtimeTaiNsOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult TaskAncestorCgroupIdOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult TaskCurrentRawOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult TaskNsPidTgidOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult TaskSendSignalOp::verify() { return verifyScalarHelperPlacement(*this); }
+LogicalResult TaskSendSignalThreadOp::verify() { return verifyScalarHelperPlacement(*this); }
+
+LogicalResult CtxFuncIpOp::verify() {
+  return verifyStreamContext(*this, getCtx(), "ctx.func_ip");
+}
+LogicalResult CtxFuncArgCntOp::verify() {
+  return verifyStreamContext(*this, getCtx(), "ctx.func_arg_cnt");
+}
+LogicalResult CtxFuncArgOp::verify() {
+  if (failed(verifyStreamContext(*this, getCtx(), "ctx.func_arg")))
+    return failure();
+  unsigned width = getValue().getType().getIntOrFloatBitWidth();
+  if (width != 8 && width != 16 && width != 32 && width != 64)
+    return emitOpError("value must be i8 / i16 / i32 / i64");
+  return success();
+}
+
+static LogicalResult verifyCgroupRetval(Operation *op) {
+  auto prog = op->getParentOfType<ProgramOp>();
+  if (!prog || op->getParentOfType<SubprogramOp>() || insideStreamCallback(op))
+    return op->emitOpError("requires a program body or non-callback loop");
+  if (!bpfmlir::kindAllows(prog.getKind(), "cgroup.retval"))
+    return op->emitOpError("requires a supported cgroup kind/hook");
+  if (prog.getKind() == "cgroup_sock_addr") {
+    StringRef hook = prog.getAttach().value_or("");
+    // Empty selects the existing connect4 default. Receive/name hooks are
+    // deliberately excluded by cgroup_common_func_proto.
+    if (!hook.empty() && hook != "bind4" && hook != "bind6" &&
+        hook != "connect4" && hook != "connect6" && hook != "connect_unix" &&
+        hook != "sendmsg4" && hook != "sendmsg6")
+      return op->emitOpError("requires a supported cgroup kind/hook");
+  }
+  return success();
+}
+LogicalResult CgroupRetvalOp::verify() { return verifyCgroupRetval(*this); }
+LogicalResult CgroupSetRetvalOp::verify() { return verifyCgroupRetval(*this); }
+
+// the placement of task.current_btf; the untrusted result reaches only kfield.load.
+LogicalResult TaskPtRegsOp::verify() {
+  if (getTask().getType().getStructName() != "task_struct")
+    return emitOpError("takes !ebpf.kptr<\"task_struct\">");
+  if (getResult().getType().getStructName() != "pt_regs")
+    return emitOpError("returns !ebpf.kptr<\"pt_regs\">");
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!prog)
+    return emitOpError("requires a program body (not a static function)");
+  for (Operation *p = (*this)->getParentOp(); p && p != prog.getOperation(); p = p->getParentOp())
+    if (isa<SubprogramOp, LoopCallbackOp, TimerCallbackOp, UserRingbufCallbackOp, LoopOp, MapForEachOp, BpfLoopOp>(p))
+      return emitOpError("is not supported inside a func, callback or loop");
+  for (OpOperand &use : getResult().getUses())
+    if (!isa<KFieldLoadOp>(use.getOwner()))
+      return emitOpError() << "the result may only be the pointer of ebpf.kfield.load (it is not a trusted pointer), but it is used by '"
+                           << use.getOwner()->getName() << "'";
+  return success();
+}
+
+// the typed current task stays in the program body, like kptr.addr's
+// placement, without its tracing-kind restriction (availability is the
+// requirements helper row at load).
+LogicalResult TaskCurrentBtfOp::verify() {
+  if (getResult().getType().getStructName() != "task_struct")
+    return emitOpError("returns !ebpf.kptr<\"task_struct\">");
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!prog)
+    return emitOpError("requires a program body (not a static function)");
+  for (Operation *p = (*this)->getParentOp(); p && p != prog.getOperation();
+       p = p->getParentOp())
+    if (isa<SubprogramOp, LoopCallbackOp, TimerCallbackOp,
+            UserRingbufCallbackOp, LoopOp, MapForEachOp, BpfLoopOp>(p))
+      return emitOpError("is not supported inside a func, callback or loop");
+  return success();
+}
+
 static LogicalResult verifyUserArrayUses(Operation *op, Value value) {
   if (!isa<UserStrArrayType>(value.getType()))
     return success();
@@ -1609,6 +2606,18 @@ static LogicalResult verifySockRedirect(Operation *op, StringRef tag, StringRef 
 LogicalResult SkRedirectOp::verify() {
   return verifySockRedirect(*this, "sk.redirect", "bpf_sk_redirect_map / bpf_sk_redirect_hash", getCtx(), getMap(), getKey(), getCond(),
                             getElseAction() ? std::optional<StringRef>(*getElseAction()) : std::nullopt);
+}
+
+LogicalResult SkRedirectRequestOp::verify() {
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!prog || prog.getKind() != "sk_skb" || prog.getBody().empty() ||
+      prog.getBody().front().getNumArguments() == 0 || getCtx() != prog.getBody().front().getArgument(0))
+    return emitOpError("requires the entry context of an sk_skb program (not a static function)");
+  for (Operation *p = (*this)->getParentOp(); p && p != prog; p = p->getParentOp()) {
+    if (isa<LoopCallbackOp, BpfLoopOp>(p) || (isa<LoopOp>(p) && cast<LoopOp>(p).getCallback()))
+      return emitOpError("is not supported in a helper callback");
+  }
+  return checkSockMapKey(*this, getMap(), getKey());
 }
 
 LogicalResult MsgRedirectOp::verify() {
@@ -1750,6 +2759,13 @@ LogicalResult XdpAdjustHeadOp::verify() {
   return success();
 }
 
+LogicalResult XdpAdjustMetaOp::verify() {
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!prog || !bpfmlir::kindAllows(prog.getKind(), "xdp.adjust") || cast<ContextType>(getCtx().getType()).getKind() != prog.getKind())
+    return emitOpError() << "is only for " << bpfmlir::kindsAllowing("xdp.adjust") << " programs (bpf_xdp_adjust_meta moves the metadata start of an XDP packet)";
+  return success();
+}
+
 LogicalResult XdpAdjustTailOp::verify() {
   auto prog = (*this)->getParentOfType<ProgramOp>();
   if (!prog || !bpfmlir::kindAllows(prog.getKind(), "xdp.adjust") || cast<ContextType>(getCtx().getType()).getKind() != prog.getKind())
@@ -1767,12 +2783,80 @@ LogicalResult XdpAdjustTailOp::verify() {
   return success();
 }
 
+static LogicalResult verifyTcMutation(Operation *op, Value ctx) {
+  auto prog = op->getParentOfType<ProgramOp>();
+  if (!prog || !bpfmlir::kindAllows(prog.getKind(), "tc.mutation") || prog.getBody().empty() ||
+      prog.getBody().front().getNumArguments() == 0 ||
+      ctx != prog.getBody().front().getArgument(0))
+    return op->emitOpError("requires the owning sched_cls entry context");
+  if (op->getParentOfType<LoopOp>())
+    return op->emitOpError("is not allowed inside ebpf.loop");
+  return success();
+}
+
+LogicalResult CloneRedirectOp::verify() {
+  if (failed(verifyTcMutation(*this, getCtx())))
+    return failure();
+  if (getFlags() != "egress" && getFlags() != "ingress")
+    return emitOpError("flags must be egress or ingress");
+  return success();
+}
+
+LogicalResult SkbStoreBytesOp::verify() {
+  if (failed(verifyTcMutation(*this, getCtx())))
+    return failure();
+  unsigned width = cast<IntegerType>(getValue().getType()).getWidth();
+  if (!((getLen() == 1 && width == 8) || (getLen() == 4 && width == 32) ||
+        ((getLen() == 6 || getLen() == 8) && width == 64)))
+    return emitOpError("len/type must be 1/i8, 4/i32, 6/i64 or 8/i64");
+  if (getFlags() != 0)
+    return emitOpError("flags must be zero");
+  return success();
+}
+
+LogicalResult L3CsumReplaceOp::verify() {
+  return verifyTcMutation(*this, getCtx());
+}
+
 LogicalResult RedirectOp::verify() {
   llvm::StringRef kind = (*this)->getParentOfType<ProgramOp>().getKind();
+  if (programAttachOf(*this).starts_with("netkit_"))
+    return emitOpError("terminal redirect is not supported for netkit programs");
+  if (getFlags() && (kind != "sched_cls" || (*getFlags() != "egress" && *getFlags() != "ingress")))
+    return emitOpError("explicit flags require sched_cls and must be egress or ingress");
   if (!bpfmlir::kindAllows(kind, "redirect"))
     return emitOpError() << "is only for " << bpfmlir::kindsAllowing("redirect") << " programs (bpf_redirect to an ifindex), not \"" << kind << "\"";
-  if (getCond() && !getElseAction())
-    return emitOpError() << "`when` needs an `else` verdict";
+  if (auto via = getVia()) {
+    // redirect_neigh / redirect_peer variants.
+    if (getFlags())
+      return emitOpError("via excludes flags");
+    if (*via != "neigh" && *via != "peer")
+      return emitOpError() << "unknown via \"" << *via << "\" (known: \"neigh\", \"peer\")";
+    std::string tag = ("redirect." + *via).str();
+    if (!bpfmlir::kindAllows(kind, tag))
+      return emitOpError() << "via \"" << *via << "\" is only for " << bpfmlir::kindsAllowing(tag) << " programs, not \"" << kind << "\"";
+    if (*via == "peer" && programAttachOf(*this) != "ingress")
+      return emitOpError("via \"peer\" requires attach \"ingress\" (the kernel drops a peer redirect at egress)");
+  }
+  bool hasFallback = !getFallback().empty();
+  if (hasFallback && (!getCond() || getElseAction()))
+    return emitOpError("fallback requires when and excludes else");
+  if (getElseAction() && !getCond())
+    return emitOpError("else requires when");
+  if (getCond() && !getElseAction() && !hasFallback)
+    return emitOpError("`when` needs an `else` verdict or fallback");
+  if (hasFallback) {
+    if (!getFallback().hasOneBlock() || getFallback().front().getNumArguments())
+      return emitOpError("fallback requires one block without arguments");
+    Block &fb = getFallback().front();
+    if (fb.empty() || !isa<VerdictOp, VerdictIfOp>(fb.back()))
+      return emitOpError("fallback must end with ebpf.verdict or ebpf.verdict.if");
+    for (Operation &op : fb.without_terminator())
+      if (op.getName().getDialectNamespace() != "arith" || op.getNumRegions() ||
+          llvm::any_of(op.getOperandTypes(), [](Type t) { return !isa<IntegerType>(t); }) ||
+          llvm::any_of(op.getResultTypes(), [](Type t) { return !isa<IntegerType>(t); }))
+        return emitOpError("fallback permits only integer arithmetic and a verdict terminator");
+  }
   if (getElseAction() && !isVerdictAllowedFor(kind, programAttachOf(*this), *getElseAction()))
     return emitOpError() << "verdict \"" << *getElseAction() << "\" is not valid for program kind \"" << kind
                          << "\" (known: " << knownVerdicts(kind, programAttachOf(*this)) << ")";
@@ -1928,14 +3012,326 @@ LogicalResult PktCheckBrOp::verify() {
   return success();
 }
 
+// xdp.meta_check — the XDP metadata window. It checks `data_meta + len
+// <= data`, so it is a different window (type, bound, uses) from packet.check.
+static constexpr int64_t kMetaWindowMax = 255;
+
+LogicalResult MetaCheckOp::verify() {
+  auto ctx = cast<ContextType>(getCtx().getType());
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!bpfmlir::kindAllows(ctx.getKind(), "xdp.adjust") || !prog || prog.getKind() != ctx.getKind())
+    return emitOpError() << "is only for " << bpfmlir::kindsAllowing("xdp.adjust")
+                         << " programs and their entry context (the metadata window is not available in functions or callbacks)";
+  if ((*this)->getParentOfType<SubprogramOp>())
+    return emitOpError() << "is not allowed in a static ebpf.func (the metadata window never crosses a call)";
+  if ((*this)->getParentOfType<LoopOp>())
+    return emitOpError() << "is not allowed inside ebpf.loop";
+  if (getLen() < 1 || getLen() > static_cast<uint64_t>(kMetaWindowMax))
+    return emitOpError() << "the window length " << getLen() << " must be in 1.." << kMetaWindowMax;
+  if (getInRange().empty() || getOutOfRange().empty())
+    return emitOpError() << "both the in_range and out_of_range regions must have a body";
+  Block &in = getInRange().front();
+  if (in.getNumArguments() != 1)
+    return emitOpError() << "the in_range region must take exactly one argument (the checked window), got " << in.getNumArguments();
+  auto wt = dyn_cast<MetaWindowType>(in.getArgument(0).getType());
+  if (!wt || wt.getLen() != static_cast<int64_t>(getLen()))
+    return emitOpError() << "the in_range region argument must be !ebpf.meta_window<" << getLen() << ">, got "
+                         << in.getArgument(0).getType();
+  if (getOutOfRange().front().getNumArguments() != 0)
+    return emitOpError() << "the out_of_range region must take no arguments (there is no window)";
+  for (Operation *user : in.getArgument(0).getUsers()) {
+    if (!isa<MetaStoreOp, MetaLoadOp>(user))
+      return emitOpError() << "a checked meta window may only be used by ebpf.xdp.meta_store or ebpf.xdp.meta_load, but it is used by '"
+                           << user->getName() << "' (forwarding it lets it escape the range check)";
+    if (!getInRange().isAncestor(user->getParentRegion()))
+      return emitOpError() << "a checked meta window must be used inside the in_range region of its own ebpf.xdp.meta_check";
+  }
+  for (Region *r : {&getInRange(), &getOutOfRange()})
+    for (Block &blk : *r)
+      for (BlockArgument arg : blk.getArguments())
+        if (&blk != &in && isa<MetaWindowType>(arg.getType()))
+          return emitOpError() << "a checked meta window must not be carried across blocks as a block argument";
+  return success();
+}
+
+LogicalResult MetaLoadOp::verify() {
+  unsigned w = getResult().getType().getIntOrFloatBitWidth();
+  if (w != 8 && w != 16 && w != 32 && w != 64)
+    return emitOpError() << "reads an i8 / i16 / i32 / i64, got " << getResult().getType();
+  int64_t len = cast<MetaWindowType>(getWindow().getType()).getLen();
+  uint64_t idx = getIndex(), bytes = w / 8, ulen = static_cast<uint64_t>(len);
+  if (idx > ulen || bytes > ulen - idx) // Subtraction: idx + bytes can wrap.
+    return emitOpError() << "reads " << bytes << " bytes at index " << static_cast<int64_t>(idx) << ", outside the checked meta window of "
+                         << len << " bytes";
+  return success();
+}
+
+LogicalResult MetaStoreOp::verify() {
+  unsigned w = getValue().getType().getIntOrFloatBitWidth();
+  if (w != 8 && w != 16 && w != 32 && w != 64)
+    return emitOpError() << "stores an i8 / i16 / i32 / i64, got " << getValue().getType();
+  int64_t len = cast<MetaWindowType>(getWindow().getType()).getLen();
+  uint64_t idx = getIndex(), bytes = w / 8, ulen = static_cast<uint64_t>(len);
+  if (idx > ulen || bytes > ulen - idx)
+    return emitOpError() << "writes " << bytes << " bytes at index " << static_cast<int64_t>(idx) << ", outside the checked meta window of "
+                         << len << " bytes";
+  return success();
+}
+
+LogicalResult MetaCheckBrOp::verify() {
+  auto ctx = cast<ContextType>(getCtx().getType());
+  if (!bpfmlir::kindAllows(ctx.getKind(), "xdp.adjust"))
+    return emitOpError() << "is only for " << bpfmlir::kindsAllowing("xdp.adjust") << " contexts";
+  Block *in = getInRange();
+  if (in->getNumArguments() != 1 || !isa<MetaWindowType>(in->getArgument(0).getType()) ||
+      cast<MetaWindowType>(in->getArgument(0).getType()).getLen() != static_cast<int64_t>(getLen()))
+    return emitOpError() << "the in_range successor must take exactly one !ebpf.meta_window<" << getLen() << "> argument";
+  if (getOutOfRange()->getNumArguments() != 0)
+    return emitOpError() << "the out_of_range successor must take no arguments";
+  return success();
+}
+
+// arena.base / arena.check live only in an ebpf.program body (nested
+// regions included). A body that becomes its own function — ebpf.func, the
+// timer / user_ringbuf callbacks, a callback loop (H), map.for_each — is
+// rejected by name: the window base and windows never cross a call.
+static LogicalResult verifyArenaPlacement(Operation *op) {
+  for (Operation *p = op->getParentOp(); p; p = p->getParentOp()) {
+    if (isa<ProgramOp>(p))
+      return success();
+    if (auto l = dyn_cast<LoopOp>(p); l && l.getCallback())
+      return op->emitOpError() << "is not allowed in a callback loop (H) body — the body becomes a separate bpf_loop callback "
+                                  "function; arena ops are only in the ebpf.program body";
+    if (isa<MapForEachOp>(p))
+      return op->emitOpError() << "is not allowed in an ebpf.map.for_each body — the body becomes a separate callback "
+                                  "function; arena ops are only in the ebpf.program body";
+    if (isa<SubprogramOp, TimerCallbackOp, UserRingbufCallbackOp, LoopCallbackOp>(p))
+      break;
+  }
+  return op->emitOpError() << "is only inside an ebpf.program body (not in ebpf.func, ebpf.timer.callback, "
+                              "ebpf.user_ringbuf.callback or a callback body) — the arena window base is not passed "
+                              "through calls";
+}
+
+LogicalResult ArenaAllocOp::verify() {
+  auto prog = dyn_cast_or_null<ProgramOp>((*this)->getParentOp());
+  if (!prog || prog.getKind() != "syscall" || (*this)->getBlock() != &prog.getBody().front())
+    return emitOpError("requires the direct entry body of a sleepable syscall program");
+  auto map = dyn_cast<BlockArgument>(getMap());
+  if (!map || map.getOwner() != &prog.getBody().front() ||
+      cast<MapType>(getMap().getType()).getKind() != "arena")
+    return emitOpError("requires an entry-bound arena map");
+  if (getPageOffsetAttr().getInt() < 0 || getPageCountAttr().getInt() <= 0 ||
+      getPageOffset() > (uint64_t(1) << 20) || getPageCount() > (uint64_t(1) << 20))
+    return emitOpError("requires a nonnegative page offset and a positive page count within 2^20 pages");
+  if (failed(verifyRegionResultWidths(*this)))
+    return failure();
+  bool unsafe = false;
+  prog.walk([&](Operation *op) {
+    if (op == prog.getOperation() || op->getName().getDialectNamespace() == "arith")
+      return;
+    // A positive finite list: new ops do not silently gain a no-free summary.
+    if (isa<ArenaAllocOp, ArenaFreeOp, ArenaBaseOp, ArenaCheckOp, ArenaLoadOp, ArenaStoreOp,
+            YieldOp, VerdictOp, ReturnOp, IfOp, IfYieldOp,
+            MapLookupOp, RefCheckOp, RefLoadOp, RefStoreOp>(op))
+      return;
+    op->emitOpError("is not in the finite no-unknown-free-effects scope of an arena lifecycle program");
+    unsafe = true;
+  });
+  if (unsafe)
+    return failure();
+  if (!llvm::hasSingleElement(getAllocated()) || !llvm::hasSingleElement(getFailed()))
+    return emitOpError("requires exactly one block in both allocated and failed regions");
+  Block &in = getAllocated().front();
+  if (in.getNumArguments() != 1 || !isa<ArenaPagesType>(in.getArgument(0).getType()) ||
+      getFailed().front().getNumArguments() != 0)
+    return emitOpError("allocated takes exactly one !ebpf.arena_pages proof; failed takes none");
+  bool freed = false;
+  for (Operation &op : in) {
+    if (auto f = dyn_cast<ArenaFreeOp>(op)) {
+      if (freed || f.getPages() != in.getArgument(0))
+        return emitOpError("may free its own allocation proof at most once");
+      freed = true;
+    } else if (freed && !isa<YieldOp>(op) && op.getName().getDialectNamespace() != "arith") {
+      return emitOpError("after free only independent scalar arithmetic and yield are permitted");
+    }
+  }
+  for (Operation *user : in.getArgument(0).getUsers())
+    if (!isa<ArenaFreeOp>(user) || user->getBlock() != &in)
+      return emitOpError("allocation proof may only be freed directly in its own allocated block; no transport or branch release");
+  return success();
+}
+
+LogicalResult ArenaFreeOp::verify() {
+  auto arg = dyn_cast<BlockArgument>(getPages());
+  auto owner = arg ? dyn_cast_or_null<ArenaAllocOp>(arg.getOwner()->getParentOp()) : ArenaAllocOp();
+  if (!owner || arg.getOwner() != &owner.getAllocated().front() || (*this)->getBlock() != arg.getOwner())
+    return emitOpError("requires its own direct allocation success proof, outside all windows and branches");
+  return success();
+}
+
+LogicalResult ArenaAllocBrOp::verify() {
+  if (getAllocated() == getFailed() || getAllocated()->getNumArguments() || getFailed()->getNumArguments())
+    return emitOpError("requires distinct allocated/failed successors with no proof transport");
+  return success();
+}
+
+LogicalResult ArenaBaseOp::verify() {
+  auto mt = cast<MapType>(getMap().getType());
+  if (mt.getKind() != "arena")
+    return emitOpError() << "reads the window base of an arena map, but the map is \"" << mt.getKind() << "\"";
+  return verifyArenaPlacement(*this);
+}
+
+// MAX window length — the same 16-bit bound as packet.check (the window is
+// addressed with constant 16-bit instruction offsets).
+static constexpr int64_t kArenaWindowMax = 0xffff;
+
+LogicalResult ArenaCheckOp::verify() {
+  if (failed(verifyRegionResultWidths(*this)))
+    return failure();
+  if (!getBase().getDefiningOp<ArenaBaseOp>())
+    return emitOpError() << "the base must be the result of ebpf.arena.base";
+  if (failed(verifyArenaPlacement(*this)))
+    return failure();
+  if (getLen() < 1 || getLen() > kArenaWindowMax)
+    return emitOpError() << "the window length " << getLen() << " must be in 1.." << kArenaWindowMax;
+  if (!isMemWidth(getOffset().getType()))
+    return emitOpError() << "the offset must be an i8 / i16 / i32 / i64, got " << getOffset().getType();
+  if (auto prog = (*this)->getParentOfType<ProgramOp>()) {
+    bool lifecycle = false;
+    prog.walk([&](ArenaAllocOp) { lifecycle = true; });
+    if (lifecycle) {
+      auto allocation = (*this)->getParentOfType<ArenaAllocOp>();
+      if (!allocation || !allocation.getAllocated().isAncestor((*this)->getParentRegion()))
+        return emitOpError("a lifecycle window requires its own live allocation success region; bounds alone do not prove allocation");
+      auto base = getBase().getDefiningOp<ArenaBaseOp>();
+      if (base.getMap() != allocation.getMap())
+        return emitOpError("the window base must identify the same entry-bound arena as its allocation");
+      APInt off;
+      uint64_t begin = allocation.getPageOffset() * 4096, length = allocation.getPageCount() * 4096;
+      if (!matchPattern(getOffset(), m_ConstantInt(&off)) || off.getActiveBits() > 64 ||
+          off.getZExtValue() < begin || getLen() > length || off.getZExtValue() - begin > length - getLen())
+        return emitOpError("a lifecycle window requires a constant range inside its own allocated pages");
+      Operation *direct = getOperation();
+      while (direct->getParentOp() != allocation)
+        direct = direct->getParentOp();
+      for (Operation &preceding : allocation.getAllocated().front()) {
+        if (&preceding == direct)
+          break;
+        if (isa<ArenaFreeOp>(preceding))
+          return emitOpError("allocation proof is invalid after free; a fresh check cannot recreate it");
+      }
+    }
+  }
+  // len ≤ size and a constant offset c ≤ size − len need the schema pages:
+  // ebpf-verify-schema checks them.
+  if (getInRange().empty() || getOutOfRange().empty())
+    return emitOpError() << "both the in_range and out_of_range regions must have a body";
+  Block &in = getInRange().front();
+  if (in.getNumArguments() != 1)
+    return emitOpError() << "the in_range region must take exactly one argument (the checked window), got " << in.getNumArguments();
+  auto wt = dyn_cast<ArenaWindowType>(in.getArgument(0).getType());
+  if (!wt || wt.getLen() != static_cast<int64_t>(getLen()))
+    return emitOpError() << "the in_range region argument must be !ebpf.arena_window<" << getLen() << ">, got "
+                         << in.getArgument(0).getType();
+  if (getOutOfRange().front().getNumArguments() != 0)
+    return emitOpError() << "the out_of_range region must take no arguments (there is no window)";
+  for (Operation *user : in.getArgument(0).getUsers()) {
+    if (!isa<ArenaLoadOp, ArenaStoreOp>(user))
+      return emitOpError() << "a checked arena window may only be used by ebpf.arena.load or ebpf.arena.store, but it is used by '"
+                           << user->getName() << "' (forwarding it lets it escape the range check)";
+    if (!getInRange().isAncestor(user->getParentRegion()))
+      return emitOpError() << "a checked arena window must be used inside the in_range region of its own ebpf.arena.check";
+    // A loop body (a window cannot cross iterations) or a body that becomes
+    // its own function (callback loop, map.for_each, any isolated op) between
+    // the check and the use is a capture.
+    for (Operation *p = user->getParentOp(); p && p != getOperation(); p = p->getParentOp())
+      if (isa<LoopOp, MapForEachOp, IterNumOp, IterScxDsqOp>(p) || p->hasTrait<OpTrait::IsIsolatedFromAbove>()) {
+        bool callback = isa<MapForEachOp>(p) || p->hasTrait<OpTrait::IsIsolatedFromAbove>() ||
+                        (isa<LoopOp>(p) && cast<LoopOp>(p).getCallback());
+        return emitOpError() << "a checked arena window must not be captured into "
+                             << (callback ? "a callback body ('" : "a loop body ('") << p->getName()
+                             << "'); check the window inside it";
+      }
+  }
+  for (Region *r : {&getInRange(), &getOutOfRange()})
+    for (Block &blk : *r)
+      for (BlockArgument arg : blk.getArguments())
+        if (&blk != &in && isa<ArenaWindowType>(arg.getType()))
+          return emitOpError() << "a checked arena window must not be carried across blocks as a block argument";
+  return success();
+}
+
+// Arena reads/writes are 1/2/4/8 bytes, fully inside the window (subtraction form).
+static LogicalResult verifyArenaAccess(Operation *op, Type valueTy, Value window, uint64_t idx, StringRef verb) {
+  unsigned w = valueTy.getIntOrFloatBitWidth();
+  if (w != 8 && w != 16 && w != 32 && w != 64)
+    return op->emitOpError() << verb << " an i8 / i16 / i32 / i64, got " << valueTy;
+  int64_t len = cast<ArenaWindowType>(window.getType()).getLen();
+  uint64_t bytes = w / 8, ulen = static_cast<uint64_t>(len);
+  if (idx > ulen || bytes > ulen - idx)
+    return op->emitOpError() << verb << " " << bytes << " bytes at index " << static_cast<int64_t>(idx)
+                             << ", outside the checked arena window of " << len << " bytes";
+  return success();
+}
+
+LogicalResult ArenaLoadOp::verify() {
+  return verifyArenaAccess(*this, getResult().getType(), getWindow(), getIndex(), "reads");
+}
+
+LogicalResult ArenaStoreOp::verify() {
+  return verifyArenaAccess(*this, getValue().getType(), getWindow(), getIndex(), "writes");
+}
+
+LogicalResult ArenaCheckBrOp::verify() {
+  Block *in = getInRange();
+  if (in->getNumArguments() != 1 || !isa<ArenaWindowType>(in->getArgument(0).getType()) ||
+      cast<ArenaWindowType>(in->getArgument(0).getType()).getLen() != static_cast<int64_t>(getLen()))
+    return emitOpError() << "the in_range successor must take exactly one !ebpf.arena_window<" << getLen() << "> argument";
+  if (getOutOfRange()->getNumArguments() != 0)
+    return emitOpError() << "the out_of_range successor must take no arguments";
+  if (getInRange() == getOutOfRange())
+    return emitOpError() << "the in_range and out_of_range successors must differ";
+  return success();
+}
+
 LogicalResult YieldOp::verify() {
+  if (auto allocation = dyn_cast<ArenaAllocOp>((*this)->getParentOp())) {
+    if (getResults().getTypes() != allocation.getResultTypes())
+      return emitOpError("yielded types do not match arena.alloc results");
+    for (Type t : getResults().getTypes())
+      if (!isa<IntegerType>(t))
+        return emitOpError("only scalar integers may leave arena.alloc");
+    return success();
+  }
   // kptr.check yields must match parent results without escaping kernel pointers.
   if (auto kc = dyn_cast<KPtrCheckOp>((*this)->getParentOp())) {
     for (Value v : getResults())
-      if (isa<KPtrType, KPtrOrNullType>(v.getType()))
+      if (isa<KPtrType, KPtrOrNullType, RcuPtrType, RcuPtrOrNullType>(v.getType()))
         return emitOpError() << "a kernel pointer must not escape ebpf.kptr.check (it is only valid inside the present region)";
     if (getResults().getTypes() != kc.getResultTypes())
       return emitOpError() << "yielded types do not match the results of the enclosing ebpf.kptr.check";
+    return success();
+  }
+  // rcu.region yields integers only — RCU pointers, references,
+  // reservations and borrows stay inside the section (its one exit).
+  if (auto rr = dyn_cast<RcuRegionOp>((*this)->getParentOp())) {
+    for (Type t : getResults().getTypes())
+      if (!isa<IntegerType>(t))
+        return emitOpError() << "only scalar integers may leave ebpf.rcu.region (got " << t
+                             << "); RCU pointers and references are only valid inside the section";
+    if (getResults().getTypes() != rr.getResultTypes())
+      return emitOpError() << "yielded types do not match the results of the enclosing ebpf.rcu.region";
+    return success();
+  }
+  // per_cpu_load yields integers only — the slot value stays inside.
+  if (auto pl = dyn_cast<KsymPerCpuLoadOp>((*this)->getParentOp())) {
+    for (Type t : getResults().getTypes())
+      if (!isa<IntegerType>(t))
+        return emitOpError() << "only scalar integers may leave ebpf.ksym.per_cpu_load (got " << t << ")";
+    if (getResults().getTypes() != pl.getResultTypes())
+      return emitOpError() << "yielded types do not match the results of the enclosing ebpf.ksym.per_cpu_load";
     return success();
   }
   if (auto c = dyn_cast<SockRefCheckOp>((*this)->getParentOp())) {
@@ -1964,6 +3360,21 @@ LogicalResult YieldOp::verify() {
         return emitOpError() << "a checked window must not escape ebpf.packet.check (it is only valid inside its region)";
     if (getResults().getTypes() != pc.getResultTypes())
       return emitOpError() << "yielded types do not match the results of the enclosing ebpf.packet.check";
+    return success();
+  }
+  // xdp.meta_check yields nothing.
+  if (isa<MetaCheckOp>((*this)->getParentOp())) {
+    if (getNumOperands() != 0)
+      return emitOpError() << "ebpf.xdp.meta_check yields no values";
+    return success();
+  }
+  // arena.check yields cannot escape windows (or the base).
+  if (auto ac = dyn_cast<ArenaCheckOp>((*this)->getParentOp())) {
+    for (Value v : getResults())
+      if (isa<ArenaWindowType, ArenaBaseType>(v.getType()))
+        return emitOpError() << "a checked arena window must not escape ebpf.arena.check (it is only valid inside its region)";
+    if (getResults().getTypes() != ac.getResultTypes())
+      return emitOpError() << "yielded types do not match the results of the enclosing ebpf.arena.check";
     return success();
   }
   // ref.index yields cannot escape elements or borrows.
@@ -2025,13 +3436,34 @@ LogicalResult RefIndexOp::verify() {
   if (in.getNumArguments() != 1)
     return emitOpError() << "the in_range region must take exactly one argument (the checked element), got "
                          << in.getNumArguments();
-  auto et = dyn_cast<ElemType>(in.getArgument(0).getType());
-  if (!et || !isa<IntegerType>(et.getElement()) || !cast<IntegerType>(et.getElement()).isSignless())
-    return emitOpError() << "the in_range region argument must be !ebpf.elem<iN>, got "
-                         << in.getArgument(0).getType();
   if (getOutOfRange().front().getNumArguments() != 0)
     return emitOpError() << "the out_of_range region must take no arguments (there is no element)";
   BlockArgument e = in.getArgument(0);
+  // a record-array element is borrowed (ebpf-verify-records checks the
+  // element record against @records). The borrow is used only inside in_range
+  // and never leaves it (no yield, terminator or block-argument transport).
+  if (auto bt = dyn_cast<BorrowedType>(e.getType())) {
+    if (!isa<RecordType>(bt.getPointee()))
+      return emitOpError() << "the in_range region argument must be !ebpf.elem<iN> or a borrowed record element, got " << e.getType();
+    for (OpOperand &use : e.getUses()) {
+      Operation *user = use.getOwner();
+      if (!getInRange().isAncestor(user->getParentRegion()))
+        return emitOpError() << "a borrowed element must be used inside the in_range region of its own ebpf.ref.index";
+      if (user->hasTrait<OpTrait::IsTerminator>())
+        return emitOpError() << "a borrowed element must not leave the in_range region, but it is passed to '" << user->getName()
+                             << "' (it would escape the range check)";
+    }
+    for (Region *r : {&getInRange(), &getOutOfRange()})
+      for (Block &blk : *r)
+        for (BlockArgument arg : blk.getArguments())
+          if (&blk != &in && isa<BorrowedType, ElemType>(arg.getType()))
+            return emitOpError() << "a checked element must not be carried across blocks as a block argument";
+    return success();
+  }
+  auto et = dyn_cast<ElemType>(e.getType());
+  if (!et || !isa<IntegerType>(et.getElement()) || !cast<IntegerType>(et.getElement()).isSignless())
+    return emitOpError() << "the in_range region argument must be !ebpf.elem<iN> or a borrowed record element, got "
+                         << e.getType();
   for (Operation *user : e.getUsers()) {
     if (!isa<ElemLoadOp, ElemStoreOp>(user))
       return emitOpError() << "a checked element may only be used by ebpf.elem.load / ebpf.elem.store, "
@@ -2115,7 +3547,7 @@ LogicalResult RingbufIfReservedOp::verify() {
   getAbsentRegion().walk([&](Operation *op) {
     auto kc = dyn_cast<KFieldCopyOp>(op); // Include writes into outer reservations through kfield.copy; borrows are allowed.
     auto tc = dyn_cast<TpFieldCopyOp>(op);
-    if (isa<RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, UserReadStrOp, UserReadOp, KernelReadStrOp, RingbufSubmitOp, RingbufDiscardOp>(op) ||
+    if (isa<RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, CtxStackOp, KernelDPathOp, StrSnprintfOp, UserReadStrOp, UserCopyOp, UserCopyTaskOp, UserReadOp, KernelReadStrOp, RingbufSubmitOp, RingbufDiscardOp>(op) ||
         (kc && kc.writesReservation()) || (tc && tc.writesReservation())) {
       bad = true;
       op->emitOpError() << "cannot be used in the absent region: there is no "
@@ -2128,7 +3560,7 @@ LogicalResult RingbufIfReservedOp::verify() {
   // Taken reservations cannot escape their region.
   BlockArgument res = present.getArgument(0);
   for (Operation *user : res.getUsers()) {
-    if (!isa<RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, UserReadStrOp, UserReadOp, KFieldCopyOp, TpFieldCopyOp, KernelReadStrOp, RingbufSubmitOp,
+    if (!isa<RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, CtxStackOp, KernelDPathOp, StrSnprintfOp, UserReadStrOp, UserCopyOp, UserCopyTaskOp, UserReadOp, KFieldCopyOp, TpFieldCopyOp, KernelReadStrOp, RingbufSubmitOp,
              RingbufDiscardOp>(
             user)) // A reservation can occur only as kfield.copy's destination, never its kptr source.
       return emitOpError() << "a reservation may only be used by "
@@ -2191,6 +3623,79 @@ LogicalResult TaskCommOp::verify() {
   return success();
 }
 
+// Reservation buffer writers share the existing ownership/record machinery.
+// Only structured nullable/reservation/if regions may separate them from the
+// entry program; loops, callbacks and function bodies are deliberately closed.
+static LogicalResult verifyBufferWriter(Operation *op, Value reservation,
+                                       StringRef field, StringRef kind) {
+  auto prog = op->getParentOfType<ProgramOp>();
+  if (!prog || prog.getKind() != kind)
+    return op->emitOpError() << "requires an ordinary " << kind << " program";
+  StringRef capability = isa<CtxStackOp>(op) ? "ctx.stack" :
+                         isa<KernelDPathOp>(op) ? "kernel.d_path" : "str.snprintf";
+  if (!bpfmlir::kindAllows(prog.getKind(), capability))
+    return op->emitOpError("program kind lacks the buffer helper capability");
+  for (Operation *p = op->getParentOp(); p != prog; p = p->getParentOp())
+    if (!isa<RingbufIfReservedOp, KPtrCheckOp, IfOp>(p))
+      return op->emitOpError("is not supported in a function, loop, callback or untracked region");
+  if (field.empty() || !isa<RecordType>(cast<ReservationType>(reservation.getType()).getRecordType()))
+    return op->emitOpError("needs a nonempty field of a record reservation");
+  return success();
+}
+
+LogicalResult CtxStackOp::verify() {
+  if (failed(verifyBufferWriter(*this, getReservation(), getField(), "kprobe")))
+    return failure();
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (getCtx() != prog.getBody().front().getArgument(0) ||
+      cast<ContextType>(getCtx().getType()).getKind() != "kprobe")
+    return emitOpError("requires the same kprobe entry context");
+  return success();
+}
+
+LogicalResult KernelDPathOp::verify() {
+  if (failed(verifyBufferWriter(*this, getReservation(), getField(), "fentry")))
+    return failure();
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!isDPathTarget(prog.getAttach().value_or("")) ||
+      cast<KPtrType>(getPtr().getType()).getStructName() != "path")
+    return emitOpError("requires fentry/vfs_getattr or fentry/security_inode_getattr and a checked struct path pointer");
+  Value src = getPtr();
+  if (auto present = src.getDefiningOp<AssumePresentOp>())
+    src = present.getValue();
+  else if (auto ba = dyn_cast<BlockArgument>(src))
+    if (auto check = dyn_cast_or_null<KPtrCheckOp>(ba.getOwner()->getParentOp());
+        check && ba.getOwner() == &check.getPresentRegion().front())
+      src = check.getPtr();
+  auto arg = src.getDefiningOp<CtxArgOp>();
+  if (!arg || arg.getIndex() != 0 || arg.getCtx() != prog.getBody().front().getArgument(0))
+    return emitOpError("path must come from the same entry context's argument0 through kptr.check");
+  return success();
+}
+
+LogicalResult StrSnprintfOp::verify() {
+  if (failed(verifyBufferWriter(*this, getReservation(), getField(), "kprobe")))
+    return failure();
+  StringRef fmt = getFormat();
+  if (fmt.size() > 128 || fmt.contains('\0') || getArgs().size() > 12)
+    return emitOpError("needs a NUL-free literal of at most128 bytes and at most12 i64 arguments");
+  unsigned count = 0;
+  for (size_t i = 0; i < fmt.size(); ++i) {
+    if (fmt[i] != '%')
+      continue;
+    if (++i < fmt.size() && fmt[i] == '%')
+      continue;
+    if (i + 2 >= fmt.size() || fmt[i] != 'l' || fmt[i + 1] != 'l' ||
+        !StringRef("duxX").contains(fmt[i + 2]))
+      return emitOpError("only %% / %lld / %llu / %llx / %llX conversions are supported");
+    i += 2;
+    ++count;
+  }
+  if (count != getArgs().size())
+    return emitOpError("format conversion count must match the i64 argument count");
+  return success();
+}
+
 // Nominal record name/size must match the reservation, from full-byte record.make.
 LogicalResult RingbufStoreRecordOp::verify() {
   auto res = cast<ReservationType>(getReservation().getType());
@@ -2237,16 +3742,20 @@ static bool borrowsLpmTrie(Value ref) {
 
 // Detect writes through v, checked-region borrows, expanded assumptions
 // and transitive forwarding to callees.
-static bool refValueWritten(SymbolTableCollection &st, Operation *from, Value v, llvm::SmallPtrSet<Operation *, 8> &seen);
-static bool calleeWritesArg(SymbolTableCollection &st, SubprogramOp fn, unsigned i, llvm::SmallPtrSet<Operation *, 8> &seen) {
-  if (!seen.insert(fn.getOperation()).second || fn.getBody().empty() || i >= fn.getBody().front().getNumArguments())
+// visited callee arguments are keyed by (callee, argument position).
+// Keying by the callee alone dropped a second argument of the same callee
+// (f(v) -> leaf(v, v) writing arg0 passed when arg1 was visited first).
+using CalleeArgSet = llvm::DenseSet<std::pair<Operation *, unsigned>>;
+static bool refValueWritten(SymbolTableCollection &st, Operation *from, Value v, CalleeArgSet &seen);
+static bool calleeWritesArg(SymbolTableCollection &st, SubprogramOp fn, unsigned i, CalleeArgSet &seen) {
+  if (!seen.insert({fn.getOperation(), i}).second || fn.getBody().empty() || i >= fn.getBody().front().getNumArguments())
     return false;
   return refValueWritten(st, fn, fn.getBody().front().getArgument(i), seen);
 }
-static bool refValueWritten(SymbolTableCollection &st, Operation *from, Value v, llvm::SmallPtrSet<Operation *, 8> &seen) {
+static bool refValueWritten(SymbolTableCollection &st, Operation *from, Value v, CalleeArgSet &seen) {
   for (OpOperand &use : v.getUses()) {
     Operation *u = use.getOwner();
-    if (isa<RefStoreOp, RefFieldStoreOp, RefAtomicAddOp, RefFieldAtomicAddOp, KPtrXchgOp>(u)) // kptr.xchg also writes a field.
+    if (isa<RefStoreOp, RefFieldStoreOp, RefAtomicAddOp, RefFieldAtomicAddOp, RefFieldCmpxchgOp, RefFieldAtomicOrOp, RefFieldAddrOp, KPtrXchgOp>(u)) // kptr.xchg also writes a field (cmpxchg / or too; the cpumask kfuncs write through ref.field.addr).
       return true;
     if (auto rc = dyn_cast<RefCheckOp>(u)) {
       if (refValueWritten(st, from, rc.getPresentRegion().front().getArgument(0), seen))
@@ -2412,6 +3921,16 @@ LogicalResult SpinRegionOp::verify() {
         return st.emitOpError() << "writes a map value other than the one whose lock this ebpf.spin.region holds";
       continue;
     }
+    // (d): a global function is verified on its own and the kernel
+    // rejects a global call while a lock is held (6.12.111 / 7.1.8 / 7.3.1;
+    // 6.6.157 rejects every call there) — named before the general rule.
+    if (auto call = dyn_cast<CallOp>(op)) {
+      auto fn = SymbolTable::lookupNearestSymbolFrom<SubprogramOp>(call, call.getCalleeAttr());
+      if (fn && fn.getLinkage() == "global")
+        return call.emitOpError() << "calls the global function @" << call.getCallee()
+                                  << " inside ebpf.spin.region; the kernel verifier rejects a call of a global function while a "
+                                     "bpf_spin_lock is held (the compiler takes this rule on every kernel version)";
+    }
     return op.emitOpError() << "is not allowed inside ebpf.spin.region (only arith and field loads / stores of the locked value — "
                                "the verifier rejects calls while a lock is held)";
   }
@@ -2467,8 +3986,10 @@ LogicalResult TimerInitOp::verify() {
     return failure();
   if (lk->getMap() != getMap())
     return emitOpError() << "initializes the timer with a map other than the one the value was looked up in (the kernel verifier rejects it too)";
-  if (getClock() != "monotonic")
-    return emitOpError() << "clock \"" << getClock() << "\" is not supported (only \"monotonic\")";
+  // the clocks are the UAPI table's clockid rows (monotonic, boottime — abigen from time.h).
+  if (!bpfabi::lookupClockId(getClock()))
+    return emitOpError() << "clock \"" << getClock() << "\" is not supported (only " << bpfabi::clockIdNames()
+                         << " — the clockid rows of the UAPI table)";
   return success();
 }
 
@@ -2498,6 +4019,60 @@ LogicalResult TimerSetCallbackOp::verify() {
 
 LogicalResult TimerStartOp::verify() { return failure(failed(checkTimerOp(*this, getRef()))); }
 
+// cancel has the same position rules as start in a program body, but is not allowed inside
+// ebpf.timer.callback (a callback cancelling its own or another timer is -EDEADLK territory — outside this step).
+LogicalResult TimerCancelOp::verify() {
+  if ((*this)->getParentOfType<TimerCallbackOp>())
+    return emitOpError() << "is not allowed inside ebpf.timer.callback (cancel from a callback, and its -EDEADLK, is outside the first step)";
+  return failure(failed(checkTimerOp(*this, getRef())));
+}
+
+// the programs whose ebpf.timer.set_callback names cb (its owners).
+// Owners with the kind tag "scx" (struct_ops) widen the callback's op set;
+// mixing them with other owners is rejected (the sets differ).
+static SmallVector<ProgramOp> timerCallbackOwners(TimerCallbackOp cb) {
+  SmallVector<ProgramOp> owners;
+  auto module = cb->getParentOfType<ModuleOp>();
+  if (!module)
+    return owners;
+  module.walk([&](TimerSetCallbackOp s) {
+    auto prog = s->getParentOfType<ProgramOp>();
+    if (s.getCallback() == cb.getSymName() && prog && !llvm::is_contained(owners, prog))
+      owners.push_back(prog);
+  });
+  return owners;
+}
+enum class TimerCallbackOwners { None, Scx, Other, Mixed };
+static TimerCallbackOwners timerCallbackOwnerKind(TimerCallbackOp cb) {
+  bool scx = false, other = false;
+  for (ProgramOp p : timerCallbackOwners(cb))
+    (bpfmlir::kindAllows(p.getKind(), "scx") ? scx : other) = true;
+  if (scx && other)
+    return TimerCallbackOwners::Mixed;
+  return scx ? TimerCallbackOwners::Scx : other ? TimerCallbackOwners::Other : TimerCallbackOwners::None;
+}
+static bool scxOwnedTimerCallback(Operation *op) {
+  auto cb = dyn_cast<TimerCallbackOp>(op);
+  return cb && timerCallbackOwnerKind(cb) == TimerCallbackOwners::Scx;
+}
+
+// the ops a sched_ext_ops owner's timer callback body accepts on top of
+// the base set — the E-a op set of an ebpf.func body: kfunc.call
+// and kref.check, the closed regions (iter.num, iter.scx_dsq, rcu.region and
+// their terminators), the kptr ops, kfield.load / kfield.ptr, the global ops,
+// field ops on any borrowed record (a global record borrow too), ebpf.call and
+// the sched_ext ops (verifyScxCommon keeps kScxTimerCallbackOps). Map ops stay
+// out (the callback has no `maps`); the context rules (not sleepable, RCU only
+// inside a held rcu.region, the call-site regions) are the passes'.
+static bool scxTimerCallbackExtraOp(Operation &op) {
+  if (op.getName().getStringRef().starts_with("ebpf.scx."))
+    return true;
+  return isa<CallOp, KfuncCallOp, KRefCheckOp, KPtrCheckOp, IterNumOp, IterScxDsqOp, RcuRegionOp, IterYieldOp, YieldOp, BreakOp,
+             ContinueOp, KPtrXchgOp, GlobalKPtrXchgOp, KPtrLoadRcuOp, GlobalKPtrLoadRcuOp, KFieldLoadOp, KFieldPtrOp, GlobalLoadOp,
+             GlobalStoreOp, GlobalRefOp, GlobalAtomicAddOp, GlobalCmpxchgOp, GlobalAtomicOrOp, RefFieldLoadOp, RefFieldStoreOp,
+             RefFieldAtomicAddOp, RefFieldCmpxchgOp, RefFieldAtomicOrOp>(op);
+}
+
 // Timer callbacks take one borrowed record and allow arithmetic, its field
 // accesses and ktime.ns, ending with timer.done.
 LogicalResult TimerCallbackOp::verify() {
@@ -2511,7 +4086,10 @@ LogicalResult TimerCallbackOp::verify() {
     return emitOpError() << "takes exactly one argument of type " << BorrowedType::get(getContext(), rt) << " (the map value)";
   // Source callbacks have one timer.done block. Expanded ifs permit multiple
   // blocks ending in CFG branches/timer.done, without non-entry arguments:
-  // callback ifs carry no results.
+  // callback ifs carry no results. a sched_ext_ops owner's callback may
+  // hold the closed regions, whose ② forms end blocks with their own
+  // terminators (iter_num.next_br, ...) and carry values in block arguments.
+  bool scxBody = timerCallbackOwnerKind(*this) == TimerCallbackOwners::Scx;
   bool expanded = !getBody().hasOneBlock();
   bool done = false;
   for (Block &blk : getBody()) {
@@ -2520,9 +4098,10 @@ LogicalResult TimerCallbackOp::verify() {
     Operation &term = blk.back();
     if (isa<TimerDoneOp>(term))
       done = true;
-    else if (!expanded || !(term.getDialect() && term.getDialect()->getNamespace() == "cf"))
+    else if (!expanded || !((term.getDialect() && term.getDialect()->getNamespace() == "cf") ||
+                            (scxBody && isa<Stage2InternalOp>(&term))))
       return emitOpError() << "must end with ebpf.timer.done";
-    if (&blk != &b && blk.getNumArguments() != 0)
+    if (&blk != &b && blk.getNumArguments() != 0 && !scxBody)
       return emitOpError() << "an expanded callback block takes no arguments";
   }
   if (!done)
@@ -2538,6 +4117,16 @@ LogicalResult TimerCallbackOp::verify() {
   });
   if (starts.wasInterrupted())
     return failure();
+  // owners decide the set. sched_ext owners (struct_ops — VerifySchema
+  // restricts their timer ops to sleepable sched_ext_ops members) add the E-a op
+  // set (scxTimerCallbackExtraOp; each op's verifier and the context
+  // passes check the rest).
+  TimerCallbackOwners owners = timerCallbackOwnerKind(*this);
+  if (owners == TimerCallbackOwners::Mixed)
+    return emitOpError() << "is set as the callback by both " << bpfmlir::kindsAllowing("scx")
+                         << " programs and programs of other kinds; the ops a callback may use differ between them, so one "
+                            "callback cannot serve both (use two callbacks)";
+  bool scxOwned = owners == TimerCallbackOwners::Scx;
   // Apply the same operation whitelist recursively through nested if regions.
   std::function<LogicalResult(Block &)> check = [&](Block &blk) -> LogicalResult {
     for (Operation &op : blk) {
@@ -2553,11 +4142,23 @@ LogicalResult TimerCallbackOp::verify() {
       if (auto st = dyn_cast<RefFieldStoreOp>(op); st && st.getRef() == v)
         continue;
       // ktime.ns is the only reading helper: no ctx and available before XDP privilege checks.
-      if (isa<KtimeOp>(op))
+      if (isa<KtimeOp, CoreEnumValueOp>(op)) // the CO-RE enum read is a constant to the verifier.
         continue;
       // Restart the already-validated own timer, with conditionals for bounded periodic use.
       if (isa<TimerStartOp>(op))
         continue;
+      // sched_ext_ops owners — the E-a op set (scxTimerCallbackExtraOp),
+      // nested regions with the same set. After ② the closed regions are their
+      // stage-② forms (Stage2InternalOp — ebpf-compile rejects them in input).
+      if (scxOwned && isa<Stage2InternalOp>(&op))
+        continue;
+      if (scxOwned && scxTimerCallbackExtraOp(op)) {
+        for (Region &r : op.getRegions())
+          for (Block &inner : r)
+            if (failed(check(inner)))
+              return failure();
+        continue;
+      }
       if (auto iff = dyn_cast<IfOp>(op)) {
         for (Region &r : iff->getRegions())
           for (Block &inner : r)
@@ -2566,7 +4167,14 @@ LogicalResult TimerCallbackOp::verify() {
         continue;
       }
       return op.emitOpError() << "is not allowed inside ebpf.timer.callback (only arith, field loads / stores of its map value and ebpf.ktime.ns; "
-                                 "also ebpf.timer.start of its own timer and ebpf.if around them)";
+                                 "also ebpf.timer.start of its own timer and ebpf.if around them"
+                              << (scxOwned ? std::string("; for sched_ext_ops owners also ebpf.call, ebpf.kfunc.call, ebpf.kref.check, "
+                                                         "ebpf.kptr.check, ebpf.iter.num, ebpf.iter.scx_dsq, ebpf.rcu.region, the kptr "
+                                                         "ops, ebpf.kfield.load / kfield.ptr, the global ops, field ops on any borrowed "
+                                                         "record and ") +
+                                                 bpfmlir::scxTimerCallbackOps()
+                                           : std::string())
+                              << ")";
     }
     return success();
   };
@@ -2609,6 +4217,56 @@ LogicalResult UserReadStrOp::verify() {
   return success();
 }
 
+LogicalResult UserAddrOp::verify() {
+  if (failed(verifySleepableFentryPlacement(*this, "user.addr")))
+    return failure();
+  for (Operation *user : getResult().getUsers())
+    if (!isa<UserCopyOp, UserCopyTaskOp>(user))
+      return emitOpError() << "!ebpf.user_addr may only be used by ebpf.user.copy / ebpf.user.copy_task (no store, return, yield, call argument, region transport or integer operation), but it is used by '"
+                           << user->getName() << "'";
+  return success();
+}
+
+LogicalResult UserCopyOp::verify() {
+  if (failed(verifySleepableFentryPlacement(*this, "user.copy")))
+    return failure();
+  if (getField().empty())
+    return emitOpError() << "needs a field name";
+  if (!getAddr().getDefiningOp<UserAddrOp>())
+    return emitOpError() << "the address must be an ebpf.user.addr result";
+  return success();
+}
+
+// the two task sources of user.copy_task. Stage ② turns kref.check into
+// is_present / assume_present, so both forms of the present kref are accepted.
+LogicalResult UserCopyTaskOp::verify() {
+  if (failed(verifySleepableFentryPlacement(*this, "user.copy_task")))
+    return failure();
+  if (getField().empty())
+    return emitOpError() << "needs a field name";
+  if (!getAddr().getDefiningOp<UserAddrOp>())
+    return emitOpError() << "the address must be an ebpf.user.addr result";
+  Value task = getTask();
+  if (auto kp = dyn_cast<KPtrType>(task.getType())) {
+    if (kp.getStructName() != "task_struct")
+      return emitOpError() << "takes a task_struct, got " << task.getType();
+    if (!task.getDefiningOp<TaskCurrentBtfOp>())
+      return emitOpError() << "a !ebpf.kptr<\"task_struct\"> task must be the result of ebpf.task.current_btf";
+    return success();
+  }
+  if (auto kr = dyn_cast<KRefType>(task.getType())) {
+    if (kr.getStructName() != "task_struct")
+      return emitOpError() << "takes a task_struct, got " << task.getType();
+    auto arg = dyn_cast<BlockArgument>(task);
+    bool checked = (arg && isa_and_nonnull<KRefCheckOp>(arg.getOwner()->getParentOp())) || task.getDefiningOp<AssumePresentOp>();
+    if (!checked)
+      return emitOpError() << "a !ebpf.kref<\"task_struct\"> task must be the present block argument of ebpf.kref.check";
+    return success();
+  }
+  return emitOpError() << "takes the task as the !ebpf.kptr<\"task_struct\"> of ebpf.task.current_btf or the checked !ebpf.kref<\"task_struct\"> of ebpf.kref.check, got "
+                       << task.getType();
+}
+
 // Require nonempty field/path and record reservation. VerifyKPtr checks
 // strptr field type; VerifyRecords checks the destination array path.
 LogicalResult KernelReadStrOp::verify() {
@@ -2618,6 +4276,77 @@ LogicalResult KernelReadStrOp::verify() {
   if (!isa<RecordType>(res.getRecordType()))
     return emitOpError() << "needs a record reservation (!ebpf.record<...>) to write a field of, got " << res.getRecordType();
   return success();
+}
+
+// !ebpf.str_buf values. The nearest enclosing op that is not one of
+// the merge regions (if / kptr.check / kref.check / ref.check) — the
+// definition and the dump must share it (no loop / iterator / callback / RCU
+// section / function boundary between them).
+static Operation *strBufBoundary(Operation *op) {
+  Operation *p = op->getParentOp();
+  while (p && isa<IfOp, KPtrCheckOp, KRefCheckOp, RefCheckOp>(p))
+    p = p->getParentOp();
+  return p;
+}
+static LogicalResult verifyStrBufUses(Operation *def, Value v) {
+  for (OpOperand &use : v.getUses()) {
+    Operation *u = use.getOwner();
+    // Stage ②: ebpf-expand-regions turns the merges into branches (the ①
+    // rules held on the input; ebpf-compile input has no cf ops).
+    if (u->getName().getDialectNamespace() == "cf")
+      continue;
+    if (isa<ScxDumpOp>(u)) { // The %s position is ScxDumpOp's (scxFormat).
+      if (strBufBoundary(u) != strBufBoundary(def))
+        return u->emitOpError() << "uses the !ebpf.str_buf of '" << def->getName()
+                                << "' across a loop, iterator, callback, RCU section or function boundary";
+      continue;
+    }
+    if (isa<YieldOp, IfYieldOp>(u)) {
+      Operation *p = u->getParentOp();
+      if (isa<IfOp, KPtrCheckOp, KRefCheckOp, RefCheckOp>(p)) {
+        if (failed(verifyStrBufUses(def, p->getResult(use.getOperandNumber()))))
+          return failure();
+        continue;
+      }
+    }
+    return u->emitOpError() << "uses a !ebpf.str_buf; it may only be an ebpf.scx.dump argument at a %s conversion or yielded "
+                               "from ebpf.if / ebpf.kptr.check / ebpf.kref.check / ebpf.ref.check";
+  }
+  return success();
+}
+// The size and the place: a sched_ext program body and its merge regions only
+// (ebpf-verify-schema narrows it to the dump members, as scx.dump).
+static LogicalResult verifyStrBufSize(Operation *op, StrBufType t) {
+  if (t.getSize() < 1 || t.getSize() > 64)
+    return op->emitOpError() << "makes a !ebpf.str_buf of " << t.getSize() << " bytes; the size is 1..64";
+  Operation *top = strBufBoundary(op);
+  auto prog = dyn_cast_or_null<ProgramOp>(top);
+  if (!prog || !bpfmlir::kindAllows(prog.getKind(), "scx"))
+    return op->emitOpError() << "is only in the body of a " << bpfmlir::kindsAllowing("scx")
+                             << " program and its ebpf.if / ebpf.kptr.check / ebpf.kref.check / ebpf.ref.check regions (not '"
+                             << (top ? top->getName().getStringRef() : StringRef("module")) << "')";
+  return success();
+}
+LogicalResult StrBufLiteralOp::verify() {
+  auto t = getBuf().getType();
+  if (failed(verifyStrBufSize(*this, t)))
+    return failure();
+  StringRef lit = getLiteral();
+  for (size_t i = 0; i < lit.size(); ++i) {
+    unsigned char c = lit[i];
+    if (c == 0 || (c < 0x80 && !llvm::isPrint(c) && !llvm::isSpace(c)))
+      return emitOpError() << "literal byte " << i << " is NUL or an ASCII control character other than whitespace";
+  }
+  if (static_cast<int64_t>(lit.size()) + 1 > t.getSize())
+    return emitOpError() << "literal of " << lit.size() << " bytes and its NUL do not fit !ebpf.str_buf<" << t.getSize() << ">";
+  return verifyStrBufUses(*this, getBuf());
+}
+LogicalResult KernelReadStrBufOp::verify() {
+  if (getField().empty())
+    return emitOpError() << "needs a kernel field name";
+  if (failed(verifyStrBufSize(*this, getBuf().getType())))
+    return failure();
+  return verifyStrBufUses(*this, getBuf());
 }
 
 LogicalResult KernelReadScalarOp::verify() {
@@ -2645,6 +4374,20 @@ LogicalResult CtxRetvalOp::verify() {
     return emitOpError() << "program kind \"" << ctx.getKind() << "\" has no return value in its context (only " << bpfmlir::kindsAllowing("ctx.retval") << ")";
   if (getNargs() < 0 || getNargs() > 12)
     return emitOpError() << "the number of arguments " << getNargs() << " is out of range (0..12)";
+  unsigned w = getResult().getType().getIntOrFloatBitWidth();
+  if (w != 8 && w != 16 && w != 32 && w != 64)
+    return emitOpError() << "reads an i8 / i16 / i32 / i64 return value, got " << getResult().getType();
+  return success();
+}
+
+// ctx.func_ret reads the return value through bpf_get_func_ret — no N.
+// The kind table's OPS column admits fexit only; static funcs are rejected by
+// FuncOp's context-argument rule (attach-dependent meaning).
+LogicalResult CtxFuncRetOp::verify() {
+  auto ctx = cast<ContextType>(getCtx().getType());
+  if (!bpfmlir::kindAllows(ctx.getKind(), "ctx.func_ret"))
+    return emitOpError() << "program kind \"" << ctx.getKind() << "\" has no traced function return value (only "
+                         << bpfmlir::kindsAllowing("ctx.func_ret") << ")";
   unsigned w = getResult().getType().getIntOrFloatBitWidth();
   if (w != 8 && w != 16 && w != 32 && w != 64)
     return emitOpError() << "reads an i8 / i16 / i32 / i64 return value, got " << getResult().getType();
@@ -2692,6 +4435,468 @@ static LogicalResult verifySessionOp(Operation *op, Value ctx, StringRef kfunc) 
 LogicalResult SessionIsReturnOp::verify() { return verifySessionOp(*this, getCtx(), "bpf_session_is_return"); }
 LogicalResult SessionCookieLoadOp::verify() { return verifySessionOp(*this, getCtx(), "bpf_session_cookie"); }
 LogicalResult SessionCookieStoreOp::verify() { return verifySessionOp(*this, getCtx(), "bpf_session_cookie"); }
+
+// sched_ext kfunc ops of the family "insert". The op verifier checks the
+// family declaration, placement, kind and types; the member a program
+// implements (and so the callback allow table and sleepable) is in the schema
+// and is checked by ebpf-verify-schema.
+static LogicalResult verifyScxCommon(Operation *op, StringRef scxOp) {
+  auto module = op->getParentOfType<ModuleOp>();
+  auto family = module ? module->getAttr(bpfmlir::kScxFamilyAttr) : Attribute();
+  if (!family)
+    return op->emitOpError() << "needs the sched_ext kfunc family declaration: add `module attributes {"
+                             << bpfmlir::kScxFamilyAttr << " = \"" << bpfmlir::kScxFamilyInsert << "\"}`";
+  // The attribute value itself is checked by the dialect attribute verifier.
+  Operation *top = nullptr;
+  for (Operation *p = op->getParentOp(); p; p = p->getParentOp()) {
+    if (isa<ProgramOp, SubprogramOp>(p)) {
+      top = p;
+      break;
+    }
+    // a timer.callback owned by sched_ext_ops programs — a closed set
+    // of ScxAny ops (ScxContract.h kScxTimerCallbackOps); the callback is not
+    // sleepable and is outside the dump members' context.
+    if (auto cb = dyn_cast<TimerCallbackOp>(p)) {
+      if (timerCallbackOwnerKind(cb) != TimerCallbackOwners::Scx)
+        return op->emitOpError() << "is inside ebpf.timer.callback @" << cb.getSymName()
+                                 << ", whose owners are not " << bpfmlir::kindsAllowing("scx")
+                                 << " programs; sched_ext ops in a callback need sched_ext_ops owners";
+      if (!bpfmlir::scxTimerCallbackAllows(scxOp)) {
+        // name the callback and its owners (the context), after the text.
+        std::string owners;
+        for (ProgramOp owner : timerCallbackOwners(cb))
+          owners += (owners.empty() ? "@" : ", @") + owner.getSymName().str();
+        return op->emitOpError() << "is not allowed inside ebpf.timer.callback (a callback is not sleepable and is outside the "
+                                    "dump members and the program's task arguments; it may use only "
+                                 << bpfmlir::scxTimerCallbackOps() << ") — in ebpf.timer.callback @" << cb.getSymName()
+                                 << " of " << owners
+                                 << " (kScxTimerCallbackOps is a conservative subset of the compiler, not the kernel's filter)";
+      }
+      if (scxOp == "const")
+        return success();
+      const bpfmlir::ScxKfuncInfo *info = bpfmlir::lookupScxOp(scxOp);
+      const bpfabi::KfuncABI *k = info ? bpfabi::lookupKfunc(info->kfunc) : nullptr;
+      if (!k || !(info->groups & bpfmlir::ScxAny))
+        return op->emitOpError() << "has no ScxAny row in ScxContract.def with a kfunc table row";
+      for (ProgramOp owner : timerCallbackOwners(cb))
+        if (!k->allowsProgType(programTypeOf(owner.getKind())))
+          return op->emitOpError() << "kfunc \"" << info->kfunc << "\" is not registered for the owner @" << owner.getSymName()
+                                   << "'s program type; the kfunc table allows " << k->progTypes;
+      return success();
+    }
+    if (!isa<IfOp, RefCheckOp, KPtrCheckOp, KRefCheckOp, IterNumOp, IterScxDsqOp, RcuRegionOp>(p)) // iterator bodies and RCU sections too; the DSQ iterator body: kref.check regions (a kref exists only there)
+      return op->emitOpError() << "is inside '" << p->getName()
+                               << "'; sched_ext kfunc ops are only allowed in the body of an ebpf.program and its ebpf.if, "
+                                  "ebpf.ref.check and ebpf.kptr.check regions (and ebpf.iter.num / ebpf.iter.scx_dsq / "
+                                  "ebpf.rcu.region bodies, ebpf.kref.check regions)";
+  }
+  // in an ebpf.func the kind, the kfunc's program type and (in
+  // ebpf-verify-schema) the member and sleepable rules are checked per reaching
+  // context (ebpf-verify-call-contexts); here only the rows.
+  if (top && isa<SubprogramOp>(top)) {
+    if (scxOp == "const" || scxOp == "exit_info")
+      return success();
+    const bpfmlir::ScxKfuncInfo *info = bpfmlir::lookupScxOp(scxOp);
+    if (!info)
+      return op->emitOpError() << "has no row in ScxContract.def";
+    if (!bpfabi::lookupKfunc(info->kfunc))
+      return op->emitOpError() << "needs kfunc \"" << info->kfunc << "\", which is not in the kfunc table";
+    return success();
+  }
+  auto prog = dyn_cast_or_null<ProgramOp>(top);
+  if (!prog)
+    return op->emitOpError() << "is outside an ebpf.program and an ebpf.func (callbacks other than a sched_ext timer callback cannot call "
+                                "sched_ext kfuncs)";
+  // one sched_ext op is also allowed in the kinds with its own OPS
+  // tag scx.<op> (scx.dsq_reenq: tp_btf — scx_kfunc_set_any is registered for
+  // TRACING; scx.now: syscall — scx_kfunc_context_filter allows the in_any
+  // kfuncs for SYSCALL). The kfunc table's program types are checked below.
+  if (std::string why = bpfmlir::scxKindRule(scxOp, prog.getKind()); !why.empty())
+    return op->emitOpError() << why;
+  if (scxOp == "const" || scxOp == "exit_info") // neither calls a kfunc.
+    return success();
+  const bpfmlir::ScxKfuncInfo *info = bpfmlir::lookupScxOp(scxOp);
+  if (!info)
+    return op->emitOpError() << "has no row in ScxContract.def";
+  const bpfabi::KfuncABI *k = bpfabi::lookupKfunc(info->kfunc);
+  if (!k)
+    return op->emitOpError() << "needs kfunc \"" << info->kfunc << "\", which is not in the kfunc table";
+  StringRef ptype = programTypeOf(prog.getKind());
+  if (!k->allowsProgType(ptype))
+    return op->emitOpError() << "kfunc \"" << info->kfunc << "\" is not registered for program type " << ptype
+                             << "; the kfunc table allows " << k->progTypes;
+  return success();
+}
+static LogicalResult scxTask(Operation *op, Value v) {
+  auto kp = dyn_cast<KPtrType>(v.getType());
+  if (!kp || kp.getStructName() != "task_struct")
+    return op->emitOpError() << "takes the task as a checked !ebpf.kptr<\"task_struct\"> (pass the present value of "
+                                "ebpf.kptr.check), got "
+                             << v.getType();
+  return success();
+}
+static LogicalResult scxInt(Operation *op, Value v, StringRef what, unsigned bits) {
+  if (!v.getType().isSignlessInteger(bits))
+    return op->emitOpError() << what << " must be i" << bits << " (no implicit extension), got " << v.getType();
+  return success();
+}
+LogicalResult ScxDsqInsertOp::verify() {
+  if (failed(verifyScxCommon(*this, "dsq_insert")) || failed(scxTask(*this, getTask())) ||
+      failed(scxInt(*this, getDsq(), "dsq", 64)) || failed(scxInt(*this, getSlice(), "slice", 64)) ||
+      failed(scxInt(*this, getFlags(), "flags", 64)))
+    return failure();
+  return success();
+}
+LogicalResult ScxDsqInsertVtimeOp::verify() {
+  if (failed(verifyScxCommon(*this, "dsq_insert_vtime")) || failed(scxTask(*this, getTask())) ||
+      failed(scxInt(*this, getDsq(), "dsq", 64)) || failed(scxInt(*this, getSlice(), "slice", 64)) ||
+      failed(scxInt(*this, getVtime(), "vtime", 64)) || failed(scxInt(*this, getFlags(), "flags", 64)))
+    return failure();
+  return success();
+}
+LogicalResult ScxDsqMoveToLocalOp::verify() {
+  if (failed(verifyScxCommon(*this, "dsq_move_to_local")) || failed(scxInt(*this, getDsq(), "dsq", 64)) ||
+      failed(scxInt(*this, getMoved(), "the result", 1)))
+    return failure();
+  return success();
+}
+LogicalResult ScxCreateDsqOp::verify() {
+  if (failed(verifyScxCommon(*this, "create_dsq")) || failed(scxInt(*this, getDsq(), "dsq", 64)) ||
+      failed(scxInt(*this, getNode(), "node", 32)) || failed(scxInt(*this, getStatus(), "the result", 32)))
+    return failure();
+  return success();
+}
+LogicalResult ScxSelectCpuDflOp::verify() {
+  if (failed(verifyScxCommon(*this, "select_cpu_dfl")) || failed(scxTask(*this, getTask())) ||
+      failed(scxInt(*this, getPrev(), "prev", 32)) || failed(scxInt(*this, getWake(), "wake", 64)) ||
+      failed(scxInt(*this, getCpu(), "the cpu result", 32)) || failed(scxInt(*this, getIdle(), "the idle result", 1)))
+    return failure();
+  return success();
+}
+LogicalResult ScxTaskSetDsqVtimeOp::verify() {
+  if (failed(verifyScxCommon(*this, "task_set_dsq_vtime")) || failed(scxTask(*this, getTask())) ||
+      failed(scxInt(*this, getVtime(), "vtime", 64)))
+    return failure();
+  return success();
+}
+// MAX_BPRINTF_VARARGS (include/linux/bpf.h) bounds bstr_printf arguments.
+static constexpr unsigned kScxErrorMaxArgs = 12;
+static LogicalResult scxFormat(Operation *op, StringRef format, ValueRange args, bool dump); // below.
+LogicalResult ScxErrorOp::verify() {
+  if (failed(verifyScxCommon(*this, "error")))
+    return failure();
+  return scxFormat(*this, getFormat(), getArgs(), /*dump=*/false);
+}
+LogicalResult ScxConstOp::verify() {
+  if (failed(verifyScxCommon(*this, "const")))
+    return failure();
+  if (!bpfabi::lookupScxEnum(getName()))
+    return emitOpError() << "names \"" << getName() << "\", which is not a scxenum row of the UAPI table ("
+                         << bpfabi::listScxEnums() << ")";
+  return scxInt(*this, getValue(), "the result", 64);
+}
+// the kind-independent CO-RE enum read. The pair must be a scxenum row
+// (its value is the relocation's local value); placement is that of arith.
+LogicalResult CoreEnumValueOp::verify() {
+  const bpfabi::ScxEnumABI *e = bpfabi::lookupScxEnum(getName());
+  if (!e)
+    return emitOpError() << "names \"" << getName() << "\", which is not a scxenum row of the UAPI table ("
+                         << bpfabi::listScxEnums() << ")";
+  if (e->enumName != getEnumName())
+    return emitOpError() << "names " << getName() << " of enum \"" << getEnumName() << "\", but the UAPI table's scxenum row has it in enum \""
+                         << e->enumName << "\"";
+  return success(); // ebpf.spin.region's own allowed set rejects it there.
+}
+LogicalResult ScxExitInfoOp::verify() {
+  if (failed(verifyScxCommon(*this, "exit_info")))
+    return failure();
+  if (getInfo().getType().getStructName() != "scx_exit_info")
+    return emitOpError() << "takes the exit info as !ebpf.kptr<\"scx_exit_info\">, got " << getInfo().getType();
+  return success();
+}
+
+//. The RCU-section and member rules need the schema
+// (sleepable, member) and are in ebpf-verify-schema.
+// MAX_BPRINTF_BIN_ARGS (7.3.1 include/linux/bpf.h:4121, 7.1.8 :3883,
+// 6.12.111 kernel/bpf/helpers.c:764) bounds the bytes bpf_bprintf_prepare
+// copies for one format; past it the kfunc fails with -ENOSPC and
+// __bstr_format calls scx_error (7.3.1 ext.c:10093-10097).
+static constexpr unsigned kScxBinArgsMax = 512;
+
+// the classification scan of the whole format — never stops at an
+// unsupported conversion, so a %p or %q cannot hide a later %s. After '%'
+// ("%%" skipped) it skips the [0 +-] flags and the width and looks at one
+// character: 's' is a real %s (with or without width), 'p' starts the %p
+// family (%ps / %pks / %pus are not %s), '%' or the end is ambiguous (the
+// kernel's -EINVAL), anything else is some other conversion.
+namespace {
+struct ScxFormatClass {
+  bool realS = false, ambiguous = false;
+};
+} // namespace
+static ScxFormatClass classifyScxFormat(StringRef f) {
+  ScxFormatClass c;
+  for (size_t i = 0; i < f.size(); ++i) {
+    if (f[i] != '%')
+      continue;
+    if (i + 1 < f.size() && f[i + 1] == '%') {
+      ++i;
+      continue;
+    }
+    size_t j = i + 1;
+    while (j < f.size() && (f[j] == '0' || f[j] == '+' || f[j] == '-' || f[j] == ' '))
+      ++j;
+    while (j < f.size() && f[j] >= '0' && f[j] <= '9')
+      ++j;
+    if (j >= f.size() || f[j] == '%')
+      c.ambiguous = true;
+    else if (f[j] == 's')
+      c.realS = true;
+    i = j < f.size() && f[j] == '%' ? j - 1 : j;
+  }
+  return c;
+}
+
+// the strict parser — a closed subset of bpf_bprintf_prepare's
+// grammar (7.3.1 helpers.c:846-1049, the same in 7.1.8 and 6.12.111): plain
+// text without non-whitespace ASCII control bytes (:854-857), "%%", and a
+// conversion of [0 +-]* flags, an optional [1-9][0-9]* width, then either 's'
+// (followed by NUL, whitespace or punctuation:975-980) or l{0,2} and one of
+// i d u x X (:1019-1036). The %p family and %c are kernel conversions this
+// compiler does not open: their bin_args size has no bound in the formula
+// (%pB / %pi6 expand to text:912-967; %pks / %pus copy up to the rest).
+namespace {
+struct ScxConv {
+  bool str;  // %s
+  unsigned w; // integer bytes (4 or 8); 0 for %s
+};
+} // namespace
+static LogicalResult parseScxFormatStrict(Operation *op, StringRef f, SmallVectorImpl<ScxConv> &out) {
+  auto isCtl = [](unsigned char c) { return c < 0x80 && !llvm::isPrint(c) && !llvm::isSpace(c); };
+  for (size_t i = 0; i < f.size(); ++i) {
+    if (isCtl(f[i]))
+      return op->emitOpError() << "format byte " << i << " is an ASCII control character other than whitespace (bpf_bprintf_prepare rejects it)";
+    if (f[i] != '%')
+      continue;
+    if (i + 1 < f.size() && f[i + 1] == '%') {
+      ++i;
+      continue;
+    }
+    size_t at = i, j = i + 1;
+    while (j < f.size() && (f[j] == '0' || f[j] == '+' || f[j] == '-' || f[j] == ' '))
+      ++j;
+    if (j < f.size() && f[j] >= '1' && f[j] <= '9')
+      while (j < f.size() && f[j] >= '0' && f[j] <= '9')
+        ++j;
+    auto bad = [&](StringRef why) {
+      return op->emitOpError() << "format conversion at byte " << at << " (\"" << f.substr(at, std::min<size_t>(j + 1, f.size()) - at)
+                               << "\") " << why
+                               << "; a format with %s or a !ebpf.str_buf argument allows only %%, [0 +-] flags, a width, %s and "
+                                  "%[l[l]]{i,d,u,x,X}";
+    };
+    if (j >= f.size())
+      return bad("ends the format");
+    char c = f[j];
+    if (c == 's') {
+      if (j + 1 < f.size() && !llvm::isSpace(f[j + 1]) && !llvm::isPunct(f[j + 1]))
+        return bad("is followed by a byte that is not NUL, whitespace or punctuation (the kernel accepts %s only before NUL, whitespace or punctuation)");
+      out.push_back({true, 0});
+      i = j;
+      continue;
+    }
+    if (c == 'p')
+      return bad("is in the %p family, which this compiler does not open");
+    if (c == 'c')
+      return bad("is %c, which this compiler does not open");
+    if (c == '.')
+      return bad("has a precision, which the kernel does not accept");
+    unsigned w = 4;
+    if (c == 'l') {
+      w = 8, ++j;
+      if (j < f.size() && f[j] == 'l')
+        ++j;
+    }
+    if (j >= f.size() || !StringRef("iduxX").contains(f[j]))
+      return bad("is not a conversion the kernel accepts");
+    out.push_back({false, w});
+    i = j;
+  }
+  return success();
+}
+
+static LogicalResult scxFormat(Operation *op, StringRef format, ValueRange args, bool dump) {
+  if (format.empty() || format.contains('\0'))
+    return op->emitOpError("needs a non-empty format literal without NUL bytes");
+  if (args.size() > kScxErrorMaxArgs)
+    return op->emitOpError() << "takes at most " << kScxErrorMaxArgs << " arguments (MAX_BPRINTF_VARARGS), got " << args.size();
+  ScxFormatClass cls = classifyScxFormat(format);
+  bool strBuf = llvm::any_of(args, [](Value a) { return isa<StrBufType>(a.getType()); });
+  if (!strBuf && !cls.realS && !cls.ambiguous) { // The pre-path, unchanged.
+    for (auto [i, a] : llvm::enumerate(args))
+      if (failed(scxInt(op, a, "argument " + std::to_string(i), 64)))
+        return failure();
+    return success();
+  }
+  if (!dump)
+    return op->emitOpError() << (strBuf ? "takes a !ebpf.str_buf argument" : "has a %s conversion (or an ambiguous '%')")
+                             << "; %s and !ebpf.str_buf are only for ebpf.scx.dump";
+  SmallVector<ScxConv> convs;
+  if (failed(parseScxFormatStrict(op, format, convs)))
+    return failure();
+  if (convs.size() != args.size())
+    return op->emitOpError() << "format has " << convs.size() << " conversion(s) but " << args.size()
+                             << " argument(s); a format with %s or a !ebpf.str_buf argument needs exactly one argument per conversion";
+  unsigned bin = 0;
+  for (auto [i, cv] : llvm::enumerate(convs)) {
+    Value a = args[i];
+    if (cv.str) {
+      auto sb = dyn_cast<StrBufType>(a.getType());
+      if (!sb)
+        return op->emitOpError() << "argument " << i << " is at a %s conversion and must be a !ebpf.str_buf, got " << a.getType();
+      bin += static_cast<unsigned>(sb.getSize());
+      continue;
+    }
+    if (isa<StrBufType>(a.getType()))
+      return op->emitOpError() << "argument " << i << " is a !ebpf.str_buf at a non-%s conversion (only %s takes a string buffer)";
+    if (failed(scxInt(op, a, "argument " + std::to_string(i), 64)))
+      return failure();
+    bin += 3 + cv.w; // 4-byte alignment (helpers.c:1040) and the value.
+  }
+  if (bin > kScxBinArgsMax)
+    return op->emitOpError() << "may need up to " << bin << " bytes of bpf_bprintf_prepare bin_args (each %s its str_buf size, each "
+                                                         "integer 3 + 4 / 8), over MAX_BPRINTF_BIN_ARGS "
+                             << kScxBinArgsMax << " (the kernel fails the dump with -ENOSPC and scx_error)";
+  return success();
+}
+static LogicalResult scxRcuTask(Operation *op, Type t, StringRef what) {
+  auto r = dyn_cast<RcuPtrOrNullType>(t);
+  if (!r || r.getStructName() != "task_struct")
+    return op->emitOpError() << what << " must be !ebpf.rcu_ptr_or_null<\"task_struct\"> (KF_RCU_PROTECTED | KF_RET_NULL), got " << t;
+  return success();
+}
+// The nullable operand that v is the checked form of, if any: the kptr.check
+// present argument (①) or its ② expansion, assume_present.
+static Value scxCheckedFrom(Value v) {
+  if (auto ap = v.getDefiningOp<AssumePresentOp>())
+    return ap.getValue();
+  auto ba = dyn_cast<BlockArgument>(v);
+  if (!ba)
+    return {};
+  auto kc = dyn_cast_or_null<KPtrCheckOp>(ba.getOwner()->getParentOp());
+  if (!kc || ba.getOwner() != &kc.getPresentRegion().front())
+    return {};
+  return kc.getPtr();
+}
+LogicalResult ScxTaskCpuOp::verify() {
+  if (failed(verifyScxCommon(*this, "task_cpu")))
+    return failure();
+  Type t = getTask().getType();
+  auto kp = dyn_cast<KPtrType>(t);
+  auto rp = dyn_cast<RcuPtrType>(t);
+  auto kr = dyn_cast<KRefType>(t); // a referenced task is trusted (KF_RCU takes it).
+  if (!((kp && kp.getStructName() == "task_struct") || (rp && rp.getStructName() == "task_struct") ||
+        (kr && kr.getStructName() == "task_struct")))
+    return emitOpError() << "takes the task as a checked !ebpf.kptr<\"task_struct\"> or !ebpf.rcu_ptr<\"task_struct\"> (KF_RCU), got " << t;
+  return scxInt(*this, getCpu(), "the result", 32);
+}
+LogicalResult ScxKickCpuOp::verify() {
+  if (failed(verifyScxCommon(*this, "kick_cpu")) || failed(scxInt(*this, getCpu(), "cpu", 32)) ||
+      failed(scxInt(*this, getFlags(), "flags", 64)))
+    return failure();
+  return success();
+}
+LogicalResult ScxDsqNrQueuedOp::verify() {
+  if (failed(verifyScxCommon(*this, "dsq_nr_queued")) || failed(scxInt(*this, getDsq(), "dsq", 64)) ||
+      failed(scxInt(*this, getCount(), "the result", 32)))
+    return failure();
+  return success();
+}
+LogicalResult ScxDsqPeekOp::verify() {
+  if (failed(verifyScxCommon(*this, "dsq_peek")) || failed(scxInt(*this, getDsq(), "dsq", 64)) ||
+      failed(scxRcuTask(*this, getTask().getType(), "the result")))
+    return failure();
+  return success();
+}
+LogicalResult ScxTaskSetSliceOp::verify() {
+  if (failed(verifyScxCommon(*this, "task_set_slice")) || failed(scxTask(*this, getTask())) ||
+      failed(scxInt(*this, getSlice(), "slice", 64)))
+    return failure();
+  return success();
+}
+LogicalResult ScxNowOp::verify() {
+  if (failed(verifyScxCommon(*this, "now")))
+    return failure();
+  return scxInt(*this, getNs(), "the result", 64);
+}
+LogicalResult ScxPickIdleCpuOp::verify() {
+  if (failed(verifyScxCommon(*this, "pick_idle_cpu")) || failed(scxInt(*this, getFlags(), "flags", 64)) ||
+      failed(scxInt(*this, getCpu(), "the result", 32)))
+    return failure();
+  auto cm = dyn_cast<KPtrType>(getCpus().getType());
+  if (!cm || cm.getStructName() != "cpumask")
+    return emitOpError() << "takes the cpumask as a checked !ebpf.kptr<\"cpumask\">, got " << getCpus().getType();
+  // Only a callback-argument task's cpus_ptr: ctx.arg -> kptr.check ->
+  // kfield.ptr "cpus_ptr" -> kptr.check (no other cpumask in B1).
+  Value nullable = scxCheckedFrom(getCpus());
+  auto fp = nullable ? nullable.getDefiningOp<KFieldPtrOp>() : KFieldPtrOp();
+  Value taskNullable = fp && fp.getField() == "cpus_ptr" ? scxCheckedFrom(fp.getPtr()) : Value();
+  auto arg = taskNullable ? taskNullable.getDefiningOp<CtxArgOp>() : CtxArgOp();
+  if (!arg || cast<KPtrType>(fp.getPtr().getType()).getStructName() != "task_struct")
+    return emitOpError() << "takes only the cpumask of a callback-argument task: the checked result of "
+                            "`ebpf.kfield.ptr %t \"cpus_ptr\"` where %t is the checked !ebpf.kptr<\"task_struct\"> of an ebpf.ctx.arg";
+  return success();
+}
+LogicalResult ScxCpuCurrOp::verify() {
+  if (failed(verifyScxCommon(*this, "cpu_curr")) || failed(scxInt(*this, getCpu(), "cpu", 32)) ||
+      failed(scxRcuTask(*this, getTask().getType(), "the result")))
+    return failure();
+  return success();
+}
+LogicalResult ScxCpuperfCapOp::verify() {
+  if (failed(verifyScxCommon(*this, "cpuperf_cap")) || failed(scxInt(*this, getCpu(), "cpu", 32)) ||
+      failed(scxInt(*this, getCap(), "the result", 32)))
+    return failure();
+  return success();
+}
+LogicalResult ScxCpuperfSetOp::verify() {
+  if (failed(verifyScxCommon(*this, "cpuperf_set")) || failed(scxInt(*this, getCpu(), "cpu", 32)) ||
+      failed(scxInt(*this, getPerf(), "perf", 32)))
+    return failure();
+  return success();
+}
+LogicalResult ScxDsqReenqOp::verify() {
+  if (failed(verifyScxCommon(*this, "dsq_reenq")) || failed(scxInt(*this, getDsq(), "dsq", 64)) ||
+      failed(scxInt(*this, getFlags(), "flags", 64)))
+    return failure();
+  APInt c;
+  if (!matchPattern(getFlags(), m_ConstantInt(&c)) || !c.isZero())
+    return emitOpError() << "takes reenq flags only as an arith.constant 0 (the SCX_REENQ_* flags are not supported)";
+  return success();
+}
+LogicalResult ScxExitOp::verify() {
+  if (failed(verifyScxCommon(*this, "exit")) || failed(scxInt(*this, getCode(), "the exit code", 64)))
+    return failure();
+  return scxFormat(*this, getFormat(), getArgs(), /*dump=*/false);
+}
+LogicalResult ScxDumpOp::verify() {
+  if (failed(verifyScxCommon(*this, "dump")))
+    return failure();
+  return scxFormat(*this, getFormat(), getArgs(), /*dump=*/true);
+}
+
+// The only module attribute the dialect checks is the sched_ext family; other
+// ebpf.* attributes (compiler-internal markers) are accepted unchanged.
+LogicalResult EBPFDialect::verifyOperationAttribute(Operation *op, NamedAttribute attr) {
+  if (attr.getName() != bpfmlir::kScxFamilyAttr)
+    return success();
+  if (!isa<ModuleOp>(op))
+    return op->emitError() << attr.getName().getValue() << " is a module attribute";
+  auto s = dyn_cast<StringAttr>(attr.getValue());
+  if (!s || s.getValue() != bpfmlir::kScxFamilyInsert)
+    return op->emitError() << attr.getName().getValue() << " = " << attr.getValue()
+                           << " is not a sched_ext kfunc family this compiler has (it has \"" << bpfmlir::kScxFamilyInsert << "\")";
+  return success();
+}
 
 LogicalResult SockAddrSetSunPathOp::verify() {
   auto prog = (*this)->getParentOfType<ProgramOp>();
@@ -2854,7 +5059,7 @@ LogicalResult UserRingbufCallbackOp::verify() {
       continue;
     if (auto rd = dyn_cast<DynptrReadOp>(op); rd && rd.getDynptr() == d)
       continue;
-    if (isa<GlobalLoadOp, GlobalAtomicAddOp, KtimeOp>(op))
+    if (isa<GlobalLoadOp, GlobalAtomicAddOp, KtimeOp, CoreEnumValueOp>(op)) // CoreEnumValueOp.
       continue;
     return op.emitOpError() << "is not allowed inside ebpf.user_ringbuf.callback (only arith, ebpf.dynptr.read of its sample, "
                                "ebpf.global.load / global.atomic_add and ebpf.ktime.ns)";
@@ -3040,6 +5245,16 @@ LogicalResult GlobalAtomicAddOp::verify() {
   return success();
 }
 
+// global cmpxchg / or share the BPF atomic widths (32 / 64);
+// ebpf-verify-schema owns the .bss integer global rule.
+static LogicalResult checkAtomicWidth(Operation *op, Type t, StringRef what) {
+  if (!t.isInteger(32) && !t.isInteger(64))
+    return op->emitOpError() << what << " is 32 or 64 bits (BPF atomic), got " << t;
+  return success();
+}
+LogicalResult GlobalCmpxchgOp::verify() { return checkAtomicWidth(*this, getOld().getType(), "atomic compare-and-exchange"); }
+LogicalResult GlobalAtomicOrOp::verify() { return checkAtomicWidth(*this, getValue().getType(), "atomic or"); }
+
 LogicalResult RefAtomicAddOp::verify() {
   if (failed(checkNotLpmValue(*this, getRef())))
     return failure();
@@ -3065,7 +5280,7 @@ LogicalResult RefAtomicAddOp::verify() {
 
 LogicalResult IsPresentOp::verify() {
   Type t = getValue().getType();
-  if (!isa<MaybeRefType, MaybeReservationType, KPtrOrNullType, KRefOrNullType, SockRefOrNullType>(t)) // kptr.check and kref.check.
+  if (!isa<MaybeRefType, MaybeReservationType, KPtrOrNullType, RcuPtrOrNullType, KRefOrNullType, SockRefOrNullType>(t)) // kptr.check and kref.check.
     return emitOpError() << "operand must be !ebpf.maybe_ref<...> or "
                          << "!ebpf.maybe_reservation<...>, got " << t;
   return success();
@@ -3077,6 +5292,12 @@ LogicalResult AssumePresentOp::verify() {
   if (isa<SockRefOrNullType>(in)) {
     if (!isa<SockRefType>(out))
       return emitOpError() << "a checked socket must become !ebpf.sock_ref";
+    return success();
+  }
+  if (auto m = dyn_cast<RcuPtrOrNullType>(in)) { // present rcu_ptr from kptr.check.
+    auto k = dyn_cast<RcuPtrType>(out);
+    if (!k || k.getStructName() != m.getStructName())
+      return emitOpError() << "a checked " << in << " must become !ebpf.rcu_ptr<\"" << m.getStructName() << "\">, got " << out;
     return success();
   }
   if (auto m = dyn_cast<KPtrOrNullType>(in)) { // Present kptr from kptr.check.
@@ -3147,7 +5368,7 @@ bool isSubprogramRef(Type t) {
 LogicalResult verifyReadOnlyRef(Operation *fn, Value v, unsigned argNo) {
   for (Operation *user : v.getUsers()) {
     if (isa<BorrowedType>(v.getType()) &&
-        isa<RefLoadOp, RefFieldLoadOp, RefStoreOp, RefFieldStoreOp, RefAtomicAddOp, RefFieldAtomicAddOp, CallOp>(user))
+        isa<RefLoadOp, RefFieldLoadOp, RefStoreOp, RefFieldStoreOp, RefAtomicAddOp, RefFieldAtomicAddOp, RefFieldCmpxchgOp, RefFieldAtomicOrOp, CallOp>(user))
       continue;
     if (isa<MaybeRefType>(v.getType())) {
       if (isa<CallOp>(user))
@@ -3241,11 +5462,12 @@ LogicalResult SubprogramOp::verify() {
     for (Operation *user : entry.getArgument(i).getUsers()) {
       if (isa<PacketLoadOp, PacketCheckOp, PktCheckBrOp, StackKernelIdOp, StackUserIdOp, PerfOutputOp, CallOp>(user)) // pkt.check_br is the expanded packet.check.
         continue;
-      if (isa<CtxArgOp, CtxRetvalOp, KprobeArgOp, UprobeArgOp>(user))
+      if (isa<CtxArgOp, CtxRetvalOp, CtxFuncRetOp, CtxFuncIpOp,
+              CtxFuncArgOp, CtxFuncArgCntOp, KprobeArgOp, UprobeArgOp>(user))
         return emitOpError() << "context argument #" << i << " is used by '" << user->getName()
                              << "', whose meaning depends on the attach point (the function signature or the tracepoint); "
                                 "read it in the program and pass the value as an integer";
-      if (isa<XdpAdjustHeadOp, XdpAdjustTailOp, TailCallOp, TailCallTryOp, LwtSeg6StoreBytesOp, LwtSeg6AdjustSrhOp, LwtSeg6ActionOp,
+      if (isa<XdpAdjustHeadOp, XdpAdjustMetaOp, XdpAdjustTailOp, TailCallOp, TailCallTryOp, LwtSeg6StoreBytesOp, LwtSeg6AdjustSrhOp, LwtSeg6ActionOp,
                 MsgPullDataOp, MsgPopDataOp>(user)) // Include seg6 and message pull/pop invalidators.
         return emitOpError() << "context argument #" << i << " is used by '" << user->getName()
                              << "', which invalidates the caller's packet pointers; call it in the program";
@@ -3296,7 +5518,9 @@ LogicalResult ReturnOp::verify() {
                            << " programs (program kind \"" << prog.getKind() << "\" returns a named verdict — ebpf.verdict)";
     }
     // ext returns match replacement width (i32/i64), with schema agreement checked separately.
-    bool extRet = !bpfmlir::entryTakesCtx(k->attach);
+    // struct_ops members such as tcp_congestion_ops.get_info return size_t
+    // VerifySchema matches the width against the schema ret.
+    bool extRet = !bpfmlir::entryTakesCtx(k->attach) || k->sig == bpfmlir::SigFamily::OpsSig;
     if (!getValue().getType().isInteger(32) && !(extRet && getValue().getType().isInteger(64)))
       return emitOpError() << "a " << prog.getKind() << " program returns an i32 value" << (extRet ? " or an i64 value" : "") << ", got "
                            << getValue().getType();
@@ -3348,7 +5572,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       lpm |= cast<MapType>(lk.getMap().getType()).getKind() == "lpm_trie";
     if (!lpm)
       continue;
-    llvm::SmallPtrSet<Operation *, 8> seen;
+    CalleeArgSet seen;
     if (calleeWritesArg(symbolTable, fn, i, seen))
       return emitOpError() << "passes a lpm_trie value as argument #" << i << " to @" << getCallee()
                            << ", which writes it; a lpm_trie is read-only in programs (a compiler restriction — entries are set by userspace)";
@@ -3390,17 +5614,59 @@ LogicalResult RefFieldAtomicAddOp::verify() {
     return emitOpError() << "adds a " << t << "; a BPF atomic add is 32 or 64 bits wide";
   return success();
 }
+// the ref.field.atomic_add rules (VerifyRecords owns path / width /
+// alignment agreement).
+LogicalResult RefFieldCmpxchgOp::verify() {
+  if (failed(checkRecordBorrow(*this, getRef().getType())) || failed(checkNotLpmValue(*this, getRef())))
+    return failure();
+  return checkAtomicWidth(*this, getOld().getType(), "atomic compare-and-exchange");
+}
+LogicalResult RefFieldAtomicOrOp::verify() {
+  if (failed(checkRecordBorrow(*this, getRef().getType())) || failed(checkNotLpmValue(*this, getRef())))
+    return failure();
+  return checkAtomicWidth(*this, getValue().getType(), "atomic or");
+}
+
+// the address of an embedded cpumask field (VerifyRecords matches the
+// path to a cpumask field of the result's size). The address is used only as a
+// struct argument of a kfunc.call (whose verifier checks the kfunc), within
+// the region of the op — never yielded, stored, passed to ebpf.call or carried.
+LogicalResult RefFieldAddrOp::verify() {
+  if (failed(checkRecordBorrow(*this, getRef().getType())) || failed(checkNotLpmValue(*this, getRef())))
+    return failure();
+  if (getAddr().getType().getSize() <= 0 || getAddr().getType().getSize() % 8 != 0)
+    return emitOpError() << "the cpumask size must be a positive multiple of 8, got " << getAddr().getType();
+  for (OpOperand &use : getAddr().getUses()) {
+    Operation *u = use.getOwner();
+    if (!isa<KfuncCallOp>(u))
+      return emitOpError() << "an embedded cpumask address may only be passed to ebpf.kfunc.call, but it is used by '" << u->getName()
+                           << "' (it must not escape the borrow)";
+    if (!(*this)->getParentRegion()->isAncestor(u->getParentRegion()))
+      return emitOpError() << "an embedded cpumask address must be used in the region of its ebpf.ref.field.addr";
+  }
+  return success();
+}
+
+// a record global borrow; the schema (ebpf-verify-schema) owns the
+// section, the record shape and the read-only rule of .rodata.
+LogicalResult GlobalRefOp::verify() {
+  auto b = cast<BorrowedType>(getRef().getType());
+  if (!isa<RecordType>(b.getPointee()))
+    return emitOpError() << "borrows " << b.getPointee() << "; a global borrow is a record (!ebpf.borrowed<!ebpf.record<…>>) — integer globals use ebpf.global.load / store";
+  return success();
+}
+
+// a bss kaddr global reads as an untrusted kernel address.
+LogicalResult GlobalLoadOp::verify() {
+  if (isa<KAddrType>(getResult().getType()))
+    return verifyKAddrUses(getResult(), "global value");
+  return success();
+}
 
 // Loops.
 namespace {
-// Conservative compiler support bound, not derived from kernel limits.
-constexpr int64_t kMaxLoopCount = 64;
 // Unrolled IR-copy cost bound.
 constexpr uint64_t kMaxUnrolledOps = 4096;
-// Nested depth <=2 and path product <=64 are compiler limits, not kernel
-// limits or a proof of execution workload.
-constexpr int64_t kMaxLoopDepth = 2;
-constexpr int64_t kMaxNestedProduct = 64;
 // Cost overhead: unrolled copies add IV constants/guards/join branches;
 // bounded loops add entry/header/bound checks/latch.
 constexpr uint64_t kUnrollCopyOverhead = 4;
@@ -3460,11 +5726,25 @@ bool allowedInLoop(Operation *op) {
   StringRef n = op->getName().getStringRef();
   if (n == "scf.if" || n == "scf.yield")
     return true;
-  return isa<MapLookupOp, MapUpdateOp, MapAtomicAddOp, RefCheckOp, YieldOp, RefLoadOp, RefStoreOp,
-             RefAtomicAddOp, RefFieldLoadOp, RefFieldStoreOp, RefFieldAtomicAddOp, PacketLoadOp, KtimeOp, LoopYieldOp,
-             IfOp, IfYieldOp, BreakOp, ContinueOp, LoopOp, CallOp, RecordMakeOp, MapTryUpdateOp,
-             MapTryDeleteOp, ByteorderToBeOp, ByteorderFromBeOp, RefIndexOp, ElemLoadOp, ElemStoreOp,
-             TaskPidTgidOp, TaskCgroupIdOp, TaskUnderCgroupOp, SkbUnderCgroupOp, CtxRetvalOp, GlobalLoadOp, GlobalAtomicAddOp, KprobeArgOp, UprobeArgOp>(op);
+  return isa<SkbLoadBytesOp, SkbLoadBytesRelativeOp, SkbAdjustRoomOp, TracePrintkOp,
+             SkRedirectRequestOp, MapLookupOp, MapUpdateOp, MapAtomicAddOp,
+             RefCheckOp, YieldOp, RefLoadOp, RefStoreOp, RefAtomicAddOp,
+             RefFieldLoadOp, RefFieldStoreOp, RefFieldAtomicAddOp, RefFieldCmpxchgOp, RefFieldAtomicOrOp, PacketLoadOp,
+             KtimeOp, LoopYieldOp, IfOp, IfYieldOp, BreakOp, ContinueOp, LoopOp,
+             CallOp, RecordMakeOp, MapTryUpdateOp, MapTryDeleteOp,
+             ByteorderToBeOp, ByteorderFromBeOp, RefIndexOp, ElemLoadOp,
+             ElemStoreOp, TaskPidTgidOp, TaskCgroupIdOp, TaskUnderCgroupOp,
+             SkbUnderCgroupOp, CtxRetvalOp, CtxFuncRetOp,
+             CtxFuncIpOp, CtxFuncArgOp, CtxFuncArgCntOp, CgroupRetvalOp,
+             CgroupSetRetvalOp, TaskNsPidTgidOp, TaskSendSignalOp, TaskSendSignalThreadOp,
+             GlobalLoadOp, GlobalAtomicAddOp, GlobalCmpxchgOp, GlobalAtomicOrOp, GlobalStoreOp,
+             KprobeArgOp, UprobeArgOp,
+             // callbacks are rejected by each op's verifier.
+             CpuIdOp, RandomU32Op, NumaNodeIdOp, TaskUidGidOp, Jiffies64Op,
+             KtimeBootNsOp, KtimeCoarseNsOp, KtimeTaiNsOp,
+             TaskAncestorCgroupIdOp, TaskCurrentRawOp, CoreEnumValueOp /* */,
+             IterNumOp /* its body is checked by IterNumOp::verify */, IterScxDsqOp /* rejects an enclosing loop by name */,
+             GlobalRefOp /* borrowed in each iteration; callback loops (H) and map.for_each reject it by name */>(op);
 }
 
 // Capture integers, context and map handles only. References, reservations
@@ -3474,11 +5754,39 @@ bool capturable(Type t) {
 }
 } // namespace
 
+// the first ebpf.global.ref a subprogram reaches
+// through its own body and the subprograms it calls (any depth). `path`
+// receives the callee chain for the diagnostic; `seen` stops at a revisit.
+static GlobalRefOp reachedGlobalRef(SymbolTableCollection &st, SubprogramOp fn,
+                                    llvm::SmallPtrSetImpl<Operation *> &seen,
+                                    SmallVectorImpl<StringRef> &path) {
+  if (!fn || !seen.insert(fn).second)
+    return {};
+  path.push_back(fn.getSymName());
+  GlobalRefOp found;
+  fn.walk([&](Operation *op) {
+    if (auto g = dyn_cast<GlobalRefOp>(op)) {
+      found = g;
+      return WalkResult::interrupt();
+    }
+    if (auto call = dyn_cast<CallOp>(op)) {
+      auto t = dyn_cast_or_null<SubprogramOp>(st.lookupNearestSymbolFrom(call, call.getCalleeAttr()));
+      if ((found = reachedGlobalRef(st, t, seen, path)))
+        return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  if (!found)
+    path.pop_back();
+  return found;
+}
+
 LogicalResult LoopOp::verify() {
   int64_t n = getCount();
-  if (n < 0 || n > kMaxLoopCount)
+  int64_t countLimit = LoopBudget::countLimit(getUnroll(), getCallback());
+  if (n < 0 || n > countLimit)
     return emitOpError() << "count " << n << " is out of the range this compiler supports (0.."
-                         << kMaxLoopCount << ")";
+                         << countLimit << ")";
   for (Type t : getInits().getTypes())
     if (!isLoopScalar(t))
       return emitOpError() << "a loop-carried value must be i8 / i16 / i32 / i64, got " << t;
@@ -3499,17 +5807,22 @@ LogicalResult LoopOp::verify() {
 
   // Compute nested depth and N product, treating zero as one so an outer
   // zero-trip loop cannot hide unsupported inner bounds.
-  int64_t depth = 1, product = std::max<int64_t>(n, 1);
-  for (auto outer = (*this)->getParentOfType<LoopOp>(); outer; outer = outer->getParentOfType<LoopOp>()) {
-    ++depth;
-    product *= std::max<int64_t>(outer.getCount(), 1); // Each N<=64, so a depth-two product cannot overflow.
+  LoopBudget budget = LoopBudget{}.enter(n, getUnroll(), getCallback());
+  // an enclosing ebpf.iter.num adds depth but no count factor.
+  // so does an enclosing ebpf.iter.scx_dsq (its body
+  // rejects ebpf.loop by name first — counted here for the one depth rule).
+  for (Operation *p = (*this)->getParentOp(); p; p = p->getParentOp()) {
+    if (auto outer = dyn_cast<LoopOp>(p))
+      budget = budget.enter(outer.getCount(), outer.getUnroll(), outer.getCallback());
+    else if (isa<IterNumOp, IterScxDsqOp>(p))
+      budget = budget.enterIter();
   }
-  if (depth > kMaxLoopDepth)
-    return emitOpError() << "is nested " << depth << " deep; this compiler supports loops nested "
-                         << kMaxLoopDepth << " deep";
-  if (product > kMaxNestedProduct)
-    return emitOpError() << "the counts along the nest multiply to " << product
-                         << ", over the limit of " << kMaxNestedProduct
+  if (budget.depth > LoopBudget::maxDepth)
+    return emitOpError() << "is nested " << budget.depth << " deep; this compiler supports loops nested "
+                         << LoopBudget::maxDepth << " deep";
+  if (budget.product > budget.productLimit())
+    return emitOpError() << "the counts along the nest multiply to " << budget.product
+                         << ", over the limit of " << budget.productLimit()
                          << " this compiler supports (a count of 0 is taken as 1)";
 
   // Helper-callback mode is exclusive with unroll. Mixed bounded/unrolled/
@@ -3523,10 +5836,19 @@ LogicalResult LoopOp::verify() {
     // subject to lexical depth/product limits.
     if (!(*this)->getParentOfType<ProgramOp>() && !(*this)->getParentOfType<SubprogramOp>())
       return emitOpError() << "a callback loop must be in an ebpf.program or an ebpf.func";
+    // a bpf_loop callback driven from inside an iterator body is not supported.
+    if ((*this)->getParentOfType<IterNumOp>())
+      return emitOpError() << "a callback loop (H) inside ebpf.iter.num is not supported (use a loop without callback)";
   }
 
   Region *self = &getBody();
   WalkResult w = getBody().walk([&](Operation *op) {
+    // ops inside a nested ebpf.iter.num follow that iterator's rules (IterNumOp::verify).
+    if (auto inner = op->getParentOfType<IterNumOp>(); inner && self->isAncestor(inner->getParentRegion()))
+      return WalkResult::advance();
+    // likewise the DSQ iterator (it rejects the enclosing loop itself).
+    if (auto inner = op->getParentOfType<IterScxDsqOp>(); inner && self->isAncestor(inner->getParentRegion()))
+      return WalkResult::advance();
     // Callback calls are allowed; call-graph passes own frame and ring limits.
     // Mixed loop modes are allowed, but packet.check/window_load require all
     // enclosing loops to unroll, avoiding cyclic expanded window topology.
@@ -3538,8 +5860,19 @@ LogicalResult LoopOp::verify() {
                         << " cannot hold it yet — use unroll";
       return WalkResult::interrupt();
     }
+    // arena ops follow packet.check's rule (every enclosing loop unroll).
+    // In a callback loop (H) the op's own verifier names the placement (the
+    // callback body is a separate function) — skip it here.
+    bool arenaWalk = isa<ArenaBaseOp, ArenaCheckOp, ArenaLoadOp, ArenaStoreOp>(op);
+    if (arenaWalk && cb)
+      return WalkResult::advance();
+    if (arenaWalk && !getUnroll()) {
+      op->emitOpError() << "is only supported inside an unroll ebpf.loop (the unrolled copies have no cycle); "
+                           "a loop without unroll (B) cannot hold it yet — use unroll";
+      return WalkResult::interrupt();
+    }
     // Capture rules also apply to packet operations; windows cannot enter from outside loops.
-    if (!packetWalk && !allowedInLoop(op)) {
+    if (!packetWalk && !arenaWalk && !allowedInLoop(op)) {
       op->emitOpError() << "is not allowed inside ebpf.loop (arith, scf.if, map "
                            "lookup / update, ref.check and reads / writes of a checked "
                            "reference, packet.load, ktime.ns: ebpf.if, ebpf.break, "
@@ -3547,6 +5880,27 @@ LogicalResult LoopOp::verify() {
                            "that reaches no ring buffer op (the callee's loops are checked on the call path): ebpf.record.make)";
       return WalkResult::interrupt();
     }
+    // a record global is borrowed inside a (B) / (U)
+    // loop body; a callback loop (H) becomes a separate function and is not
+    // opened for it (is out of scope).
+    if (cb && isa<GlobalRefOp>(op)) {
+      op->emitOpError() << "is not allowed inside a callback loop (H) — borrow the record global in a loop without callback";
+      return WalkResult::interrupt();
+    }
+    // nor through a call from the callback body.
+    if (cb)
+      if (auto call = dyn_cast<CallOp>(op)) {
+        SymbolTableCollection st;
+        llvm::SmallPtrSet<Operation *, 8> seen;
+        SmallVector<StringRef> path;
+        auto t = dyn_cast_or_null<SubprogramOp>(st.lookupNearestSymbolFrom(call, call.getCalleeAttr()));
+        if (GlobalRefOp g = reachedGlobalRef(st, t, seen, path)) {
+          op->emitOpError() << "reaches ebpf.global.ref @" << g.getName() << " through @"
+                                     << llvm::join(path, " -> @")
+                                     << " from a callback loop (H) — call it from a loop without callback";
+          return WalkResult::interrupt();
+        }
+      }
     for (Value v : op->getOperands()) {
       Region *def = v.getParentRegion();
       if (self->isAncestor(def))
@@ -3554,6 +5908,10 @@ LogicalResult LoopOp::verify() {
       // Helper callback bodies become separate functions: capture integers into
         // context slots and rebind map handles by symbol, nothing else.
       if (cb ? isa<IntegerType, MapType>(v.getType()) : capturable(v.getType()))
+        continue;
+      // the arena window base is a scalar; a loop without callback may
+      // capture it (a window may not — arena.check names that capture).
+      if (!cb && isa<ArenaBaseType>(v.getType()))
         continue;
       if (cb) {
         op->emitOpError() << "captures " << v.getType()
@@ -3588,6 +5946,353 @@ LogicalResult LoopOp::verify() {
                            << " op(s) this compiler supports";
   }
   return success();
+}
+
+// ops that may sleep (SleepableOps.def).
+bool mlir::ebpf::opMightSleep(Operation *op) {
+#define EBPF_SLEEPABLE_OP(OPCLASS, CALLEE) if (isa<OPCLASS>(op)) return true;
+#include "bpf-mlir/Support/SleepableOps.def"
+#undef EBPF_SLEEPABLE_OP
+  return false;
+}
+
+namespace {
+// the place of ebpf.iter.num / ebpf.rcu.region — an ebpf.program body,
+// through ebpf.if / ref.check / kptr.check / kref.check / ebpf.loop without
+// callback / ebpf.iter.num / ebpf.rcu.region. Callbacks, map.for_each and
+// spin.region are rejected (the iterator's destroy and the section's unlock are
+// checked region-locally). an ebpf.func body is a place too — the region
+// closes inside the function (never across a call); the kind and the kfunc's
+// program type are checked per reaching context by ebpf-verify-call-contexts.
+// Returns the enclosing ProgramOp or SubprogramOp.
+FailureOr<Operation *> closedRegionOwner(Operation *op, StringRef what) {
+  for (Operation *p = op->getParentOp(); p; p = p->getParentOp()) {
+    // a sched_ext_ops owner's timer callback body is a place like an
+    // ebpf.func body (the region closes in the callback; kind and program type
+    // per owner context). Other timer callbacks are rejected below.
+    if (isOpsTop(p))
+      return p;
+    auto loop = dyn_cast<LoopOp>(p);
+    if ((loop && loop.getCallback()) || isa<MapForEachOp, SpinRegionOp, TimerCallbackOp, UserRingbufCallbackOp>(p) ||
+        p->getName().getStringRef() == "scf.if") {
+      op->emitOpError() << "is inside '" << p->getName() << "'; " << what
+                        << " is only allowed in an ebpf.program body or an ebpf.func body (callbacks, map.for_each, spin.region "
+                           "and scf.if cannot hold it — the compiler checks it region-locally)";
+      return failure();
+    }
+  }
+  op->emitOpError() << "is outside an ebpf.program and an ebpf.func; " << what
+                    << " is only allowed in an ebpf.program body or an ebpf.func body";
+  return failure();
+}
+
+LogicalResult closedRegionKfunc(Operation *op, ProgramOp prog, StringRef kfunc) {
+  const bpfabi::KfuncABI *k = bpfabi::lookupKfunc(kfunc);
+  if (!k)
+    return op->emitOpError() << "needs the kfunc \"" << kfunc << "\", which is not in the kfunc table";
+  StringRef ptype = programTypeOf(prog.getKind());
+  if (!k->allowsProgType(ptype))
+    return op->emitOpError() << "lowers to the kfunc \"" << kfunc << "\", which is not registered for program type " << ptype
+                             << " (kind \"" << prog.getKind() << "\"); the kfunc table allows " << k->progTypes;
+  return success();
+}
+
+// the ebpf.iter.num body allowlist — the ebpf.loop allowlist plus
+// kfunc.call (acquire / release only inside an rcu.region with no iterator or
+// loop in between — checked by the op), kref.check / kptr.xchg (same rule),
+// kptr.check, kfield.load, the sched_ext ops and ebpf.rcu.region.
+bool allowedInIter(Operation *op) {
+  if (allowedInLoop(op))
+    return true;
+  if (op->getName().getStringRef().starts_with("ebpf.scx."))
+    return true;
+  return isa<KfuncCallOp, KRefCheckOp, KPtrXchgOp, KPtrLoadRcuOp, GlobalKPtrXchgOp, GlobalKPtrLoadRcuOp, KPtrCheckOp, KFieldLoadOp, RcuRegionOp,
+             IterYieldOp>(op); // kptr.load_rcu too; the kptr global ops
+}
+} // namespace
+
+// acquire / release, kref.check and kptr.xchg are allowed
+// in an iterator only when an ebpf.rcu.region lies between the op and every
+// enclosing ebpf.iter.num (iter → rcu.region → acquire), so the reference
+// closes in that section; directly in an iterator body (and rcu.region →
+// iter → acquire) is rejected.
+// the one exception — in an ebpf.iter.scx_dsq body (the body runs
+// inside the RCU section the iterator needs), acquire / release kfuncs and
+// kref.check are allowed directly. limited it to bpf_task_from_pid, its
+// kref.check and bpf_task_release; takes any kfunc
+// acquire / release and kref.check (LAVD's scx_bpf_get_online_cpumask /
+// scx_bpf_put_cpumask in find_cpu_in) — that each reference closes on every
+// path of the iteration (release before break / continue / the iteration's
+// end) is ebpf-verify-ownership's path check. kptr.xchg stays rejected (the
+// body's allowlist rejects it first). The rule is per nearest region: an
+// ebpf.iter.num nested in the body applies the rule below.
+static bool scxDsqRefOp(Operation *op) { return isa<KfuncCallOp, KRefCheckOp>(op); }
+
+static LogicalResult verifyOwnershipInIter(Operation *op, StringRef what) {
+  // an ebpf.func body closes the walk like a program body; the regions of
+  // its callers' call sites are checked per context (ebpf-verify-call-contexts).
+  for (Operation *p = op->getParentOp(); p && !isOpsTop(p); p = p->getParentOp()) {
+    if (isa<RcuRegionOp>(p))
+      return success();
+    if (isa<IterScxDsqOp>(p)) {
+      if (scxDsqRefOp(op))
+        return success();
+      return op->emitOpError() << what
+                               << " directly in an ebpf.iter.scx_dsq body; only kfunc acquire / release and ebpf.kref.check "
+                                  "may take and release a reference there, closed in the iteration (the iterator rule's "
+                                  "one exception)";
+    }
+    if (isa<IterNumOp>(p))
+      return op->emitOpError() << what
+                               << " directly in an ebpf.iter.num body; inside an iterator a kernel reference may only be taken and "
+                                  "released in an ebpf.rcu.region with no iterator or loop in between (the reference closes in "
+                                  "that section)";
+  }
+  return success();
+}
+
+LogicalResult IterNumOp::verify() {
+  for (Type t : getInits().getTypes())
+    if (!isLoopScalar(t))
+      return emitOpError() << "a carried value must be i8 / i16 / i32 / i64, got " << t;
+  if (TypeRange(getInits().getTypes()) != TypeRange(getResults().getTypes()))
+    return emitOpError() << "results must have the types of the carried values";
+  Block &body = getBody().front();
+  if (body.getNumArguments() != getInits().size() + 1 || !body.getArgument(0).getType().isSignlessInteger(32))
+    return emitOpError() << "the body must take the index (i32) followed by the carried values";
+  for (auto [a, t] : llvm::zip(body.getArguments().drop_front(), getInits().getTypes()))
+    if (a.getType() != t)
+      return emitOpError() << "body argument type " << a.getType() << " does not match the carried value type " << t;
+  auto y = dyn_cast<IterYieldOp>(body.getTerminator());
+  if (!y || TypeRange(y.getValues().getTypes()) != TypeRange(getInits().getTypes()))
+    return emitOpError() << "the body must end with ebpf.iter.yield of the carried types";
+  // H3 (a): ebpf.loop and ebpf.iter.num nest at most 2 deep together.
+  // an enclosing ebpf.iter.scx_dsq counts one level
+  // too (the DSQ iterator's body holds one ebpf.iter.num; a third level is
+  // named with the text and a note on the DSQ iterator).
+  LoopBudget budget = LoopBudget{}.enterIter();
+  bool underScxDsq = false;
+  for (Operation *p = (*this)->getParentOp(); p; p = p->getParentOp()) {
+    if (auto outer = dyn_cast<LoopOp>(p))
+      budget = budget.enter(outer.getCount(), outer.getUnroll(), outer.getCallback());
+    else if (isa<IterNumOp>(p))
+      budget = budget.enterIter();
+    else if (isa<IterScxDsqOp>(p)) {
+      budget = budget.enterIter();
+      underScxDsq = true;
+    }
+  }
+  if (budget.depth > LoopBudget::maxDepth) {
+    auto d = emitOpError() << "is nested " << budget.depth << " deep (ebpf.loop and ebpf.iter.num count together); this compiler "
+                              "supports "
+                           << LoopBudget::maxDepth;
+    if (underScxDsq)
+      d << " (an enclosing ebpf.iter.scx_dsq counts as one level too)";
+    return d;
+  }
+  FailureOr<Operation *> owner = closedRegionOwner(*this, "ebpf.iter.num");
+  if (failed(owner))
+    return failure();
+  if (auto prog = dyn_cast<ProgramOp>(*owner); prog && failed(closedRegionKfunc(*this, prog, "bpf_iter_num_new")))
+    return failure(); // In an ebpf.func: per reaching context (ebpf-verify-call-contexts).
+  Region *self = &getBody();
+  WalkResult w = getBody().walk([&](Operation *op) {
+    // Ops of a nested iterator follow that iterator's verifier.
+    if (auto inner = op->getParentOfType<IterNumOp>(); inner && inner != *this && self->isAncestor(inner->getParentRegion()))
+      return WalkResult::advance();
+    if (!allowedInIter(op)) {
+      op->emitOpError() << "is not allowed inside ebpf.iter.num (the ebpf.loop body ops, kfunc.call, kptr.check, kfield.load, the "
+                           "sched_ext ops and ebpf.rcu.region; packet.check, window_load and ring buffer ops are rejected)";
+      return WalkResult::interrupt();
+    }
+    for (Value v : op->getOperands()) {
+      if (self->isAncestor(v.getParentRegion()))
+        continue;
+      if (capturable(v.getType()))
+        continue;
+      if (isa<RecordType>(v.getType())) {
+        op->emitOpError() << "captures " << v.getType()
+                          << " from outside the iterator; a record must be built by ebpf.record.make inside each iteration";
+        return WalkResult::interrupt();
+      }
+      op->emitOpError() << "captures " << v.getType()
+                        << " from outside the iterator; a reference, pointer or reservation must be looked up and checked "
+                           "inside each iteration";
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return failure(w.wasInterrupted());
+}
+
+LogicalResult IterNumNextBrOp::verify() {
+  Block *body = getBody(), *exit = getExit();
+  if (body->getNumArguments() != 1 || !body->getArgument(0).getType().isSignlessInteger(32))
+    return emitOpError() << "the body successor must take exactly the index (i32)";
+  if (exit->getNumArguments() != 0)
+    return emitOpError() << "the exit successor must take no arguments";
+  return success();
+}
+
+// the DSQ iterator body allowlist — the ebpf.iter.num allowlist
+// without ebpf.loop, iterators, ebpf.rcu.region and the kptr reads / xchg; the
+// reference ops are allowed directly (verifyOwnershipInIter).
+// one nested ebpf.iter.num is allowed (LAVD's
+// find_cpu_in bpf_for in the scan's bpf_for_each). The DSQ iterator's walk
+// covers the nested body too, so it keeps these exclusions (no ebpf.loop, no
+// iterator in it — the depth is 2 — no rcu.region, no kptr read / exchange);
+// the nested iter.num's own verifier adds its rules (ownership, captures).
+static bool allowedInScxDsq(Operation *op) {
+  if (isa<LoopOp, IterScxDsqOp, RcuRegionOp, KPtrXchgOp, KPtrLoadRcuOp, GlobalKPtrXchgOp, GlobalKPtrLoadRcuOp>(op))
+    return false;
+  if (isa<IterNumOp>(op))
+    return true;
+  // (e): LAVD's scan reads the referenced task's cpus_ptr in the
+  // iterator body (main.bpf.c:1414-1415) — a field read, as kfield.load.
+  if (isa<KFieldPtrOp>(op))
+    return true;
+  return allowedInIter(op);
+}
+
+LogicalResult IterScxDsqOp::verify() {
+  if (getFlags() != 0)
+    return emitOpError() << "flags " << getFlags()
+                         << " is not supported; only 0 (SCX_DSQ_ITER_REV and the other bpf_iter_scx_dsq_new flags are out of "
+                            "scope)";
+  for (Type t : getInits().getTypes())
+    if (!isLoopScalar(t))
+      return emitOpError() << "a carried value must be i8 / i16 / i32 / i64, got " << t;
+  if (TypeRange(getInits().getTypes()) != TypeRange(getResults().getTypes()))
+    return emitOpError() << "results must have the types of the carried values";
+  Block &body = getBody().front();
+  auto taskTy = RcuPtrType::get(getContext(), "task_struct");
+  if (body.getNumArguments() != getInits().size() + 1 || body.getArgument(0).getType() != taskTy)
+    return emitOpError() << "the body must take the task (" << taskTy << ") followed by the carried values";
+  for (auto [a, t] : llvm::zip(body.getArguments().drop_front(), getInits().getTypes()))
+    if (a.getType() != t)
+      return emitOpError() << "body argument type " << a.getType() << " does not match the carried value type " << t;
+  auto y = dyn_cast<IterYieldOp>(body.getTerminator());
+  if (!y || TypeRange(y.getValues().getTypes()) != TypeRange(getInits().getTypes()))
+    return emitOpError() << "the body must end with ebpf.iter.yield of the carried types";
+  // not in a loop or another iterator (the RCU section must not be left
+  // per iteration and the compiler does not budget it as a loop factor).
+  for (Operation *p = (*this)->getParentOp(); p; p = p->getParentOp())
+    if (isa<LoopOp, IterNumOp, IterScxDsqOp, MapForEachOp>(p))
+      return emitOpError() << "is inside '" << p->getName()
+                           << "'; ebpf.iter.scx_dsq is not supported inside ebpf.loop, ebpf.iter.num, map.for_each or another "
+                              "ebpf.iter.scx_dsq";
+  FailureOr<Operation *> owner = closedRegionOwner(*this, "ebpf.iter.scx_dsq");
+  if (failed(owner))
+    return failure();
+  // struct_ops only (the schema check names the sched_ext_ops member and
+  // its sleepable flag); TRACING / SYSCALL are registered but out of scope.
+  // in an ebpf.func, per reaching context (ebpf-verify-call-contexts).
+  if (auto prog = dyn_cast<ProgramOp>(*owner)) {
+    if (!bpfmlir::kindAllows(prog.getKind(), "scx"))
+      return emitOpError() << "is only for " << bpfmlir::kindsAllowing("scx")
+                           << " programs implementing a sched_ext_ops member (kind \"" << prog.getKind()
+                           << "\" — the iterator in tp_btf / fentry / syscall programs is out of scope)";
+    if (failed(closedRegionKfunc(*this, prog, "bpf_iter_scx_dsq_new")))
+      return failure();
+  }
+  // the task reaches only kfield.load (MEM_RCU — verifier.c:5986, :6096).
+  for (Operation *user : body.getArgument(0).getUsers()) {
+    if (isa<KFieldLoadOp>(user))
+      continue;
+    if (auto call = dyn_cast<KfuncCallOp>(user)) {
+      const bpfabi::KfuncABI *k = bpfabi::lookupKfunc(call.getCallee());
+      if (k && !k->hasFlag("rcu"))
+        return user->emitOpError() << "passes the ebpf.iter.scx_dsq task to \"" << call.getCallee()
+                                   << "\", which is not KF_RCU: the kfunc needs a trusted or referenced pointer and the "
+                                      "iterator's task is MEM_RCU (7.3.1 verifier.c:13096-13110 — must be referenced or trusted); "
+                                      "take a reference with bpf_task_from_pid of its pid";
+    }
+    return user->emitOpError() << "uses the ebpf.iter.scx_dsq task; the task reaches only ebpf.kfield.load (take a reference "
+                                  "with bpf_task_from_pid of its pid for other uses)";
+  }
+  Region *self = &getBody();
+  WalkResult w = getBody().walk([&](Operation *op) {
+    if (!allowedInScxDsq(op)) {
+      op->emitOpError() << "is not allowed inside ebpf.iter.scx_dsq (the ebpf.iter.num body ops without ebpf.loop, iterators, "
+                           "ebpf.rcu.region and the kptr reads / exchanges): one nested ebpf.iter.num is the exception, "
+                           "and its body keeps these exclusions";
+      return WalkResult::interrupt();
+    }
+    for (Value v : op->getOperands()) {
+      if (self->isAncestor(v.getParentRegion()))
+        continue;
+      if (capturable(v.getType()))
+        continue;
+      op->emitOpError() << "captures " << v.getType()
+                        << " from outside the iterator; a reference, pointer, record or reservation must be made inside each "
+                           "iteration";
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return failure(w.wasInterrupted());
+}
+
+LogicalResult IterScxDsqNextBrOp::verify() {
+  Block *body = getBody(), *exit = getExit();
+  if (body->getNumArguments() != 1 || body->getArgument(0).getType() != RcuPtrType::get(getContext(), "task_struct"))
+    return emitOpError() << "the body successor must take exactly the task (!ebpf.rcu_ptr<\"task_struct\">)";
+  if (exit->getNumArguments() != 0)
+    return emitOpError() << "the exit successor must take no arguments";
+  return success();
+}
+
+LogicalResult RcuRegionOp::verify() {
+  Block &body = getBody().front();
+  if (body.empty() || !isa<YieldOp>(body.back()))
+    return emitOpError() << "the body must end with ebpf.yield (the section's only exit)";
+  // H5 (a): no nesting, also through an iterator or ebpf.if.
+  for (Operation *p = (*this)->getParentOp(); p; p = p->getParentOp())
+    if (isa<RcuRegionOp>(p))
+      return emitOpError() << "is nested in another ebpf.rcu.region; nested RCU sections are rejected (6.6.157 / 6.12.111 reject a "
+                              "nested bpf_rcu_read_lock — the compiler takes the strict side)";
+  FailureOr<Operation *> owner = closedRegionOwner(*this, "ebpf.rcu.region");
+  if (failed(owner))
+    return failure();
+  if (auto prog = dyn_cast<ProgramOp>(*owner); prog && failed(closedRegionKfunc(*this, prog, "bpf_rcu_read_lock")))
+    return failure(); // In an ebpf.func: per reaching context (ebpf-verify-call-contexts).
+  Region *self = &getBody();
+  auto outside = [&](Value v) { return v && !self->isAncestor(v.getParentRegion()); };
+  WalkResult w = getBody().walk([&](Operation *op) {
+    // H5 (b): ops that may sleep.
+    if (opMightSleep(op)) {
+      op->emitOpError() << "may sleep, which is not allowed inside ebpf.rcu.region (the verifier rejects a sleepable helper or "
+                           "kfunc in an RCU read section)";
+      return WalkResult::interrupt();
+    }
+    // a reference taken outside must not be consumed inside (a compiler
+    // restriction that keeps ownership region-local — the kernel allows it).
+    bool outerRef = false;
+    if (auto call = dyn_cast<KfuncCallOp>(op)) {
+      const bpfabi::KfuncABI *k = bpfabi::lookupKfunc(call.getCallee());
+      if (k && k->hasFlag("release"))
+        outerRef = llvm::any_of(call.getArgs(), [&](Value a) { return isa<KRefType>(a.getType()) && outside(a); });
+    } else if (auto x = dyn_cast<KPtrXchgOp>(op)) {
+      outerRef = outside(x.getNewRef());
+    } else if (auto x = dyn_cast<GlobalKPtrXchgOp>(op)) {
+      outerRef = outside(x.getNewRef());
+    } else if (isa<KRefCheckOp, SockRefCheckOp, SockReleaseOp>(op)) {
+      outerRef = outside(op->getOperand(0));
+    }
+    if (outerRef) {
+      op->emitOpError() << "consumes a reference taken outside the ebpf.rcu.region; a reference may only be released in the "
+                           "section that acquired it (a compiler restriction — ownership is checked region-locally)";
+      return WalkResult::interrupt();
+    }
+    // H5 (c): a reservation may not cross the section.
+    if (isa<RingbufSubmitOp, RingbufDiscardOp, RingbufSubmitDynptrOp, RingbufDiscardDynptrOp>(op) && outside(op->getOperand(0))) {
+      op->emitOpError() << "consumes a ring buffer reservation taken outside the ebpf.rcu.region; a reservation may not cross the "
+                           "section";
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return failure(w.wasInterrupted());
 }
 
 // map.for_each becomes a helper callback with helper-loop capture rules.
@@ -3627,7 +6332,8 @@ LogicalResult MapForEachOp::verify() {
                            << user->getName() << "'";
   Region *self = &getBody();
   WalkResult w = getBody().walk([&](Operation *op) {
-    if (isa<LoopOp, CallOp, BreakOp, ContinueOp, MapForEachOp>(op) || (!isa<MapForEachYieldOp>(op) && !allowedInLoop(op))) {
+    if (isa<LoopOp, IterNumOp, CallOp, BreakOp, ContinueOp, MapForEachOp, GlobalRefOp /* not opened for callbacks */>(op) ||
+        (!isa<MapForEachYieldOp>(op) && !allowedInLoop(op))) {
       op->emitOpError() << "is not allowed inside ebpf.map.for_each (the loop-body ops without ebpf.loop / ebpf.call / ebpf.break / "
                            "ebpf.continue — a compiler restriction)";
       return WalkResult::interrupt();
@@ -3662,12 +6368,44 @@ Operation *armEnd(Region &r) {
 // escapes cannot occur here.
 LogicalResult verifyLoopEscape(Operation *op, ValueRange vals) {
   Operation *p = op->getParentOp();
-  while (p && (isa<IfOp, RefCheckOp>(p) || p->getName().getStringRef() == "scf.if"))
+  // The former ParentOneOf<["IfOp", "RefCheckOp"]> trait's text is kept; adds the kref.check arm.
+  if (!isa_and_nonnull<IfOp, RefCheckOp, KRefCheckOp>(p))
+    return op->emitOpError() << "expects parent op to be one of 'ebpf.if, ebpf.ref.check' (or an ebpf.kref.check arm inside "
+                                "ebpf.iter.scx_dsq)";
+  // kref.check / kptr.check arms may lie between a break / continue and
+  // an ebpf.iter.scx_dsq (LAVD's `if (!p) continue` and release-then-continue);
+  // for the other loops they stay rejected as before.
+  Operation *checkArm = nullptr;
+  while (p && (isa<IfOp, RefCheckOp, KRefCheckOp, KPtrCheckOp>(p) || p->getName().getStringRef() == "scf.if")) {
+    if (isa<KRefCheckOp, KPtrCheckOp>(p) && !checkArm)
+      checkArm = p;
     p = p->getParentOp();
+  }
+  if (auto it = dyn_cast_or_null<IterScxDsqOp>(p)) {
+    if (TypeRange(vals.getTypes()) != TypeRange(it.getInits().getTypes()))
+      return op->emitOpError() << "must carry the carried values of the nearest ebpf.iter.scx_dsq (" << it.getInits().getTypes()
+                               << "), got (" << vals.getTypes() << ")";
+    return success();
+  }
+  if (checkArm)
+    return op->emitOpError() << "is inside '" << checkArm->getName()
+                             << "'; only ebpf.if / ebpf.ref.check / scf.if may lie between a break / continue and the loop it "
+                                "leaves (kref.check / kptr.check arms only for ebpf.iter.scx_dsq)";
+  // the rcu.region's one exit is its yield (its unlock has one place);
+  // leaving it for an enclosing loop or iterator is rejected by name.
+  if (isa_and_nonnull<RcuRegionOp>(p))
+    return op->emitOpError() << "leaves the ebpf.rcu.region without its unlock (the section's only exit is its yield); "
+                                "yield a flag and break after the region";
+  if (auto it = dyn_cast_or_null<IterNumOp>(p)) {
+    if (TypeRange(vals.getTypes()) != TypeRange(it.getInits().getTypes()))
+      return op->emitOpError() << "must carry the carried values of the nearest ebpf.iter.num (" << it.getInits().getTypes()
+                               << "), got (" << vals.getTypes() << ")";
+    return success();
+  }
   auto loop = dyn_cast_or_null<LoopOp>(p);
   if (!loop)
     return op->emitOpError()
-           << "must be inside ebpf.loop (only ebpf.if / ebpf.ref.check / scf.if may lie "
+           << "must be inside ebpf.loop or ebpf.iter.num (only ebpf.if / ebpf.ref.check / scf.if may lie "
               "between it and the loop it leaves)";
   if (TypeRange(vals.getTypes()) != TypeRange(loop.getInits().getTypes()))
     return op->emitOpError() << "must carry the loop-carried values of the nearest ebpf.loop ("
@@ -3707,7 +6445,7 @@ LogicalResult ContinueOp::verify() { return verifyLoopEscape(*this, getValues())
 
 // Expanded helper loops: loop_callback, callback.return and bpf_loop.
 // Entry prefixes are one IV for bpf_loop, or key/value for for_each.
-static int64_t callbackLead(LoopCallbackOp cb) { return cb.getForEach() ? 2 : 1; }
+static int64_t callbackLead(LoopCallbackOp cb) { return (cb.getForEach() || cb.getFindVma()) ? 2 : 1; } // key + value, or task + vma
 
 LogicalResult LoopCallbackOp::verify() {
   if (getBody().empty())
@@ -3716,10 +6454,19 @@ LogicalResult LoopCallbackOp::verify() {
   int64_t nc = getNumCarried(), ncap = getNumCaptured(), lead = callbackLead(*this);
   size_t nmaps = getMapSymbols().size();
   if (nc < 0 || ncap < 0 || (int64_t)entry.getNumArguments() != lead + nc + ncap + (int64_t)nmaps)
-    return emitOpError() << "entry block must take " << (getForEach() ? "the key and the value" : "the induction variable") << ", " << nc
+    return emitOpError() << "entry block must take " << (getFindVma() ? "the task and the vma" : getForEach() ? "the key and the value" : "the induction variable") << ", " << nc
                          << " loop-carried value(s), " << ncap << " captured integer(s) and "
                          << nmaps << " map(s)";
-  if (getForEach()) {
+  if (getForEach() && getFindVma())
+    return emitOpError() << "cannot be both a for_each and a find_vma callback";
+  if (getFindVma()) {
+    auto task = dyn_cast<KPtrType>(entry.getArgument(0).getType());
+    auto vma = dyn_cast<KPtrType>(entry.getArgument(1).getType());
+    if (!task || task.getStructName() != "task_struct" || !vma || vma.getStructName() != "vm_area_struct")
+      return emitOpError() << "a find_vma callback takes !ebpf.kptr<\"task_struct\"> and !ebpf.kptr<\"vm_area_struct\"> first";
+    if (nmaps != 0)
+      return emitOpError() << "a find_vma callback takes no map";
+  } else if (getForEach()) {
     if (!isa<IntegerType>(entry.getArgument(0).getType()) || !isa<BorrowedType>(entry.getArgument(1).getType()))
       return emitOpError() << "a for_each callback takes the key (an integer) and the value (!ebpf.borrowed<...>) first";
   } else if (!entry.getArgument(0).getType().isSignlessInteger(32))
@@ -3740,6 +6487,8 @@ LogicalResult CallbackReturnOp::verify() {
   auto cb = cast<LoopCallbackOp>((*this)->getParentOp());
   if (getStop() != 0 && getStop() != 1)
     return emitOpError() << "returns " << getStop() << "; a bpf_loop callback returns 0 or 1";
+  if (cb.getFindVma() && getStop() != 0)
+    return emitOpError() << "a find_vma callback returns constant 0 (the kernel ignores the value, so a stop has no meaning)";
   Block &entry = cb.getBody().front();
   int64_t nc = cb.getNumCarried();
   if ((int64_t)getValues().size() != nc)
@@ -3776,11 +6525,96 @@ LogicalResult ForEachMapElemOp::verify() {
   return success();
 }
 
+// bpf_find_vma callback call. The callback is the dedicated find_vma
+// kind of ebpf.loop_callback (task, vma, carried, captures).
+LogicalResult FindVmaCallOp::verify() {
+  if (TypeRange(getInits().getTypes()) != TypeRange(getResults().getTypes()))
+    return emitOpError() << "results must be the status followed by the types of the loop-carried values";
+  auto cb = SymbolTable::lookupNearestSymbolFrom<LoopCallbackOp>(*this, getCallbackAttr());
+  if (!cb || !cb.getFindVma())
+    return emitOpError() << "does not name an ebpf.loop_callback with find_vma";
+  Block &entry = cb.getBody().front();
+  if (entry.getArgument(0).getType() != getTask().getType())
+    return emitOpError() << "the callback's task argument does not match " << getTask().getType();
+  int64_t nc = cb.getNumCarried(), ncap = cb.getNumCaptured();
+  if ((int64_t)getInits().size() != nc || (int64_t)getCaptures().size() != ncap)
+    return emitOpError() << "passes " << getInits().size() << " loop-carried value(s) and " << getCaptures().size()
+                         << " capture(s); the callback takes " << nc << " and " << ncap;
+  for (auto [v, a] : llvm::zip(getInits(), entry.getArguments().slice(2, nc)))
+    if (v.getType() != a.getType())
+      return emitOpError() << "loop-carried value type " << v.getType() << " does not match " << a.getType();
+  for (auto [v, a] : llvm::zip(getCaptures(), entry.getArguments().slice(2 + nc, ncap)))
+    if (v.getType() != a.getType())
+      return emitOpError() << "capture type " << v.getType() << " does not match " << a.getType();
+  return success();
+}
+
+// ebpf.task.find_vma. The body is a closed set (arith, kfield.load,
+// the yield); the task and the vma reach only kfield.load; integers are the only
+// captures; fentry programs only; the task is ebpf.task.current_btf's result.
+LogicalResult TaskFindVmaOp::verify() {
+  if (getTask().getType().getStructName() != "task_struct")
+    return emitOpError("takes !ebpf.kptr<\"task_struct\">");
+  if (!isa_and_nonnull<TaskCurrentBtfOp>(getTask().getDefiningOp()))
+    return emitOpError("the task must be the result of ebpf.task.current_btf (the only task source this op accepts)");
+  auto prog = (*this)->getParentOfType<ProgramOp>();
+  if (!prog)
+    return emitOpError("requires a program body (not a static function)");
+  for (Operation *p = (*this)->getParentOp(); p && p != prog.getOperation(); p = p->getParentOp())
+    if (isa<SubprogramOp, LoopCallbackOp, TimerCallbackOp, UserRingbufCallbackOp, LoopOp, MapForEachOp, BpfLoopOp, TaskFindVmaOp>(p))
+      return emitOpError("is not supported inside a func, callback, loop or another find_vma");
+  if (!bpfmlir::kindAllows(prog.getKind(), "task.find_vma"))
+    return emitOpError() << "is only for " << bpfmlir::kindsAllowing("task.find_vma") << " programs (kind \"" << prog.getKind()
+                         << "\" is a compiler-unsupported combination — only fentry is measured)";
+  for (Type t : getInits().getTypes())
+    if (!isLoopScalar(t))
+      return emitOpError() << "a loop-carried value must be i8 / i16 / i32 / i64, got " << t;
+  if (TypeRange(getInits().getTypes()) != TypeRange(getResults().getTypes()))
+    return emitOpError() << "results must be the status (i64) followed by the types of the loop-carried values";
+  Block &body = getBody().front();
+  if (body.getNumArguments() != getInits().size() + 2)
+    return emitOpError() << "the body must take the task, the vma and the loop-carried values";
+  auto vma = dyn_cast<KPtrType>(body.getArgument(1).getType());
+  if (body.getArgument(0).getType() != getTask().getType() || !vma || vma.getStructName() != "vm_area_struct")
+    return emitOpError() << "the body must take " << getTask().getType() << " and !ebpf.kptr<\"vm_area_struct\"> first";
+  for (auto [a, t] : llvm::zip(body.getArguments().drop_front(2), getInits().getTypes()))
+    if (a.getType() != t)
+      return emitOpError() << "body argument type " << a.getType() << " does not match the loop-carried value type " << t;
+  auto y = dyn_cast<TaskFindVmaYieldOp>(body.getTerminator());
+  if (!y || TypeRange(y.getValues().getTypes()) != TypeRange(getInits().getTypes()))
+    return emitOpError() << "the body must end with ebpf.task.find_vma.yield of the loop-carried types";
+  // The task and the vma reach only ebpf.kfield.load: no yield, select, store,
+  // call, kfunc argument or capture escape.
+  for (unsigned i = 0; i < 2; ++i)
+    for (Operation *user : body.getArgument(i).getUsers())
+      if (!isa<KFieldLoadOp>(user))
+        return user->emitOpError() << "uses the ebpf.task.find_vma " << (i == 0 ? "task" : "vma")
+                                   << " argument; it reaches only ebpf.kfield.load (a read through the kernel pointer)";
+  Region *self = &getBody();
+  WalkResult w = getBody().walk([&](Operation *op) {
+    bool arith = op->getName().getDialectNamespace() == "arith";
+    if (!arith && !isa<KFieldLoadOp, TaskFindVmaYieldOp>(op)) {
+      op->emitOpError() << "is not allowed inside ebpf.task.find_vma (the body allows arith ops, ebpf.kfield.load and the yield only)";
+      return WalkResult::interrupt();
+    }
+    for (Value v : op->getOperands()) {
+      if (self->isAncestor(v.getParentRegion()))
+        continue;
+      if (isa<IntegerType>(v.getType()))
+        continue;
+      op->emitOpError() << "captures " << v.getType() << " into ebpf.task.find_vma; only integers can be passed to the callback";
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return failure(w.wasInterrupted());
+}
+
 LogicalResult BpfLoopOp::verify() {
   if (TypeRange(getInits().getTypes()) != TypeRange(getResults().getTypes()))
     return emitOpError() << "results must have the types of the loop-carried values";
   auto cb = SymbolTable::lookupNearestSymbolFrom<LoopCallbackOp>(*this, getCallbackAttr());
-  if (!cb || cb.getForEach())
+  if (!cb || cb.getForEach() || cb.getFindVma()) // a find_vma callback has (task, vma, ctx) arguments, not (index, ctx).
     return emitOpError() << "does not name an ebpf.loop_callback";
   Block &entry = cb.getBody().front();
   int64_t nc = cb.getNumCarried(), ncap = cb.getNumCaptured();
@@ -3843,9 +6677,21 @@ LogicalResult RecordMakeOp::verify() {
     // sys.bpf attr payload with the SysBpfOp verifier size bound.
     if (auto sb = dyn_cast<SysBpfOp>(user); sb && sb.getAttr() == getResult())
       continue;
+    // fib_lookup input, copied before the helper writes (input never modified).
+    if (auto fl = dyn_cast<FibLookupOp>(user); fl && fl.getInput() == getResult())
+      continue;
+    // tunnel key get input (helper start content) / set input (copied before the helper reads).
+    if (auto tg = dyn_cast<SkbGetTunnelKeyOp>(user); tg && tg.getInput() == getResult())
+      continue;
+    if (auto ts = dyn_cast<SkbSetTunnelKeyOp>(user); ts && ts.getKey() == getResult())
+      continue;
+    // sk_lookup tuple, read-only for the helper (passed without a copy).
+    if (isa<SockLookupTcpOp, SockLookupUdpOp, SockSkcLookupTcpOp>(user) && user->getOperand(1) == getResult())
+      continue;
     return user->emitOpError() << "uses a record built by ebpf.record.make; a record value may only "
                                   "be the value of ebpf.map.update / try_update, ebpf.ringbuf.store_record, ebpf.perf.output, ebpf.seq.write, ebpf.ringbuf.output, "
-                                  "ebpf.lwt.seg6_store_bytes, ebpf.lwt.seg6_action or ebpf.sys.bpf, or "
+                                  "ebpf.lwt.seg6_store_bytes, ebpf.lwt.seg6_action, ebpf.sys.bpf or the input of ebpf.fib.lookup / ebpf.skb.get_tunnel_key / ebpf.skb.set_tunnel_key, the tuple of "
+                                  "ebpf.sock.lookup_tcp / lookup_udp / skc_lookup_tcp, or "
                                   "the key of ebpf.map.lookup / update / delete / try_update / try_delete";
   }
   return success();

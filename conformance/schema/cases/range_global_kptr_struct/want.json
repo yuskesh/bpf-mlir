@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "global \"turbo\": a kptr global to struct cpumask is not supported; the compiler supports global kptrs only for bpf_cpumask"
+}

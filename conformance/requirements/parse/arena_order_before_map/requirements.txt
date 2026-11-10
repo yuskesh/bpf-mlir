@@ -1,0 +1,10 @@
+ebpf-requirements 29
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	sf	socket_filter	1
+program	sys	syscall	31
+arena	ar
+map	ar	arena	33	-	-	4	1024
+map	in	array	2	u32	u32	1	0
+kfield	sf	bpf_arena	user_vm_start	u64
+kfield	sys	bpf_arena	user_vm_start	u64
+btf	enum64

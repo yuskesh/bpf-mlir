@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "datakptr_loader",
+      "program": "",
+      "name": ".data.CPUMASK",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "datakptr_loader",
+      "program": "",
+      "name": ".data.LAVD",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

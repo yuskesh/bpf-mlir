@@ -1,0 +1,77 @@
+{
+  "format": "ebpf-caps 20",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "example-libbpf-extern",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none",
+    "hidden_data_vars": "no_mmap",
+    "typed_ksym": "btf_id",
+    "kconfig": "weak_zero",
+    "arena_cast": "corrupt",
+    "arena_premmap": "none"
+  },
+  "queries": {
+    "btf_presence": {
+      "field/cpufreq_policy.cur": {
+        "value": true
+      },
+      "type/cpufreq_policy": {
+        "value": true
+      }
+    },
+    "kconfig": {
+      "CONFIG_NO_HZ_IDLE": {
+        "text": "y"
+      },
+      "CONFIG_NR_CPUS": {
+        "text": "y"
+      }
+    },
+    "kfields": {
+      "p cpufreq_policy.cur u32": {
+        "diffs": []
+      }
+    },
+    "ksym_vars": {
+      "__preempt_count": {
+        "text": "percpu i32"
+      },
+      "cpufreq_cpu_data": {
+        "text": "percpu ptr:cpufreq_policy"
+      },
+      "cpufreq_update_util_data": {
+        "text": "percpu ptr:update_util_data"
+      }
+    }
+  },
+  "privileged_queries": {
+    "helper": {},
+    "map_type": {},
+    "prog_type": {
+      "syscall": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

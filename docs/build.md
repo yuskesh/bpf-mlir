@@ -1,6 +1,6 @@
 # Building the source distribution
 
-The initial source distribution is `bpf-mlir-1.20.0-source.tar.gz`. It supports
+The source distribution is `bpf-mlir-<version>-source.tar.gz`. It supports
 **Linux x86_64**, validated on Debian 13. macOS and arm64 are not supported.
 It includes the three compiler CLIs, public specifications, conformance data and
 a small optional non-root test suite. It contains no Go source, Go modules,
@@ -48,7 +48,9 @@ default in the source distribution. This C++ build does not run Go, pip, Git
 fetches or a package manager. It reads `SOURCE_VERSION` from the unpacked root;
 missing or invalid metadata is an error. A parent Git repository cannot supply
 its version. The version is displayed by the compiler and is not embedded into
-ELF output. The metadata records a source commit; it is not a digital signature.
+ELF output. The metadata records a source commit; it is not a digital signature. The commit names
+the compiler source: the documents in the package can come from a later commit that
+changes documents only, so a document may differ from that commit.
 
 ## Optional tests
 

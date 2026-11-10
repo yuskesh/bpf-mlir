@@ -1,0 +1,33 @@
+//===- SleepableOps.def - ops that may sleep, for ebpf.rcu.region --===//
+//
+// EBPF_MIGHT_SLEEP_HELPER(NAME) — a helper whose proto may sleep (7.3.1
+// kernel/bpf: bpf_func_proto.might_sleep, or the *_sleepable proto a sleepable
+// program gets). The verifier rejects these inside bpf_rcu_read_lock
+// ("sleepable helper ... within rcu_read_lock region"). Kfuncs that may sleep
+// are the kfunc rows with the flag "sleepable" (KF_SLEEPABLE) — not listed here.
+//
+// EBPF_SLEEPABLE_OP(OPCLASS, CALLEE) — an ebpf op whose lowering calls the
+// sleeping helper or kfunc CALLEE. ebpf.rcu.region rejects these ops inside
+// it (opMightSleep). Stage ③ refuses to emit a sleeping helper / kfunc for an
+// op that is not a row here (the leak check), and ebpf-lowering-table-test checks
+// the rows against the helper list and the kfunc table.
+//===----------------------------------------------------------------------===//
+#ifdef EBPF_MIGHT_SLEEP_HELPER
+EBPF_MIGHT_SLEEP_HELPER("copy_from_user")
+EBPF_MIGHT_SLEEP_HELPER("copy_from_user_task")
+EBPF_MIGHT_SLEEP_HELPER("get_stack")       // bpf_get_stack_sleepable_proto in a sleepable program
+EBPF_MIGHT_SLEEP_HELPER("get_task_stack")  // bpf_get_task_stack_sleepable_proto in a sleepable program
+EBPF_MIGHT_SLEEP_HELPER("ima_inode_hash")
+EBPF_MIGHT_SLEEP_HELPER("ima_file_hash")
+EBPF_MIGHT_SLEEP_HELPER("btf_find_by_name_kind")
+EBPF_MIGHT_SLEEP_HELPER("sys_bpf")
+EBPF_MIGHT_SLEEP_HELPER("sys_close")
+#endif
+#ifdef EBPF_SLEEPABLE_OP
+EBPF_SLEEPABLE_OP(SysBpfOp, "sys_bpf")
+EBPF_SLEEPABLE_OP(SysCloseOp, "sys_close")
+EBPF_SLEEPABLE_OP(UserCopyOp, "copy_from_user") // sleepable fentry only (the verifier gives non-sleepable programs no copy_from_user)
+EBPF_SLEEPABLE_OP(UserCopyTaskOp, "copy_from_user_task") // sleepable fentry only, like user.copy
+EBPF_SLEEPABLE_OP(CtxStackOp, "get_stack")
+EBPF_SLEEPABLE_OP(ScxCreateDsqOp, "scx_bpf_create_dsq")
+#endif

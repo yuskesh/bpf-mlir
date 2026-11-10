@@ -106,6 +106,39 @@ void expandCtxPacket(CtxPacketOp op) {
   op.erase();
 }
 
+void expandCtxMeta(CtxMetaOp op) {
+  OpBuilder b(op);
+  Location loc = op.getLoc();
+  auto ptrTy = LLVM::LLVMPointerType::get(op.getContext());
+  int64_t w = op.getFieldBytes();
+  Type fieldTy = b.getIntegerType(w * 8);
+  Value metaP = LLVM::GEPOp::create(b, loc, ptrTy, fieldTy, op.getCtx(),
+                                    ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(op.getMetaOffset() / w)});
+  Value dataP = LLVM::GEPOp::create(b, loc, ptrTy, fieldTy, op.getCtx(),
+                                    ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(op.getDataOffset() / w)});
+  auto asPtr = [&](Value raw) -> Value {
+    Value wide = LLVM::ZExtOp::create(b, loc, b.getI64Type(), raw);
+    return LLVM::IntToPtrOp::create(b, loc, ptrTy, wide);
+  };
+  Value meta = asPtr(LLVM::LoadOp::create(b, loc, fieldTy, metaP, /*alignment=*/w));
+  Value data = asPtr(LLVM::LoadOp::create(b, loc, fieldTy, dataP, /*alignment=*/w));
+  op.getMeta().replaceAllUsesWith(meta);
+  op.getData().replaceAllUsesWith(data);
+  op.erase();
+}
+
+// arena window address = inttoptr (base + offset) into address space 1.
+// No explicit addrspacecast: the BPF backend inserts addr_space_cast before
+// the first access.
+void expandArenaAddr(ArenaAddrOp op) {
+  OpBuilder b(op);
+  Location loc = op.getLoc();
+  Value sum = LLVM::AddOp::create(b, loc, op.getBase(), op.getOffset());
+  Value p = LLVM::IntToPtrOp::create(b, loc, op.getResult().getType(), sum);
+  op.getResult().replaceAllUsesWith(p);
+  op.erase();
+}
+
 // Tracing arguments read the indexed eight-byte context slot and convert to pointer.
 void expandCtxArg(CtxArgOp op) {
   OpBuilder b(op);
@@ -138,9 +171,73 @@ void expandKprobeArg(KprobeArgOp op) {
 // LLVM dialect cannot represent the elementtype/local DI needed by
 // llvm.preserve.struct.access.index, so ObjectEmitter expands markers in LLVM
 // IR and rejects any unresolved marker before emission.
+// a guarded site's marker ends in "@<id>,<id>…" (the provisional guard
+// ids of ebpf-verify-schema); ObjectEmitter strips it and binds the kfield row.
+std::string guardSuffix(Operation *op) {
+  auto a = op->getAttrOfType<DenseI32ArrayAttr>("ebpf.guards");
+  if (!a || a.empty())
+    return "";
+  std::string s = "@";
+  for (auto [i, g] : llvm::enumerate(a.asArrayRef()))
+    s += (i ? "," : "") + std::to_string(g);
+  return s;
+}
+
+// __ebpf_core_enum.<enum>.<name>() -> i64. ObjectEmitter replaces it with
+// llvm.bpf.preserve.enum.value (the local value is the UAPI table's, which it
+// looks up by name). The call is not hoisted: it has no memory attributes.
+void expandCoreEnumValue(CoreEnumValueOp op, ModuleOp module) {
+  std::string name = ("__ebpf_core_enum." + op.getEnumName() + "." + op.getName()).str();
+  auto fnTy = LLVM::LLVMFunctionType::get(IntegerType::get(op.getContext(), 64), {});
+  auto fn = module.lookupSymbol<LLVM::LLVMFuncOp>(name);
+  if (!fn) {
+    OpBuilder mb(module.getBodyRegion());
+    mb.setInsertionPointToStart(module.getBody());
+    fn = LLVM::LLVMFuncOp::create(mb, op.getLoc(), name, fnTy);
+  }
+  OpBuilder b(op);
+  auto call = LLVM::CallOp::create(b, op.getLoc(), fn, ValueRange{});
+  op.getResult().replaceAllUsesWith(call.getResult());
+  op.erase();
+}
+
+// __ebpf_core_exists.<type|field>.<struct>[.<field>]() -> i32.
+void expandCoreExists(CoreExistsOp op, ModuleOp module) {
+  std::string name = ("__ebpf_core_exists." + op.getKind() + "." + op.getStructName() +
+                      (op.getField().empty() ? std::string() : "." + op.getField().str()))
+                         .str();
+  auto fnTy = LLVM::LLVMFunctionType::get(IntegerType::get(op.getContext(), 32), {});
+  auto fn = module.lookupSymbol<LLVM::LLVMFuncOp>(name);
+  if (!fn) {
+    OpBuilder mb(module.getBodyRegion());
+    mb.setInsertionPointToStart(module.getBody());
+    fn = LLVM::LLVMFuncOp::create(mb, op.getLoc(), name, fnTy);
+  }
+  OpBuilder b(op);
+  auto call = LLVM::CallOp::create(b, op.getLoc(), fn, ValueRange{});
+  op.getResult().replaceAllUsesWith(call.getResult());
+  op.erase();
+}
+
+// __ebpf_core_offset.<struct>.<field>[@guards]() -> i32.
+void expandCoreFieldOffset(CoreFieldOffsetOp op, ModuleOp module) {
+  std::string name = ("__ebpf_core_offset." + op.getStructName() + "." + op.getField()).str() + guardSuffix(op);
+  auto fnTy = LLVM::LLVMFunctionType::get(IntegerType::get(op.getContext(), 32), {});
+  auto fn = module.lookupSymbol<LLVM::LLVMFuncOp>(name);
+  if (!fn) {
+    OpBuilder mb(module.getBodyRegion());
+    mb.setInsertionPointToStart(module.getBody());
+    fn = LLVM::LLVMFuncOp::create(mb, op.getLoc(), name, fnTy);
+  }
+  OpBuilder b(op);
+  auto call = LLVM::CallOp::create(b, op.getLoc(), fn, ValueRange{});
+  op.getResult().replaceAllUsesWith(call.getResult());
+  op.erase();
+}
+
 void expandCoreFieldLoad(CoreFieldLoadOp op, ModuleOp module) {
   std::string name =
-      ("__ebpf_core." + op.getStructName() + "." + op.getField()).str();
+      ("__ebpf_core." + op.getStructName() + "." + op.getField()).str() + guardSuffix(op);
   auto ptrTy = LLVM::LLVMPointerType::get(op.getContext());
   auto fnTy = LLVM::LLVMFunctionType::get(op.getResult().getType(), {ptrTy});
   auto fn = module.lookupSymbol<LLVM::LLVMFuncOp>(name);
@@ -158,7 +255,7 @@ void expandCoreFieldLoad(CoreFieldLoadOp op, ModuleOp module) {
 // Address-only marker: __ebpf_core_addr.<S>.<field>(ptr)->ptr. ObjectEmitter
 // expands preserve.struct.access.index without loading.
 void expandCoreFieldAddr(CoreFieldAddrOp op, ModuleOp module) {
-  std::string name = ("__ebpf_core_addr." + op.getStructName() + "." + op.getField()).str();
+  std::string name = ("__ebpf_core_addr." + op.getStructName() + "." + op.getField()).str() + guardSuffix(op);
   auto ptrTy = LLVM::LLVMPointerType::get(op.getContext());
   auto fnTy = LLVM::LLVMFunctionType::get(ptrTy, {ptrTy});
   auto fn = module.lookupSymbol<LLVM::LLVMFuncOp>(name);
@@ -217,12 +314,16 @@ struct ConvertBPFABIToLLVMPass
     for (unsigned i = 0; i < tpExpected.size(); ++i) tpIndex[tpExpected[i].origin] = i;
     SmallVector<Operation *> ops;
     getOperation().walk([&](Operation *op) {
-      if (isa<HelperCallOp, CtxPacketOp, ReturnOp, CtxArgOp, CoreFieldLoadOp, CoreFieldAddrOp, KprobeArgOp, CtxFieldLoadOp, CtxFieldStoreOp,
-              KfuncCallOp, TpBufferLoadOp, TpBufferStoreOp>(op))
+      if (isa<HelperCallOp, CtxPacketOp, CtxMetaOp, ReturnOp, CtxArgOp, CoreFieldLoadOp, CoreFieldAddrOp, CoreExistsOp, CoreFieldOffsetOp, KprobeArgOp, CtxFieldLoadOp, CtxFieldStoreOp,
+              KfuncCallOp, TpBufferLoadOp, TpBufferStoreOp, CoreEnumValueOp, ArenaAddrOp>(op))
         ops.push_back(op);
     });
     for (Operation *op : ops) {
-      if (isa<TpBufferLoadOp, TpBufferStoreOp>(op)) {
+      if (auto aa = dyn_cast<ArenaAddrOp>(op))
+        expandArenaAddr(aa);
+      else if (auto ec = dyn_cast<CoreEnumValueOp>(op)) // CO-RE enum value marker (was immediate).
+        expandCoreEnumValue(ec, getOperation());
+      else if (isa<TpBufferLoadOp, TpBufferStoreOp>(op)) {
         unsigned i = tpIndex.lookup(op);
         if (failed(tpbuffer::expandTpBuffer(tpExpected[i], tpGenerated[i]))) return signalPassFailure();
       }
@@ -234,12 +335,18 @@ struct ConvertBPFABIToLLVMPass
       }
       else if (auto c = dyn_cast<CtxPacketOp>(op))
         expandCtxPacket(c);
+      else if (auto cm = dyn_cast<CtxMetaOp>(op))
+        expandCtxMeta(cm);
       else if (auto a = dyn_cast<CtxArgOp>(op))
         expandCtxArg(a);
       else if (auto f = dyn_cast<CoreFieldLoadOp>(op))
         expandCoreFieldLoad(f, getOperation());
       else if (auto fa = dyn_cast<CoreFieldAddrOp>(op))
         expandCoreFieldAddr(fa, getOperation());
+      else if (auto ce = dyn_cast<CoreExistsOp>(op))
+        expandCoreExists(ce, getOperation());
+      else if (auto co = dyn_cast<CoreFieldOffsetOp>(op))
+        expandCoreFieldOffset(co, getOperation());
       else if (auto cl = dyn_cast<CtxFieldLoadOp>(op))
         expandCtxFieldLoad(cl);
       else if (auto cs = dyn_cast<CtxFieldStoreOp>(op))

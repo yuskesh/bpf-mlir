@@ -4,24 +4,35 @@
 // source: include/uapi/linux/bpf.h sha256=3662de05db7e3bc6fc04f16857163cd30975a3699804aa6332078a4fb7e0c87c
 // source: kernel .c files scanned=43, struct bpf_func_proto defs=277
 // source: include/uapi/linux/time.h sha256=b0364314ca37dcaf82d18ed6e7bd201fb658cff80f40637dae192ec8665a9eea
+// source: include/uapi/asm-generic/socket.h sha256=23df5ed2dca8ae80ec5ae21f05b5b6a0d4138bab7851a3e0da087e0b73df3c55
+// source: include/uapi/linux/tcp.h sha256=6d981a5001fb09d406e1eb5046c1809743b9618e66d4d6f3360837986dc4c211
+// source: include/uapi/linux/in.h sha256=b88e96f1de54fac16537d21160c5c76efb17276e4b6033fdaee431d380f26107
 // source: include/uapi/linux/pkt_cls.h sha256=381a9448e9a69cde89bb2d33387336060e7525b58c4d011a4b4455a71624d2c0
 // source: include/uapi/linux/netfilter.h sha256=8ea412bca540baad9acd5f5ef831cebd57394be513bb7e9dcb4a9e11dbd6a4fc
 // source: tools/lib/bpf/bpf_tracing.h sha256=84f497bcc97544189255ded585b11f82442fc4f518cf56f6adc4b9d1575756d7
 // source: arch/x86/include/uapi/asm/ptrace.h sha256=b6dffdec33919725e67f00014a7e4256effaedaebac37c45d5d60d783cb96d51
 // source: tools/lib/bpf/usdt.c sha256=92134c8cea6fd58893f18186b41deecefd230f7cd96c0c51e9570131aadde78a
+// source: kfunc: kernel/bpf/arena.c sha256=964d9c66ba654d5bd88cdde12eef4417d6332e0a9d51d519f35d34bad8811e35
 // source: kfunc: kernel/bpf/btf.c sha256=7417e9b219fab34891b5ac8ccf1eeb4c6acdcdc71b5bfdd929c1b8401af3fd52
+// source: kfunc: kernel/bpf/cpumask.c sha256=ae37e807784f9f4fc234300283dc8c21e2c250cd7856316fe27148916cf16122
 // source: kfunc: kernel/bpf/helpers.c sha256=a30af777923d2857539b6520c127c87386e89e92034fae9ce20374d233558f7b
+// source: kfunc: kernel/sched/ext.c sha256=46ca4c605223074938243856fd5929db01fc76f657fc71299f72222bac61194a
+// source: kfunc: kernel/sched/ext_idle.c sha256=6da814d949fc9bb01665503ffed3338a3c2ea5178cea29969543182e801a27a7
 // source: kfunc: kernel/trace/bpf_trace.c sha256=db09df57aaf2403d27948c11d59ce67d132b44c4b68ec938059424002a36b664
 // source: kfunc: net/core/filter.c sha256=3f831db1afdc02e1a0e87c17061fae71205ac1803209c806ff72e9bf9e199e38
+// source: kfunc-normalized: scx_bpf_create_dsq (no bpf_kfunc decl tag; trailing bpf_prog_aux dropped by KF_IMPLICIT_ARGS)
+// source: kfunc-normalized: scx_bpf_error_bstr (no bpf_kfunc decl tag; trailing bpf_prog_aux dropped by KF_IMPLICIT_ARGS)
+// source: kfunc-normalized: scx_bpf_cpu_curr (no bpf_kfunc decl tag; trailing bpf_prog_aux dropped by KF_IMPLICIT_ARGS)
+// source: kfunc-normalized: scx_bpf_cpuperf_set (no bpf_kfunc decl tag; trailing bpf_prog_aux dropped by KF_IMPLICIT_ARGS)
 // source: tools/lib/bpf/libbpf.c sha256=8e9d5cec0d9ce3781280c329fe97dbf6e1f8dd5898bab13f3e937607bc342e1b
-// source: vmlinux BTF /sys/kernel/btf/vmlinux sha256=97b6159154547dd44c7b0c58e3c893fed117619f87e677f8d290eac9c91b9cc3
+// source: vmlinux BTF sha256=e4fad16a0fd8ecbb83e7b6b4502042d3cdabe2fa1119966dcdeb995ecb96cdaf
 // source: bpftool v7.8.0
 // source: pktinval: linux v7.1.8 (git 25c76bea8) net/core/filter.c sha256=3f831db1afdc02e1a0e87c17061fae71205ac1803209c806ff72e9bf9e199e38
 // source: pktinval: linux v6.12.111 (tarball) net/core/filter.c sha256=56b8fa9e2d7421ae9e05f760277af57b0682c92cef9a061493d85c55ab1addd2
 // source: pktinval: linux v6.6.157 (tarball) net/core/filter.c sha256=12eaa10a7fa2c16fcf1b591968ed20d57bc5a2930ba4efc7bbfd67ba196af07f
 // source: redirflag: linux 7.1.8
 // source: redirflag: include/uapi/linux/bpf.h sha256=3662de05db7e3bc6fc04f16857163cd30975a3699804aa6332078a4fb7e0c87c
-// source: redirflag: vmlinux BTF /sys/kernel/btf/vmlinux sha256=97b6159154547dd44c7b0c58e3c893fed117619f87e677f8d290eac9c91b9cc3
+// source: redirflag: vmlinux BTF sha256=e4fad16a0fd8ecbb83e7b6b4502042d3cdabe2fa1119966dcdeb995ecb96cdaf
 
 #ifdef BPFABI_HELPER
 BPFABI_HELPER("map_lookup_elem", 1, 2, RetKind::Ptr, Nullability::Nullable)
@@ -238,6 +249,11 @@ BPFABI_HELPER("cgrp_storage_delete", 211, 2, RetKind::Int, Nullability::NonNull)
 #undef BPFABI_HELPER
 #endif
 
+#ifdef BPFABI_HELPER_VARIADIC
+BPFABI_HELPER_VARIADIC("trace_printk", 2, 5)
+#undef BPFABI_HELPER_VARIADIC
+#endif
+
 #ifdef BPFABI_CTX_FIELD
 BPFABI_CTX_FIELD("xdp", "data", 0, 4)
 BPFABI_CTX_FIELD("xdp", "data_end", 4, 4)
@@ -394,6 +410,9 @@ BPFABI_STACK_FLAG("user_stack", 256)
 BPFABI_MAP_FLAG("stack_build_id", 32)
 BPFABI_MAP_FLAG("no_prealloc", 1)
 BPFABI_MAP_FLAG("zero_seed", 64)
+BPFABI_MAP_FLAG("mmapable", 1024)
+BPFABI_MAP_FLAG("segv_on_fault", 131072)
+BPFABI_MAP_FLAG("no_user_conv", 262144)
 #undef BPFABI_MAP_FLAG
 #endif
 
@@ -410,14 +429,19 @@ BPFABI_RINGBUF_CONST("force_wakeup", 2)
 #endif
 
 #ifdef BPFABI_UAPI_STRUCT
+BPFABI_UAPI_STRUCT("bpf_tunnel_key", 44)
 BPFABI_UAPI_STRUCT("bpf_spin_lock", 4)
 BPFABI_UAPI_STRUCT("bpf_stack_build_id", 32)
 BPFABI_UAPI_STRUCT("bpf_timer", 16)
+BPFABI_UAPI_STRUCT("bpf_fib_lookup", 64)
+BPFABI_UAPI_STRUCT("bpf_iter_num", 8)
+BPFABI_UAPI_STRUCT("bpf_iter_scx_dsq", 48)
 #undef BPFABI_UAPI_STRUCT
 #endif
 
 #ifdef BPFABI_CLOCK_ID
 BPFABI_CLOCK_ID("monotonic", 1)
+BPFABI_CLOCK_ID("boottime", 7)
 #undef BPFABI_CLOCK_ID
 #endif
 
@@ -430,6 +454,126 @@ BPFABI_STORAGE_FLAG("create", 1)
 BPFABI_SK_LOOKUP_FLAG("replace", 1)
 BPFABI_SK_LOOKUP_FLAG("no_reuseport", 2)
 #undef BPFABI_SK_LOOKUP_FLAG
+#endif
+
+#ifdef BPFABI_CSUM_FLAG
+BPFABI_CSUM_FLAG("pseudo_hdr", 16)
+BPFABI_CSUM_FLAG("mark_mangled_0", 32)
+#undef BPFABI_CSUM_FLAG
+#endif
+
+#ifdef BPFABI_ADJ_ROOM_MODE
+BPFABI_ADJ_ROOM_MODE("net", 0)
+BPFABI_ADJ_ROOM_MODE("mac", 1)
+#undef BPFABI_ADJ_ROOM_MODE
+#endif
+
+#ifdef BPFABI_HEADER_START
+BPFABI_HEADER_START("mac", 0)
+BPFABI_HEADER_START("net", 1)
+#undef BPFABI_HEADER_START
+#endif
+
+#ifdef BPFABI_CSUM_LEVEL
+BPFABI_CSUM_LEVEL("query", 0)
+BPFABI_CSUM_LEVEL("inc", 1)
+BPFABI_CSUM_LEVEL("dec", 2)
+BPFABI_CSUM_LEVEL("reset", 3)
+#undef BPFABI_CSUM_LEVEL
+#endif
+
+#ifdef BPFABI_MTU_RETURN
+BPFABI_MTU_RETURN("success", 0)
+BPFABI_MTU_RETURN("frag_needed", 1)
+BPFABI_MTU_RETURN("segs_toobig", 2)
+#undef BPFABI_MTU_RETURN
+#endif
+
+#ifdef BPFABI_FIB_FLAG
+BPFABI_FIB_FLAG("direct", 1)
+#undef BPFABI_FIB_FLAG
+#endif
+
+#ifdef BPFABI_FIB_FIELD
+BPFABI_FIB_FIELD("family", 0, 1, 1)
+BPFABI_FIB_FIELD("l4_protocol", 1, 1, 1)
+BPFABI_FIB_FIELD("sport", 2, 2, 1)
+BPFABI_FIB_FIELD("dport", 4, 2, 1)
+BPFABI_FIB_FIELD("length_or_mtu", 6, 2, 1)
+BPFABI_FIB_FIELD("ifindex", 8, 4, 1)
+BPFABI_FIB_FIELD("tos_flowinfo_or_metric", 12, 4, 1)
+BPFABI_FIB_FIELD("src", 16, 4, 4)
+BPFABI_FIB_FIELD("dst", 32, 4, 4)
+BPFABI_FIB_FIELD("vlan_or_tbid", 48, 4, 1)
+BPFABI_FIB_FIELD("mac", 52, 1, 12)
+#undef BPFABI_FIB_FIELD
+#endif
+
+#ifdef BPFABI_SK_LOOKUP_NETNS
+BPFABI_SK_LOOKUP_NETNS("current_netns", -1)
+#undef BPFABI_SK_LOOKUP_NETNS
+#endif
+
+#ifdef BPFABI_SOCK_TUPLE_FIELD
+BPFABI_SOCK_TUPLE_FIELD("ipv4", "saddr", 0, 4, 1)
+BPFABI_SOCK_TUPLE_FIELD("ipv4", "daddr", 4, 4, 1)
+BPFABI_SOCK_TUPLE_FIELD("ipv4", "sport", 8, 2, 1)
+BPFABI_SOCK_TUPLE_FIELD("ipv4", "dport", 10, 2, 1)
+BPFABI_SOCK_TUPLE_FIELD("ipv6", "saddr", 0, 4, 4)
+BPFABI_SOCK_TUPLE_FIELD("ipv6", "daddr", 16, 4, 4)
+BPFABI_SOCK_TUPLE_FIELD("ipv6", "sport", 32, 2, 1)
+BPFABI_SOCK_TUPLE_FIELD("ipv6", "dport", 34, 2, 1)
+#undef BPFABI_SOCK_TUPLE_FIELD
+#endif
+
+#ifdef BPFABI_SOCKOPT
+BPFABI_SOCKOPT("so_sndbuf", 1, 7, true)
+BPFABI_SOCKOPT("so_rcvbuf", 1, 8, true)
+BPFABI_SOCKOPT("so_mark", 1, 36, true)
+BPFABI_SOCKOPT("ip_tos", 0, 1, true)
+BPFABI_SOCKOPT("tcp_maxseg", 6, 2, true)
+BPFABI_SOCKOPT("tcp_window_clamp", 6, 10, true)
+BPFABI_SOCKOPT("tcp_bpf_iw", 6, 1001, false)
+BPFABI_SOCKOPT("tcp_bpf_sndcwnd_clamp", 6, 1002, false)
+#undef BPFABI_SOCKOPT
+#endif
+
+#ifdef BPFABI_SOCKOPT_NAME
+BPFABI_SOCKOPT_NAME("tcp_congestion", 6, 13)
+#undef BPFABI_SOCKOPT_NAME
+#endif
+
+#ifdef BPFABI_TUNNEL_FLAG
+BPFABI_TUNNEL_FLAG("tuninfo_ipv6", 1)
+BPFABI_TUNNEL_FLAG("tuninfo_flags", 16)
+BPFABI_TUNNEL_FLAG("zero_csum_tx", 2)
+BPFABI_TUNNEL_FLAG("dont_fragment", 4)
+BPFABI_TUNNEL_FLAG("seq_number", 8)
+BPFABI_TUNNEL_FLAG("no_tunnel_key", 16)
+#undef BPFABI_TUNNEL_FLAG
+#endif
+
+#ifdef BPFABI_TUNNEL_FIELD
+BPFABI_TUNNEL_FIELD("v4", "tunnel_id", 0, 4, 1)
+BPFABI_TUNNEL_FIELD("v4", "remote_ipv4", 4, 4, 1)
+BPFABI_TUNNEL_FIELD("v4", "tunnel_tos", 20, 1, 1)
+BPFABI_TUNNEL_FIELD("v4", "tunnel_ttl", 21, 1, 1)
+BPFABI_TUNNEL_FIELD("v4", "tunnel_flags", 22, 2, 1)
+BPFABI_TUNNEL_FIELD("v4", "tunnel_label", 24, 4, 1)
+BPFABI_TUNNEL_FIELD("v4", "local_ipv4", 28, 4, 1)
+BPFABI_TUNNEL_FIELD("v6", "tunnel_id", 0, 4, 1)
+BPFABI_TUNNEL_FIELD("v6", "remote_ipv6", 4, 4, 4)
+BPFABI_TUNNEL_FIELD("v6", "tunnel_tos", 20, 1, 1)
+BPFABI_TUNNEL_FIELD("v6", "tunnel_ttl", 21, 1, 1)
+BPFABI_TUNNEL_FIELD("v6", "tunnel_flags", 22, 2, 1)
+BPFABI_TUNNEL_FIELD("v6", "tunnel_label", 24, 4, 1)
+BPFABI_TUNNEL_FIELD("v6", "local_ipv6", 28, 4, 4)
+#undef BPFABI_TUNNEL_FIELD
+#endif
+
+#ifdef BPFABI_FIRST_MEMBER
+BPFABI_FIRST_MEMBER("bpf_cpumask", "cpumask")
+#undef BPFABI_FIRST_MEMBER
 #endif
 
 #ifdef BPFABI_BPF_CMD
@@ -480,6 +624,52 @@ BPFABI_PKT_INVAL("xdp_adjust_meta", 54)
 BPFABI_PKT_INVAL("xdp_adjust_tail", 65)
 BPFABI_PKT_INVAL("tail_call", 12)
 #undef BPFABI_PKT_INVAL
+#endif
+
+#ifdef BPFABI_HELPER_GPL
+BPFABI_HELPER_GPL("probe_read", 4)
+BPFABI_HELPER_GPL("trace_printk", 6)
+BPFABI_HELPER_GPL("perf_event_read", 22)
+BPFABI_HELPER_GPL("perf_event_output", 25)
+BPFABI_HELPER_GPL("get_current_task", 35)
+BPFABI_HELPER_GPL("probe_write_user", 36)
+BPFABI_HELPER_GPL("probe_read_str", 45)
+BPFABI_HELPER_GPL("perf_event_read_value", 55)
+BPFABI_HELPER_GPL("perf_prog_read_value", 56)
+BPFABI_HELPER_GPL("override_return", 58)
+BPFABI_HELPER_GPL("get_stack", 67)
+BPFABI_HELPER_GPL("fib_lookup", 69)
+BPFABI_HELPER_GPL("rc_repeat", 77)
+BPFABI_HELPER_GPL("rc_keydown", 78)
+BPFABI_HELPER_GPL("rc_pointer_rel", 92)
+BPFABI_HELPER_GPL("tcp_check_syncookie", 100)
+BPFABI_HELPER_GPL("tcp_gen_syncookie", 110)
+BPFABI_HELPER_GPL("skb_output", 111)
+BPFABI_HELPER_GPL("probe_read_user", 112)
+BPFABI_HELPER_GPL("probe_read_kernel", 113)
+BPFABI_HELPER_GPL("probe_read_user_str", 114)
+BPFABI_HELPER_GPL("probe_read_kernel_str", 115)
+BPFABI_HELPER_GPL("read_branch_records", 119)
+BPFABI_HELPER_GPL("xdp_output", 121)
+BPFABI_HELPER_GPL("seq_printf", 126)
+BPFABI_HELPER_GPL("seq_write", 127)
+BPFABI_HELPER_GPL("seq_printf_btf", 150)
+BPFABI_HELPER_GPL("get_current_task_btf", 158)
+BPFABI_HELPER_GPL("check_mtu", 163)
+BPFABI_HELPER_GPL("snprintf", 165)
+BPFABI_HELPER_GPL("timer_init", 169)
+BPFABI_HELPER_GPL("timer_set_callback", 170)
+BPFABI_HELPER_GPL("timer_start", 171)
+BPFABI_HELPER_GPL("timer_cancel", 172)
+BPFABI_HELPER_GPL("task_pt_regs", 175)
+BPFABI_HELPER_GPL("get_branch_snapshot", 176)
+BPFABI_HELPER_GPL("trace_vprintk", 177)
+BPFABI_HELPER_GPL("copy_from_user_task", 191)
+BPFABI_HELPER_GPL("tcp_raw_gen_syncookie_ipv4", 204)
+BPFABI_HELPER_GPL("tcp_raw_gen_syncookie_ipv6", 205)
+BPFABI_HELPER_GPL("tcp_raw_check_syncookie_ipv4", 206)
+BPFABI_HELPER_GPL("tcp_raw_check_syncookie_ipv6", 207)
+#undef BPFABI_HELPER_GPL
 #endif
 
 #ifdef BPFABI_KPROBE_ARG
@@ -728,6 +918,8 @@ BPFABI_STRUCT_FIELD("bpf_flow_keys", "ipv6_src", 16, 4, 4, "int")
 BPFABI_STRUCT_FIELD("bpf_flow_keys", "ipv6_dst", 32, 4, 4, "int")
 BPFABI_STRUCT_FIELD("bpf_flow_keys", "flags", 48, 4, 1, "int")
 BPFABI_STRUCT_FIELD("bpf_flow_keys", "flow_label", 52, 4, 1, "int")
+BPFABI_STRUCT_FIELD("bpf_pidns_info", "pid", 0, 4, 1, "int")
+BPFABI_STRUCT_FIELD("bpf_pidns_info", "tgid", 4, 4, 1, "int")
 #undef BPFABI_STRUCT_FIELD
 #endif
 
@@ -760,11 +952,86 @@ BPFABI_USDT_REG("x86_64", 15, "r15", "r15", 0, 8, "r15,r15d,r15w,r15b")
 BPFABI_KFUNC("bpf_task_from_pid", "acquire,ret_null", "*task_struct", "pid:i32", "tracing,sched_cls,xdp,struct_ops,syscall,cgroup_skb,tracepoint,raw_tracepoint,perf_event,lsm,cgroup_sock,cgroup_device,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,sock_ops")
 BPFABI_KFUNC("bpf_task_acquire", "acquire,rcu,ret_null", "*task_struct", "p:*task_struct", "tracing,sched_cls,xdp,struct_ops,syscall,cgroup_skb,tracepoint,raw_tracepoint,perf_event,lsm,cgroup_sock,cgroup_device,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,sock_ops")
 BPFABI_KFUNC("bpf_task_release", "release", "void", "p:*task_struct", "tracing,sched_cls,xdp,struct_ops,syscall,cgroup_skb,tracepoint,raw_tracepoint,perf_event,lsm,cgroup_sock,cgroup_device,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,sock_ops")
+BPFABI_KFUNC("bpf_arena_alloc_pages", "arena_ret,arena_arg2", "*void", "p__map:*void,addr__ign:*void,page_cnt:u32,node_id:i32,flags:u64", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
+BPFABI_KFUNC("bpf_arena_free_pages", "arena_arg2", "void", "p__map:*void,ptr__ign:*void,page_cnt:u32", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
 BPFABI_KFUNC("bpf_session_is_return", "-", "bool", "ctx:*void", "kprobe,tracing")
 BPFABI_KFUNC("bpf_session_cookie", "-", "*u64", "ctx:*void", "kprobe,tracing")
 BPFABI_KFUNC("bpf_cast_to_kern_ctx", "fastcall", "*void", "obj:*void", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
 BPFABI_KFUNC("bpf_sock_addr_set_sun_path", "-", "i32", "sa_kern:*bpf_sock_addr_kern,sun_path:*u8,sun_path__sz:u32", "cgroup_sock_addr,cgroup_skb,cgroup_sock,cgroup_device,cgroup_sockopt,cgroup_sysctl,sock_ops")
+BPFABI_KFUNC("scx_bpf_select_cpu_dfl", "implicit_args,rcu", "i32", "p:*task_struct,prev_cpu:i32,wake_flags:u64,is_idle:*bool", "struct_ops,syscall")
+BPFABI_KFUNC("scx_bpf_dsq_insert", "implicit_args,rcu", "void", "p:*task_struct,dsq_id:u64,slice:u64,enq_flags:u64", "struct_ops")
+BPFABI_KFUNC("scx_bpf_dsq_insert_vtime", "rcu", "void", "p:*task_struct,dsq_id:u64,slice:u64,vtime:u64,enq_flags:u64", "struct_ops")
+BPFABI_KFUNC("scx_bpf_dsq_move_to_local", "implicit_args", "bool", "dsq_id:u64", "struct_ops")
+BPFABI_KFUNC("scx_bpf_task_set_dsq_vtime", "implicit_args,rcu", "bool", "p:*task_struct,vtime:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_create_dsq", "implicit_args,sleepable", "i32", "dsq_id:u64,node:i32", "struct_ops,syscall")
+BPFABI_KFUNC("scx_bpf_error_bstr", "implicit_args", "void", "fmt:*u8,data:*u64,data__sz:u32", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_task_cpu", "rcu", "i32", "p:*task_struct", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_kick_cpu", "implicit_args", "void", "cpu:i32,flags:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_dsq_nr_queued", "implicit_args", "i32", "dsq_id:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_dsq_peek", "implicit_args,rcu_protected,ret_null", "*task_struct", "dsq_id:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_task_set_slice", "implicit_args,rcu", "bool", "p:*task_struct,slice:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_now", "-", "u64", "-", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_pick_idle_cpu", "implicit_args,rcu", "i32", "cpus_allowed:*cpumask,flags:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_cpu_curr", "implicit_args,ret_null,rcu_protected", "*task_struct", "cpu:i32", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_cpuperf_cap", "implicit_args", "u32", "cpu:i32", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_cpuperf_set", "implicit_args", "void", "cpu:i32,perf:u32", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_dsq_reenq", "implicit_args", "void", "dsq_id:u64,reenq_flags:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_exit_bstr", "implicit_args", "void", "exit_code:i64,fmt:*u8,data:*u64,data__sz:u32", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_dump_bstr", "implicit_args", "void", "fmt:*u8,data:*u64,data__sz:u32", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("bpf_iter_num_new", "iter_new", "i32", "it:*bpf_iter_num,start:i32,end:i32", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
+BPFABI_KFUNC("bpf_iter_num_next", "iter_next,ret_null", "*i32", "it:*bpf_iter_num", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
+BPFABI_KFUNC("bpf_iter_num_destroy", "iter_destroy", "void", "it:*bpf_iter_num", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
+BPFABI_KFUNC("bpf_rcu_read_lock", "-", "void", "-", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
+BPFABI_KFUNC("bpf_rcu_read_unlock", "-", "void", "-", "cgroup_device,cgroup_skb,cgroup_sock,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,kprobe,lsm,lwt_in,lwt_out,lwt_seg6local,lwt_xmit,netfilter,perf_event,raw_tracepoint,sched_act,sched_cls,sk_skb,sock_ops,socket_filter,struct_ops,syscall,tracepoint,tracing,xdp")
+BPFABI_KFUNC("bpf_cpumask_create", "acquire,ret_null", "*bpf_cpumask", "-", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_release", "release", "void", "cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_acquire", "acquire", "*bpf_cpumask", "cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_first", "rcu", "u32", "cpumask:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_first_zero", "rcu", "u32", "cpumask:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_first_and", "rcu", "u32", "src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_set_cpu", "rcu", "void", "cpu:u32,cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_clear_cpu", "rcu", "void", "cpu:u32,cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_test_cpu", "rcu", "bool", "cpu:u32,cpumask:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_test_and_set_cpu", "rcu", "bool", "cpu:u32,cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_test_and_clear_cpu", "rcu", "bool", "cpu:u32,cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_setall", "rcu", "void", "cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_clear", "rcu", "void", "cpumask:*bpf_cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_and", "rcu", "bool", "dst:*bpf_cpumask,src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_or", "rcu", "void", "dst:*bpf_cpumask,src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_xor", "rcu", "void", "dst:*bpf_cpumask,src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_equal", "rcu", "bool", "src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_intersects", "rcu", "bool", "src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_subset", "rcu", "bool", "src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_empty", "rcu", "bool", "cpumask:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_full", "rcu", "bool", "cpumask:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_copy", "rcu", "void", "dst:*bpf_cpumask,src:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_any_distribute", "rcu", "u32", "cpumask:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_any_and_distribute", "rcu", "u32", "src1:*cpumask,src2:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_weight", "rcu", "u32", "cpumask:*cpumask", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("bpf_cpumask_populate", "rcu", "i32", "cpumask:*cpumask,src:*void,src__sz:u64", "tracing,struct_ops,syscall,tracepoint,raw_tracepoint,perf_event,lsm")
+BPFABI_KFUNC("scx_bpf_get_online_cpumask", "acquire", "*cpumask", "-", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("scx_bpf_put_cpumask", "release", "void", "cpumask:*cpumask", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("bpf_cgroup_from_id", "acquire,ret_null", "*cgroup", "cgid:u64", "tracing,sched_cls,xdp,struct_ops,syscall,cgroup_skb,tracepoint,raw_tracepoint,perf_event,lsm,cgroup_sock,cgroup_device,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,sock_ops")
+BPFABI_KFUNC("bpf_cgroup_release", "release", "void", "cgrp:*cgroup", "tracing,sched_cls,xdp,struct_ops,syscall,cgroup_skb,tracepoint,raw_tracepoint,perf_event,lsm,cgroup_sock,cgroup_device,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,sock_ops")
+BPFABI_KFUNC("bpf_cgroup_ancestor", "acquire,rcu,ret_null", "*cgroup", "cgrp:*cgroup,level:i32", "tracing,sched_cls,xdp,struct_ops,syscall,cgroup_skb,tracepoint,raw_tracepoint,perf_event,lsm,cgroup_sock,cgroup_device,cgroup_sock_addr,cgroup_sockopt,cgroup_sysctl,sock_ops")
+BPFABI_KFUNC("scx_bpf_task_cgroup", "implicit_args,rcu,acquire", "*cgroup", "p:*task_struct", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("bpf_iter_scx_dsq_new", "implicit_args,iter_new,rcu_protected", "i32", "it:*bpf_iter_scx_dsq,dsq_id:u64,flags:u64", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("bpf_iter_scx_dsq_next", "iter_next,ret_null", "*task_struct", "it:*bpf_iter_scx_dsq", "struct_ops,tracing,syscall")
+BPFABI_KFUNC("bpf_iter_scx_dsq_destroy", "iter_destroy", "void", "it:*bpf_iter_scx_dsq", "struct_ops,tracing,syscall")
 #undef BPFABI_KFUNC
+#endif
+
+#ifdef BPFABI_SCX_ENUM
+BPFABI_SCX_ENUM("SCX_DSQ_LOCAL", "scx_dsq_id_flags", 0x8000000000000002ULL)
+BPFABI_SCX_ENUM("SCX_SLICE_DFL", "scx_public_consts", 0x0000000001312d00ULL)
+BPFABI_SCX_ENUM("SCX_KICK_IDLE", "scx_kick_flags", 0x0000000000000001ULL)
+BPFABI_SCX_ENUM("SCX_KICK_PREEMPT", "scx_kick_flags", 0x0000000000000002ULL)
+BPFABI_SCX_ENUM("SCX_KICK_WAIT", "scx_kick_flags", 0x0000000000000004ULL)
+BPFABI_SCX_ENUM("SCX_DSQ_LOCAL_ON", "scx_dsq_id_flags", 0xc000000000000000ULL)
+BPFABI_SCX_ENUM("SCX_PICK_IDLE_CORE", "scx_pick_idle_cpu_flags", 0x0000000000000001ULL)
+BPFABI_SCX_ENUM("SCX_OPS_KEEP_BUILTIN_IDLE", "scx_ops_flags", 0x0000000000000001ULL)
+BPFABI_SCX_ENUM("SCX_ENQ_HEAD", "scx_enq_flags", 0x0000000000010000ULL)
+#undef BPFABI_SCX_ENUM
 #endif
 
 #ifdef BPFABI_SYSCALL_PREFIX
@@ -856,7 +1123,7 @@ BPFABI_STRUCT_OPS_MEMBER("tcp_congestion_ops", "release", "fptr", 64)
 #undef BPFABI_STRUCT_OPS_MEMBER
 #endif
 
-// Compiler ctx-field read/write capabilities, rendered from hand-authored abi/ctxaccess.tsv; evidence: abi/ctxaccess.probe.tsv.
+// Compiler ctx-field read/write capabilities, rendered from hand-authored abi/ctxaccess.tsv; evidence: abi/ctxaccess.probe/7.1.8.tsv.
 #ifdef BPFABI_CTX_ACCESS
 BPFABI_CTX_ACCESS("socket_filter", "-", "__sk_buff", "len", "r", 4)
 BPFABI_CTX_ACCESS("sched_act", "-", "__sk_buff", "len", "r", 4)
@@ -1003,6 +1270,18 @@ BPFABI_CTX_ACCESS("sk_reuseport", "sk_reuseport_select_or_migrate", "sk_reusepor
 BPFABI_CTX_ACCESS("sk_reuseport", "sk_reuseport_select_or_migrate", "sk_reuseport_md", "bind_inany", "r", 4)
 BPFABI_CTX_ACCESS("sk_reuseport", "sk_reuseport_select_or_migrate", "sk_reuseport_md", "hash", "r", 4)
 BPFABI_CTX_ACCESS("perf_event", "-", "bpf_perf_event_data", "addr", "r", 8)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_egress", "__sk_buff", "ifindex", "r", 4)
+BPFABI_CTX_ACCESS("sk_skb", "sk_skb_verdict", "__sk_buff", "len", "r", 4)
+BPFABI_CTX_ACCESS("sk_skb", "sk_skb_verdict", "__sk_buff", "local_port", "r", 4)
+BPFABI_CTX_ACCESS("sk_skb", "sk_skb_verdict", "__sk_buff", "remote_port", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_ingress", "__sk_buff", "vlan_present", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_ingress", "__sk_buff", "vlan_tci", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_ingress", "__sk_buff", "vlan_proto", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_ingress", "__sk_buff", "hash", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_egress", "__sk_buff", "vlan_present", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_egress", "__sk_buff", "vlan_tci", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_egress", "__sk_buff", "vlan_proto", "r", 4)
+BPFABI_CTX_ACCESS("sched_cls", "tcx_egress", "__sk_buff", "hash", "r", 4)
 #undef BPFABI_CTX_ACCESS
 #endif
 

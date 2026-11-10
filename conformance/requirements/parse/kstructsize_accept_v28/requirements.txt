@@ -1,0 +1,5 @@
+ebpf-requirements 28
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	syscall	31
+kstructsize	bpf_cpumask	16
+kstructsize	bpf_cpumask	1032

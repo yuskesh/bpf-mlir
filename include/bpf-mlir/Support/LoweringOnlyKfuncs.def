@@ -1,0 +1,21 @@
+//===- LoweringOnlyKfuncs.def - kfuncs only an op's lowering emits -===//
+//
+// EBPF_LOWERING_KFUNC(KFUNC, OWNER) — the kfunc row KFUNC of the UAPI table
+// (KernelABITable.inc) is emitted only by the stage ② / ③ lowering of the
+// ebpf op OWNER. ebpf.kfunc.call rejects these names by name and points at
+// OWNER (H7: the iterator rows carry KF_ITER_* but the RCU rows have flags 0,
+// so the flags cannot tell them apart — the mark is a compiler-side table,
+// not a column of the generated kernel-fact table). The unit test
+// ebpf-lowering-table-test checks every KFUNC is a kfunc row and every OWNER
+// is a registered op.
+//===----------------------------------------------------------------------===//
+EBPF_LOWERING_KFUNC("bpf_iter_num_new", "ebpf.iter.num")
+EBPF_LOWERING_KFUNC("bpf_iter_num_next", "ebpf.iter.num")
+EBPF_LOWERING_KFUNC("bpf_iter_num_destroy", "ebpf.iter.num")
+EBPF_LOWERING_KFUNC("bpf_rcu_read_lock", "ebpf.rcu.region")
+EBPF_LOWERING_KFUNC("bpf_rcu_read_unlock", "ebpf.rcu.region")
+EBPF_LOWERING_KFUNC("bpf_iter_scx_dsq_new", "ebpf.iter.scx_dsq")
+EBPF_LOWERING_KFUNC("bpf_iter_scx_dsq_next", "ebpf.iter.scx_dsq")
+EBPF_LOWERING_KFUNC("bpf_iter_scx_dsq_destroy", "ebpf.iter.scx_dsq")
+EBPF_LOWERING_KFUNC("bpf_arena_alloc_pages", "ebpf.arena.alloc")
+EBPF_LOWERING_KFUNC("bpf_arena_free_pages", "ebpf.arena.free")

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "ksym \"cpufreq_cpu_data\": needs a \"slot\" (an integer type, or {\"kind\": \"ptr\", \"struct\": S})"
+}

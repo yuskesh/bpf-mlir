@@ -1,0 +1,4 @@
+ebpf-requirements 29
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	sched_cls	3
+attach	p	netkit	primary

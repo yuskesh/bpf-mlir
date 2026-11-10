@@ -59,6 +59,25 @@ For loaders such as CAP_BPF+CAP_NET_ADMIN, these forms compile but fail kernel v
 | **Constant and unknown indices reach one ref.index addition from different paths** (F06); compiler warns. E.g. lookup-failure default 0, load/store/loop IV | All cases on 6.12/6.6, some on 7.1.8; newer verifier does not treat failed constant-key array lookup as a normal path, so simple forms pass | Same REASON_PATHS text | Place ref.index within index-origin present region; use nonconstant default (accepted on three kernels); add PERFMON; use U/H loops | Sweep x_load/x_store/x_loop/g_rarr/g_mdim/g_d3 still fails with default M1: M1 does not equalize ranges |
 | ref.index **after a second comparison of the same index**, where branch direction is known; non-root verifier explores misprediction and makes comparison register unknown | 6.12/6.6 reject; 7.1.8 accepts | math between map_value pointer and register with unbounded min value is not allowed | **Accepted with default M1**: mask on true edge then recheck, guaranteed for arrays whose mask range fits the record; otherwise warning | Second-comparison / rebind / in-loop controls |
 
+## Wider bounded-loop observations
+
+The compiler permits bounded backedges up to 4096 iterations, subject to the
+path-product and nesting limits. This is a compiler limit, not a promise that a
+kernel will load every permitted loop. A root-loaded integer loop combining a
+runtime bound and a trailing stop at N=4096 was accepted on 7.1.8. Both the MLIR
+and C forms were rejected on 6.12.111 with "The sequence of 8193 jumps is too
+complex." Both returned EFAULT on 6.6.157; no verifier log or processing count was
+available. The EFAULT cause and verifier verdict remain unknown. The other ten
+measured loop pairs loaded and matched their scalar model on all three kernels.
+
+With CAP_BPF + CAP_NET_ADMIN and no CAP_PERFMON, the runtime-bound N=65
+representative loaded on 7.1.8 and was rejected on 6.12.111. On 6.6.157 it returned
+EFAULT, so acceptance or rejection is unconfirmed. A separate derived Client
+measurement also returned EFAULT on 6.6.157 without PERFMON. Neither result is a
+confirmed verifier rejection or evidence that all loops fail there. VM dmesg
+snapshots around the wider-loop loads had matching prefixes and empty deltas;
+they did not explain the EFAULT. No log was cleared.
+
 ## Limits
 
 - External loaders iproute2 / libbpf / bpftool do not read .ebpf_requirements. Privileged or not, pre-load checking requires a separate implementation of the requirements contract; it is not performed by the compiler or these external loaders.

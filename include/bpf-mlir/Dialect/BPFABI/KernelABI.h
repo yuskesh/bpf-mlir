@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace bpfmlir {
@@ -43,6 +44,10 @@ struct HelperABI {
 // Missing helpers return nullptr.
 const HelperABI *lookupHelper(llvm::StringRef name);
 
+// A prototype-derived range for variadic helpers; fixed helpers retain exact
+// arity.
+std::pair<unsigned, unsigned> helperArgumentRange(const HelperABI &helper);
+
 struct PacketCtxABI {
   int64_t dataOffset;    // Context data byte offset.
   int64_t dataEndOffset; // Context data_end byte offset.
@@ -51,6 +56,14 @@ struct PacketCtxABI {
 
 // Return nullopt for kinds without data/data_end packet fields.
 std::optional<PacketCtxABI> lookupPacketCtx(llvm::StringRef programKind);
+
+// xdp_md data_meta / data offsets (UAPI ctxfield rows). nullopt for kinds without xdp_md.
+struct MetaCtxABI {
+  int64_t metaOffset; // Context data_meta byte offset.
+  int64_t dataOffset; // Context data byte offset.
+  int64_t fieldBytes; // Required common width.
+};
+std::optional<MetaCtxABI> lookupMetaCtx(llvm::StringRef programKind);
 
 // Resolve a verdict name to its return value, else nullopt. Prefer the supplied
 // attach row's family; without one require uniformVerdictFamily across all
@@ -145,6 +158,77 @@ std::optional<int64_t> lookupMapFlag(llvm::StringRef name);
 std::optional<int64_t> lookupStorageFlag(llvm::StringRef name);
 // sk_lookup bpf_sk_assign flags replace/no_reuseport (BPF_SK_LOOKUP_F_*).
 std::optional<int64_t> lookupSkLookupFlag(llvm::StringRef name);
+// bpf_l4_csum_replace flags pseudo_hdr/mark_mangled_0 (BPF_F_*).
+std::optional<int64_t> lookupCsumFlag(llvm::StringRef name);
+// bpf_skb_adjust_room modes net/mac (BPF_ADJ_ROOM_*).
+std::optional<int64_t> lookupAdjRoomMode(llvm::StringRef name);
+std::optional<int64_t> lookupHeaderStart(llvm::StringRef name);
+std::optional<int64_t> lookupCsumLevel(llvm::StringRef name);
+// fib_lookup flags — "none" is 0, "direct" is BPF_FIB_LOOKUP_DIRECT from
+// the UAPI table; any other name is nullopt (outside the compiler's capability).
+std::optional<int64_t> lookupFibFlag(llvm::StringRef name);
+// the 11 named views of struct bpf_fib_lookup (UAPI fibfield rows), in
+// offset order, covering the struct without gaps. Elem is the element width in
+// bytes, Count the number of elements (1 for scalars).
+struct FibFieldABI {
+  llvm::StringLiteral Name;
+  int64_t Offset, Elem, Count;
+};
+llvm::ArrayRef<FibFieldABI> fibFields();
+// bpf_skb_{get,set}_tunnel_key flags by UAPI name without the BPF_F_
+// prefix (tuninfo_ipv6, tuninfo_flags, zero_csum_tx, dont_fragment, seq_number,
+// no_tunnel_key); "none" is 0. Any other name is nullopt. tuninfo_flags and
+// no_tunnel_key share one bit (get and set use it differently).
+std::optional<int64_t> lookupTunnelFlag(llvm::StringRef name);
+// a comma-separated, duplicate-free flag set ("none", or names from the
+// get set {tuninfo_ipv6, tuninfo_flags} / the set set {tuninfo_ipv6,
+// zero_csum_tx, dont_fragment, seq_number, no_tunnel_key}) as its UAPI value;
+// nullopt for an unknown, duplicated or wrong-direction name.
+std::optional<int64_t> tunnelFlagsValue(llvm::StringRef spec, bool forSet);
+// True when the set contains tuninfo_ipv6 (selects the "v6" view).
+bool tunnelFlagsIpv6(llvm::StringRef spec);
+// the leaves of the non-overlapping "v4" / "v6" views of struct
+// bpf_tunnel_key (UAPI tunnelfield rows). A view does not cover the struct
+// without gaps (v4 leaves skip the unused IPv6 words).
+struct TunnelFieldABI {
+  llvm::StringLiteral View, Name;
+  int64_t Offset, Elem, Count;
+};
+llvm::ArrayRef<TunnelFieldABI> tunnelFields();
+// the closed setsockopt / getsockopt option table (UAPI sockopt rows).
+// Get is false for a set-only option.
+struct SockOptABI {
+  llvm::StringLiteral Name;
+  int64_t Level, Optname;
+  bool Get;
+};
+llvm::ArrayRef<SockOptABI> sockOptions();
+// The row of `name`, or nullptr for a name outside the closed table.
+const SockOptABI *lookupSockOption(llvm::StringRef name);
+// the closed table of string socket options (UAPI sockoptname rows), set
+// through a constant name.
+struct SockOptNameABI {
+  llvm::StringLiteral Name;
+  int64_t Level, Optname;
+};
+llvm::ArrayRef<SockOptNameABI> sockOptionNames();
+const SockOptNameABI *lookupSockOptionName(llvm::StringRef name);
+// The compiler's conservative limit on the name's bytes, not a kernel contract:
+// TCP_CA_NAME_MAX (16, include/net/tcp.h, not UAPI) minus the NUL. The kernel
+// silently truncates a longer name, so a longer one is rejected here.
+inline constexpr unsigned kSockOptNameMaxBytes = 15;
+// bpf_sk_lookup_tcp / _udp netns values (current_netns = BPF_F_CURRENT_NETNS,
+// −1) and the leaves of struct bpf_sock_tuple per family (ipv4 / ipv6).
+std::optional<int64_t> lookupSkLookupNetns(llvm::StringRef name);
+struct SockTupleFieldABI {
+  llvm::StringLiteral Family, Name;
+  int64_t Offset, Elem, Count;
+};
+llvm::ArrayRef<SockTupleFieldABI> sockTupleFields();
+// firstmember rows — struct `from`'s offset-0 member is struct `to` (the
+// verifier's btf_struct_ids_match walks it for a non-strict kfunc argument), so
+// a pointer to `from` may be passed where a pointer to `to` is expected.
+bool isFirstMemberOf(llvm::StringRef from, llvm::StringRef to);
 // Pointer-free bpf_sys_bpf commands: map_create/map_get_fd_by_id/map_freeze.
 std::optional<int64_t> lookupBpfCmd(llvm::StringRef name);
 // SysBpfAttr.def bounds record size before the command's first pointer field.
@@ -167,9 +251,15 @@ std::optional<int64_t> lookupRingbufConst(llvm::StringRef name);
 std::optional<int64_t> lookupUapiStructSize(llvm::StringRef name);
 // timer_init clock monotonic: UAPI CLOCK_MONOTONIC; unknown is nullopt.
 std::optional<int64_t> lookupClockId(llvm::StringRef name);
+// timer_init clock names from the UAPI clockid rows ("monotonic" / "boottime"), quoted and joined for diagnostics.
+std::string clockIdNames();
 // Packet-pointer invalidating helpers from UAPI pktinval rows: the union of
 // supported kernels' bpf_helper_changes_pkt_data source evidence.
 bool isPacketInvalidatingHelper(llvm::StringRef name);
+// GPL-only helpers from UAPI helpergpl rows: every proto the primary
+// tree's get_func_proto returns has .gpl_only = true. Helpers whose protos mix
+// or cannot be read have no row and are left to the kernel.
+bool isGPLOnlyHelper(llvm::StringRef name);
 // UAPI bpf_timer is __u64 __opaque[2], aligned(8). BTF lacks alignment, so
 // this explicit value matches the kernel's offset % __alignof__(bpf_timer) check.
 inline constexpr unsigned kTimerAlignment = 8;
@@ -235,8 +325,19 @@ struct KfuncABI {
   std::vector<std::pair<llvm::StringRef, llvm::StringRef>> paramList() const;
 };
 const KfuncABI *lookupKfunc(llvm::StringRef name);
-// Format all table names for diagnostics.
-std::string listKfuncs();
+// Generic-call diagnostics omit arena-role functions that only dedicated ops use.
+std::string listKfuncs(bool genericCandidates = false);
+// The whole kfunc table (the lowering-only / sleepable unit tests walk it).
+llvm::ArrayRef<KfuncABI> kfuncTable();
+
+// sched_ext enum constants for ebpf.scx.const: name, enum and the
+// 64-bit pattern from vmlinux BTF ENUM / ENUM64 (UAPI table scxenum rows).
+struct ScxEnumABI {
+  llvm::StringLiteral name, enumName;
+  uint64_t value;
+};
+const ScxEnumABI *lookupScxEnum(llvm::StringRef name);
+std::string listScxEnums();
 
 // struct_ops member facts from vmlinux BTF; kind is fptr or data.
 struct StructOpsMemberABI {

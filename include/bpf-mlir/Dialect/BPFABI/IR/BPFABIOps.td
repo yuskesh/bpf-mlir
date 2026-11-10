@@ -41,6 +41,19 @@ def BPFABI_KfuncCallOp : BPFABI_Op<"kfunc_call"> {
   let hasVerifier = 1;
 }
 
+// a kernel enum constant read through a CO-RE
+// enum value relocation. value is the UAPI table's (the relocation's local
+// value); ④ writes the marker __ebpf_core_enum.<enum>.<name>, which
+// ObjectEmitter turns into llvm.bpf.preserve.enum.value. Requirements record
+// coreenum <prog> <enum> <name> so the loader checks that the target has it.
+def BPFABI_CoreEnumValueOp : BPFABI_Op<"core_enum_value", [Pure]> {
+  let summary = "a kernel enum constant the loader writes from the target BTF (CO-RE enum value)";
+  let arguments = (ins StrAttr:$enum_name, StrAttr:$name, I64Attr:$value);
+  let results = (outs I64:$result);
+  let assemblyFormat = "$enum_name $name `=` $value attr-dict";
+  let hasVerifier = 1;
+}
+
 // ctx_packet reads xdp_md data/data_end as __u32 (field_bytes 4), which the
 // verifier rewrites to real pointers. Eight-byte reads fail context validation
 // (invalid bpf_context access off=4 size=8).
@@ -51,6 +64,18 @@ def BPFABI_CtxPacketOp : BPFABI_Op<"ctx_packet"> {
   let results = (outs AnyType:$data, AnyType:$data_end);
   let assemblyFormat =
       "$ctx $kind attr-dict `:` type($ctx) `->` type($data) `,` type($data_end)";
+  let hasVerifier = 1;
+}
+
+// ctx_meta reads xdp_md data_meta and data as __u32 (the verifier rewrites
+// them to PTR_TO_PACKET_META / PTR_TO_PACKET). Eight-byte reads fail context validation.
+def BPFABI_CtxMetaOp : BPFABI_Op<"ctx_meta"> {
+  let summary = "read the XDP context data_meta and data fields at four-byte width as pointers";
+  let arguments = (ins AnyType:$ctx, StrAttr:$kind, I64Attr:$meta_offset,
+                       I64Attr:$data_offset, I64Attr:$field_bytes);
+  let results = (outs AnyType:$meta, AnyType:$data);
+  let assemblyFormat =
+      "$ctx $kind attr-dict `:` type($ctx) `->` type($meta) `,` type($data)";
   let hasVerifier = 1;
 }
 
@@ -131,6 +156,40 @@ def BPFABI_CoreFieldAddrOp : BPFABI_Op<"core_field_addr"> {
   let results = (outs AnyType:$result);
   let assemblyFormat =
       "$ptr $struct_name `,` $field attr-dict `:` type($ptr) `->` type($result)";
+}
+
+// CO-RE existence (bpf_core_type_exists / bpf_core_field_exists). The
+// loader writes 1 or 0 at load; the compiler does not know which. The
+// marker __ebpf_core_exists.<kind>.<struct>[.<field>] expands in ObjectEmitter
+// to llvm.bpf.preserve.type.info / preserve.field.info (clang's form).
+def BPFABI_CoreExistsOp : BPFABI_Op<"core_exists"> {
+  let summary = "CO-RE type or field existence (0 or 1, set by the loader)";
+  let arguments = (ins StrAttr:$kind, StrAttr:$struct_name, StrAttr:$field);
+  let results = (outs I32:$result);
+  let assemblyFormat = "$kind $struct_name `,` $field attr-dict";
+}
+
+// CO-RE field byte offset (bpf_core_field_offset) for kaddr.container_of.
+// The marker __ebpf_core_offset.<struct>.<field> expands in ObjectEmitter to
+// llvm.bpf.preserve.field.info(…, BPF_FIELD_BYTE_OFFSET 0) (clang's form).
+def BPFABI_CoreFieldOffsetOp : BPFABI_Op<"core_field_offset"> {
+  let summary = "CO-RE field byte offset (relocated by the loader)";
+  let arguments = (ins StrAttr:$struct_name, StrAttr:$field);
+  let results = (outs I32:$result);
+  let assemblyFormat = "$struct_name `,` $field attr-dict";
+}
+
+// the address of an arena window — base (bpf_arena.user_vm_start, i64)
+// plus the checked offset, as an address-space-1 (__arena) pointer. ③ creates
+// it only at the entry of an arena.check_br's in-range block (never before the
+// range compare). ④ expands it to add and inttoptr; the BPF backend emits
+// addr_space_cast before the first access. No traits: it must not be moved.
+def BPFABI_ArenaAddrOp : BPFABI_Op<"arena_addr"> {
+  let summary = "arena window address: base + offset in address space 1";
+  let arguments = (ins I64:$base, I64:$offset);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$base `,` $offset attr-dict `:` type($result)";
+  let hasVerifier = 1;
 }
 
 // Return the attach-specific verdict and terminate the program.

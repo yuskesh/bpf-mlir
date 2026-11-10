@@ -1,0 +1,13 @@
+ebpf-requirements 24
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	syscall	31
+kfield	p	cpufreq_policy	cur	u32	guarded	3	0
+ksymvar	__preempt_count	percpu	i32	strong
+ksymvar	cpufreq_cpu_data	percpu	ptr:cpufreq_policy	weak	guarded	1
+ksymvar	cpufreq_update_util_data	percpu	ptr:update_util_data	weak	guarded	2
+kconfig	CONFIG_NO_HZ_IDLE	bool	weak
+kconfig	CONFIG_NR_CPUS	u32	strong
+guard	0	field	cpufreq_policy.cur
+guard	1	ksym	cpufreq_cpu_data
+guard	2	ksym	cpufreq_update_util_data
+guard	3	type	cpufreq_policy

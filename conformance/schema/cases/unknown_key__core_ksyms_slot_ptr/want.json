@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "ksym \"cpufreq_cpu_data\" slot: unknown key \"zz_unknown\" (known: kind, struct)"
+}

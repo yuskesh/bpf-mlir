@@ -75,6 +75,13 @@ struct DIBuild {
       return LLVM::DIBasicTypeAttr::get(ctx, dw::DW_TAG_base_type, i.getName(),
                                         i.getBits(), enc);
     }
+    // #btf.ulong<v> -> marker enumeration (no enumerators in MLIR DI);
+    // ObjectEmitter adds the enumerator after translation (kULongMarkerPrefix).
+    if (auto u = dyn_cast<ULongAttr>(t)) {
+      auto base = LLVM::DIBasicTypeAttr::get(ctx, dw::DW_TAG_base_type, StringAttr::get(ctx, "unsigned long"), 64, dw::DW_ATE_unsigned);
+      return composite(dw::DW_TAG_enumeration_type, StringAttr::get(ctx, (kULongMarkerPrefix + Twine(u.getValue())).str()), file, base, 64,
+                       64, {});
+    }
     if (auto p = dyn_cast<PtrAttr>(t)) {
       // LLVM represents PTR -> TYPE_TAG -> T with btf_type_tag pointer annotations,
       // unavailable on MLIR DIDerivedType. Encode a named marker pointer;
@@ -267,10 +274,49 @@ struct ConvertBTFToLLVMDIPass
       zeroInit(g, ptrTy);
     }
     for (VarOp v : others) {
+      if (auto format = v->getAttrOfType<StringAttr>("btf.trace_format")) {
+        auto old = module.lookupSymbol<LLVM::GlobalOp>(v.getSymName());
+        if (!old ||
+            old->getAttrOfType<StringAttr>("ebpf.trace_format") != format ||
+            old.getSection() != std::optional<StringRef>(v.getSection())) {
+          v.emitOpError("trace format has no matching lowering placeholder");
+          return signalPassFailure();
+        }
+        old.erase();
+        std::string bytes = format.getValue().str();
+        bytes.push_back('\0');
+        place();
+        auto ty =
+            LLVM::LLVMArrayType::get(IntegerType::get(ctx, 8), bytes.size());
+        auto g = LLVM::GlobalOp::create(
+            b, unknown, ty, false, LLVM::Linkage::Internal, v.getSymName(),
+            b.getStringAttr(bytes), 1, 0, true, false, SymbolRefAttr(), {},
+            {di.globalExpr(v.getSymName(), di.type(v.getType()))});
+        g.setSection(v.getSection()); // .rodata (trace.printk) or .data (sched_ext bstr kfuncs)
+        continue;
+      }
       // Replace integer .rodata/.bss placeholders with zero-initialized typed
       // globals and DI for BTF VAR/DATASEC. Even .rodata is not isConstant:
       // codegen must not assume initial values, and reads are volatile.
-      if (v.getSection() == ".rodata" || v.getSection() == ".bss") {
+      // a bss kaddr global (C's `static struct S *g`) becomes a
+      // zero-initialized 8-byte pointer, the BTF VAR PTR -> the local struct.
+      if (v.getSection() == ".bss" && isa<PtrAttr>(v.getType())) {
+        auto pt = cast<PtrAttr>(v.getType());
+        auto old = module.lookupSymbol<LLVM::GlobalOp>(v.getSymName());
+        if (!isa<RefAttr>(pt.getPointee()) || !old || !old->hasAttr("ebpf.global") || old.getGlobalType() != ptrTy) {
+          v.emitOpError() << "a .bss pointer variable must be a kaddr (PTR -> struct) with a pointer lowering placeholder";
+          return signalPassFailure();
+        }
+        old.erase();
+        place();
+        auto g = LLVM::GlobalOp::create(b, unknown, ptrTy, /*isConstant=*/false, LLVM::Linkage::External, v.getSymName(),
+                                        Attribute(), /*alignment=*/8, 0, /*dsoLocal=*/true, false, SymbolRefAttr(), {},
+                                        {di.globalExpr(v.getSymName(), di.type(v.getType()))});
+        g.setSection(v.getSection());
+        zeroInit(g, ptrTy);
+        continue;
+      }
+      if ((v.getSection() == ".rodata" || v.getSection() == ".bss") && !isa<RefAttr>(v.getType())) {
         auto it = dyn_cast<IntAttr>(v.getType());
         auto old = module.lookupSymbol<LLVM::GlobalOp>(v.getSymName());
         if (!it || !old || !old->hasAttr("ebpf.global")) {
@@ -287,36 +333,100 @@ struct ConvertBTFToLLVMDIPass
         zeroInit(g, ty);
         continue;
       }
+      // a kptr global (C's `private(name) struct T __kptr *g`) becomes a
+      // zero-initialized 8-byte pointer in .data.<name> with hidden visibility,
+      // as clang emits it: cilium creates no Variable for a hidden symbol and
+      // libbpf rewrites its VAR static, so neither mmaps the section (the kernel
+      // refuses mmap of a map with a kptr in its record).
+      if (v->hasAttr("btf.hidden")) {
+        auto pt = dyn_cast<PtrAttr>(v.getType());
+        auto old = module.lookupSymbol<LLVM::GlobalOp>(v.getSymName());
+        if (!pt || !isa<TypeTagAttr>(pt.getPointee()) || !v.getSection().starts_with(".data.") || !old ||
+            !old->hasAttr("ebpf.global")) {
+          v.emitOpError() << "a hidden variable must be a kptr in a .data.<name> section with a lowering placeholder";
+          return signalPassFailure();
+        }
+        if (old.getGlobalType() != ptrTy) {
+          v.emitOpError() << "the kptr placeholder is " << old.getGlobalType() << ", not a pointer";
+          return signalPassFailure();
+        }
+        old.erase();
+        place();
+        auto g = LLVM::GlobalOp::create(b, unknown, ptrTy, /*isConstant=*/false, LLVM::Linkage::External, v.getSymName(),
+                                        Attribute(), /*alignment=*/8, 0, /*dsoLocal=*/true, false, SymbolRefAttr(), {},
+                                        {di.globalExpr(v.getSymName(), di.type(v.getType()))});
+        g.setSection(v.getSection());
+        g.setVisibility_(LLVM::Visibility::Hidden);
+        zeroInit(g, ptrTy);
+        continue;
+      }
+      // a .data record global (sched_ext UEI) becomes a zero-initialized
+      // byte array of the record's size with the record's DI type, so BTF has
+      // a VAR of the record struct in the .data DATASEC. Field offsets come from
+      // @records (the compiler does not compute layout).
+      if (v.getSection() == ".data" || v.getSection() == ".rodata" || v.getSection() == ".bss") { // rodata / bss record globals too.
+        auto ref = dyn_cast<RefAttr>(v.getType());
+        auto st = ref ? dyn_cast_or_null<StructOp>(SymbolTable::lookupSymbolIn(module, ref.getTarget())) : StructOp();
+        auto old = module.lookupSymbol<LLVM::GlobalOp>(v.getSymName());
+        if (!st || !old || !old->hasAttr("ebpf.global")) {
+          v.emitOpError() << "a " << v.getSection() << " record variable must be a record with a lowering placeholder";
+          return signalPassFailure();
+        }
+        uint64_t bytes = static_cast<uint64_t>(st.getSizeBits()) / 8;
+        Type ty = LLVM::LLVMArrayType::get(IntegerType::get(ctx, 8), bytes);
+        if (old.getGlobalType() != ty) {
+          v.emitOpError() << "the " << v.getSection() << " placeholder is " << old.getGlobalType() << ", not the record's " << bytes << " bytes";
+          return signalPassFailure();
+        }
+        old.erase();
+        place();
+        // the field lowering assumes an 8-byte aligned borrow
+        // (kMapValueAlignment), so a .rodata / .bss record global is aligned to
+        // max(8, record alignment); .data (exit_info) keeps the record's.
+        uint64_t align = static_cast<uint64_t>(st.getAlignBits()) / 8;
+        if (v.getSection() != ".data")
+          align = std::max<uint64_t>(align, 8);
+        auto g = LLVM::GlobalOp::create(b, unknown, ty, /*isConstant=*/false, LLVM::Linkage::External, v.getSymName(),
+                                        Attribute(), /*alignment=*/align, 0, /*dsoLocal=*/true, false,
+                                        SymbolRefAttr(), {}, {di.globalExpr(v.getSymName(), di.type(v.getType()))});
+        g.setSection(v.getSection());
+        zeroInit(g, ty);
+        continue;
+      }
       // struct_ops globals use local structs in .struct_ops.link. Program addresses
       // become R_BPF_64_ABS64 relocations identifying each member's program.
       // Optional data follows function pointers as NUL-padded char arrays,
-      // such as tcp_congestion_ops name[16].
+      // such as tcp_congestion_ops name[16], or u32 / u64 integers (sched_ext_ops
+      // timeout_ms). The natural LLVM struct layout pads integers as BuildBTF does.
       if (v.getSection() == ".struct_ops.link") {
         auto ref = dyn_cast<RefAttr>(v.getType());
         auto st = ref ? dyn_cast_or_null<StructOp>(SymbolTable::lookupSymbolIn(module, ref.getTarget())) : StructOp();
         auto progs = v->getAttrOfType<ArrayAttr>("btf.struct_ops_programs");
         auto data = v->getAttrOfType<ArrayAttr>("btf.struct_ops_data");
-        SmallVector<uint64_t> dataBytes;
+        auto i8 = IntegerType::get(ctx, 8);
+        SmallVector<Type> dataTypes;
         bool ok = st && progs && data && st.getMembers().size() == progs.size() + data.size();
         for (size_t i = 0; ok && i < data.size(); ++i) {
           auto m = dyn_cast<MemberAttr>(st.getMembers()[progs.size() + i]);
           auto arr = m ? dyn_cast<ArrayOfAttr>(m.getType()) : ArrayOfAttr();
+          auto it = m ? dyn_cast<IntAttr>(m.getType()) : IntAttr();
           auto s = dyn_cast<StringAttr>(data[i]);
-          if (!arr || !s || s.getValue().size() >= arr.getCount()) {
+          auto n = dyn_cast<IntegerAttr>(data[i]);
+          if (arr && s && s.getValue().size() < arr.getCount()) {
+            dataTypes.push_back(LLVM::LLVMArrayType::get(i8, arr.getCount()));
+          } else if (it && n && (it.getBits() == 32 || it.getBits() == 64) && n.getType().getIntOrFloatBitWidth() == it.getBits()) {
+            dataTypes.push_back(IntegerType::get(ctx, it.getBits()));
+          } else {
             ok = false;
-            break;
           }
-          dataBytes.push_back(arr.getCount());
         }
         if (!ok) {
-          v.emitOpError() << "a .struct_ops.link variable must be a struct of function pointers then char-array data members "
-                             "with btf.struct_ops_programs / btf.struct_ops_data";
+          v.emitOpError() << "a .struct_ops.link variable must be a struct of function pointers then char-array or u32 / u64 "
+                             "data members with btf.struct_ops_programs / btf.struct_ops_data";
           return signalPassFailure();
         }
-        auto i8 = IntegerType::get(ctx, 8);
         SmallVector<Type> fields(progs.size(), ptrTy);
-        for (uint64_t n : dataBytes)
-          fields.push_back(LLVM::LLVMArrayType::get(i8, n));
+        fields.append(dataTypes.begin(), dataTypes.end());
         auto sty = LLVM::LLVMStructType::getLiteral(ctx, fields);
         place();
         auto g = LLVM::GlobalOp::create(b, unknown, sty, /*isConstant=*/false, LLVM::Linkage::External, v.getSymName(), Attribute(),
@@ -330,10 +440,15 @@ struct ConvertBTFToLLVMDIPass
           Value addr = LLVM::AddressOfOp::create(b, unknown, ptrTy, cast<FlatSymbolRefAttr>(a).getValue());
           agg = LLVM::InsertValueOp::create(b, unknown, agg, addr, ArrayRef<int64_t>{static_cast<int64_t>(i)});
         }
-        for (auto [i, n] : llvm::enumerate(dataBytes)) {
-          std::string bytes = cast<StringAttr>(data[i]).getValue().str();
-          bytes.resize(n, '\0');
-          Value dv = LLVM::ConstantOp::create(b, unknown, LLVM::LLVMArrayType::get(i8, n), b.getStringAttr(bytes));
+        for (auto [i, t] : llvm::enumerate(dataTypes)) {
+          Value dv;
+          if (auto at = dyn_cast<LLVM::LLVMArrayType>(t)) {
+            std::string bytes = cast<StringAttr>(data[i]).getValue().str();
+            bytes.resize(at.getNumElements(), '\0');
+            dv = LLVM::ConstantOp::create(b, unknown, at, b.getStringAttr(bytes));
+          } else {
+            dv = LLVM::ConstantOp::create(b, unknown, t, cast<IntegerAttr>(data[i]));
+          }
           agg = LLVM::InsertValueOp::create(b, unknown, agg, dv, ArrayRef<int64_t>{static_cast<int64_t>(progs.size() + i)});
         }
         LLVM::ReturnOp::create(b, unknown, agg);
@@ -469,6 +584,14 @@ struct ConvertBTFToLLVMDIPass
       std::function<void(Attribute)> visit = [&](Attribute t) {
         if (isa<IntAttr>(t))
           feats.insert("int");
+        else if (isa<EnumAttr>(t)) {
+          // an enum exists only as a kernel_types field. Its BTF is emitted by the
+          // ObjectEmitter CO-RE bridge only when a read uses the struct, so the bridge
+          // adds the enum / enum64 row (an unread declaration emits no ENUM).
+
+        }
+        else if (isa<ULongAttr>(t)) // arena map_extra is a one-enumerator ENUM64 (requirements btf enum64).
+          feats.insert("enum64");
         else if (auto p = dyn_cast<PtrAttr>(t)) {
           feats.insert("ptr");
           visit(p.getPointee());

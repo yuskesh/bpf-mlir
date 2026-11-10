@@ -1,0 +1,68 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s_dispatch",
+      "name": "scx_bpf_dsq_move_to_local",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s_enqueue",
+      "name": "scx_bpf_dsq_insert_vtime",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s_enqueue",
+      "name": "scx_bpf_task_set_dsq_vtime",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s_exit",
+      "name": "scx_bpf_error_bstr",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s_init",
+      "name": "scx_bpf_create_dsq",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s_select_cpu",
+      "name": "scx_bpf_dsq_insert",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "kfunc_allowed_unknown",
+      "program": "s_select_cpu",
+      "name": "scx_bpf_select_cpu_dfl",
+      "id": 0,
+      "blocks_load": false
+    },
+    {
+      "kind": "enumval",
+      "program": "s_enqueue",
+      "name": "scx_public_consts.SCX_SLICE_DFL",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "enumval",
+      "program": "s_select_cpu",
+      "name": "scx_public_consts.SCX_SLICE_DFL",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

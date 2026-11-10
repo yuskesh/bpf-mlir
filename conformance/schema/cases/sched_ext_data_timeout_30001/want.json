@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"e492ops\": struct_ops \"timeout_ms\" 30001 \u003e 30000 (sched_ext_ops.timeout_ms — kernel/sched/ext.c bpf_scx_init_member: msecs_to_jiffies(v) \u003e SCX_WATCHDOG_MAX_TIMEOUT (30 * HZ) is -E2BIG (7.1.8:7597); rounding up makes 30000 ms the bound for HZ 250 and 1000 (include/linux/jiffies.h:493))"
+}

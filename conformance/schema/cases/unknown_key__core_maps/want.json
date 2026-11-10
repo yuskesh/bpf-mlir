@@ -1,4 +1,4 @@
 {
   "result": "error",
-  "error": "core.maps: unknown key \"zz_unknown\" (known: symbol, kind, key, value, max_entries, flags, record, note, slots, struct_ops, inner)"
+  "error": "core.maps: unknown key \"zz_unknown\" (known: symbol, kind, key, value, max_entries, flags, record, note, slots, struct_ops, inner, map_extra)"
 }

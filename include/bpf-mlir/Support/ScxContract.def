@@ -1,0 +1,122 @@
+//===- ScxContract.def - sched_ext kfunc contract ---------*- C++ -*-===//
+//
+// The compiler's hand table of the sched_ext kfunc contract for the family
+// "insert" (module attribute ebpf.scx_kfuncs = "insert"). It is not generated:
+// the kernel decides it in scx_kfunc_context_filter() from per-op allow flags,
+// and compares this file once with the 7.1.8 and 7.3.1 sources
+// (the scx table generator script and its output).
+//
+// The kernel table is wider. This table is the conservative side: rows under
+// a kernel config #ifdef (CONFIG_EXT_GROUP_SCHED cgroup_* members) are left
+// out, because the compiler does not know the kernel config. Members only on
+// newer kernels are absent from the compiler's struct_ops member table and so
+// absent here.
+//
+// EBPF_SCX_KFUNC(OP, KFUNC, GROUPS)
+//   OP: the ebpf.scx.<OP> op; KFUNC: the UAPI kfunc table row it calls;
+//   GROUPS: the kfunc sets that contain it (bit mask of ScxGroup).
+//   ANY is scx_kfunc_ids_any (allowed in every sched_ext_ops member).
+// Sources: 7.1.8 kernel/sched/ext.c / ext_idle.c BTF_KFUNCS_START sets;
+// 7.3.1 kernel/sched/ext/ext.c / ext/idle.c.
+EBPF_SCX_KFUNC("dsq_insert",         "scx_bpf_dsq_insert",         ScxEnqueue)              // scx_kfunc_ids_enqueue_dispatch
+EBPF_SCX_KFUNC("dsq_insert_vtime",   "scx_bpf_dsq_insert_vtime",   ScxEnqueue)              // scx_kfunc_ids_enqueue_dispatch
+EBPF_SCX_KFUNC("dsq_move_to_local",  "scx_bpf_dsq_move_to_local",  ScxDispatch)             // scx_kfunc_ids_dispatch
+EBPF_SCX_KFUNC("select_cpu_dfl",     "scx_bpf_select_cpu_dfl",     ScxSelectCpu | ScxUnlocked) // ext_idle.c scx_kfunc_ids_select_cpu + ext.c scx_kfunc_ids_unlocked
+EBPF_SCX_KFUNC("create_dsq",         "scx_bpf_create_dsq",         ScxUnlocked)             // scx_kfunc_ids_unlocked
+EBPF_SCX_KFUNC("task_set_dsq_vtime", "scx_bpf_task_set_dsq_vtime", ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("error",              "scx_bpf_error_bstr",         ScxAny)                  // scx_kfunc_ids_any
+// 7.3.1 ext/ext.c scx_kfunc_ids_any and ext/idle.c
+// scx_kfunc_ids_idle (pick_idle_cpu — the filter allows idle like any,
+// ext/ext.c:11087). The RCU-section and dump-member compile rules are in
+// ScxContract.h (scxNeedsRcuSection / scxDumpMember), not columns here.
+EBPF_SCX_KFUNC("task_cpu",           "scx_bpf_task_cpu",           ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("kick_cpu",           "scx_bpf_kick_cpu",           ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("dsq_nr_queued",      "scx_bpf_dsq_nr_queued",      ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("dsq_peek",           "scx_bpf_dsq_peek",           ScxAny)                  // scx_kfunc_ids_any (KF_RCU_PROTECTED)
+EBPF_SCX_KFUNC("task_set_slice",     "scx_bpf_task_set_slice",     ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("now",                "scx_bpf_now",                ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("pick_idle_cpu",      "scx_bpf_pick_idle_cpu",      ScxIdle)                 // scx_kfunc_ids_idle
+EBPF_SCX_KFUNC("cpu_curr",           "scx_bpf_cpu_curr",           ScxAny)                  // scx_kfunc_ids_any (KF_RCU_PROTECTED)
+EBPF_SCX_KFUNC("cpuperf_cap",        "scx_bpf_cpuperf_cap",        ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("cpuperf_set",        "scx_bpf_cpuperf_set",        ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("dsq_reenq",          "scx_bpf_dsq_reenq",          ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("exit",               "scx_bpf_exit_bstr",          ScxAny)                  // scx_kfunc_ids_any
+EBPF_SCX_KFUNC("dump",               "scx_bpf_dump_bstr",          ScxAny)                  // scx_kfunc_ids_any (compile: dump members only)
+
+// EBPF_SCX_MEMBER(OPSTYPE, MEMBER, ALLOW, SLEEPABLE)
+//   ALLOW: scx_kf_allow_flags[] of the member (7.1.8 ext.c:9848, 7.3.1
+//   ext/ext.c:10994). A member without a row allows only ScxAny.
+//   SLEEPABLE: bpf_scx_check_member() accepts a sleepable program for the
+//   member (7.1.8 ext.c:7633, 7.3.1 ext/ext.c:8243, 6.12.111 ext.c:5735 —
+//   common rows outside #ifdef; sub_attach / sub_detach are 7.x).
+// The key is (OPSTYPE, MEMBER): a member of the same name in another ops type
+// (tcp_congestion_ops.init) has no row.
+EBPF_SCX_MEMBER("sched_ext_ops", "select_cpu",  ScxSelectCpu | ScxEnqueue, false)
+EBPF_SCX_MEMBER("sched_ext_ops", "enqueue",     ScxSelectCpu | ScxEnqueue, false)
+EBPF_SCX_MEMBER("sched_ext_ops", "dispatch",    ScxEnqueue | ScxDispatch,  false)
+EBPF_SCX_MEMBER("sched_ext_ops", "cpu_release", ScxCpuRelease,             false)
+EBPF_SCX_MEMBER("sched_ext_ops", "init_task",   ScxUnlocked,               true)
+EBPF_SCX_MEMBER("sched_ext_ops", "dump",        ScxUnlocked,               false)
+EBPF_SCX_MEMBER("sched_ext_ops", "sub_attach",  ScxUnlocked,               true)
+EBPF_SCX_MEMBER("sched_ext_ops", "sub_detach",  ScxUnlocked,               true)
+EBPF_SCX_MEMBER("sched_ext_ops", "cpu_online",  ScxUnlocked,               true)
+EBPF_SCX_MEMBER("sched_ext_ops", "cpu_offline", ScxUnlocked,               true)
+EBPF_SCX_MEMBER("sched_ext_ops", "init",        ScxUnlocked,               true)
+EBPF_SCX_MEMBER("sched_ext_ops", "exit",        ScxUnlocked,               true)
+// members B1 programs implement whose kernel allow flags are empty (only
+// any / idle kfuncs). The rows state "not sleepable" explicitly.
+EBPF_SCX_MEMBER("sched_ext_ops", "dequeue",     0,                         false)
+EBPF_SCX_MEMBER("sched_ext_ops", "update_idle", 0,                         false)
+EBPF_SCX_MEMBER("sched_ext_ops", "dump_cpu",    0,                         false)
+EBPF_SCX_MEMBER("sched_ext_ops", "dump_task",   0,                         false)
+// the cgroup members and cpu_acquire. ALLOW from
+// scx_kf_allow_flags[] (7.1.8 ext.c:9855-9863 — cgroup_move and cpu_acquire are
+// not listed: any only; 6.12.111 calls cgroup_move with SCX_KF_UNLOCKED, the
+// table takes 7.1.8's stricter side). SLEEPABLE from bpf_scx_check_member()
+// (7.1.8 ext.c:7642-7644: cgroup_init / exit / prep_move; 7.3.1 also allows
+// cgroup_set_bandwidth — not 7.1.8, so false here).
+EBPF_SCX_MEMBER("sched_ext_ops", "cgroup_init",          ScxUnlocked,      true)
+EBPF_SCX_MEMBER("sched_ext_ops", "cgroup_exit",          ScxUnlocked,      true)
+EBPF_SCX_MEMBER("sched_ext_ops", "cgroup_prep_move",     ScxUnlocked,      true)
+EBPF_SCX_MEMBER("sched_ext_ops", "cgroup_move",          0,                false)
+EBPF_SCX_MEMBER("sched_ext_ops", "cgroup_cancel_move",   ScxUnlocked,      false)
+EBPF_SCX_MEMBER("sched_ext_ops", "cgroup_set_weight",    ScxUnlocked,      false)
+EBPF_SCX_MEMBER("sched_ext_ops", "cgroup_set_bandwidth", ScxUnlocked,      false)
+EBPF_SCX_MEMBER("sched_ext_ops", "cpu_acquire",          0,                false)
+
+// EBPF_SCX_TASKARGS(OPSTYPE, MEMBER, MASK) — the members
+// the kernel calls with SCX_CALL_OP_TASK / _TASK_RET / _2TASKS_RET, which put the
+// task arguments in current->scx.kf_tasks[] (7.1.8 ext.c:501-519; the same 16
+// members in 6.12.111 ext.c:1127-1153 and 7.3.1 ext/internal.h:2344-2369).
+// MASK: bit i = argument i is such a task. scx_bpf_task_cgroup on any other task
+// is scx_error "called on a task not being operated on" at run time (7.3.1
+// ext/internal.h:2382-2392); the compiler rejects it (ebpf-verify-schema).
+// Kept apart from EBPF_SCX_MEMBER so its 4-column rows stay as 's
+// scx-tables.sh reads them.
+EBPF_SCX_TASKARGS("sched_ext_ops", "select_cpu",        1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "enqueue",           1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "dequeue",           1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "runnable",          1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "running",           1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "stopping",          1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "quiescent",         1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "yield",             3) // (from, to) — to may be NULL
+EBPF_SCX_TASKARGS("sched_ext_ops", "core_sched_before", 3) // (a, b)
+EBPF_SCX_TASKARGS("sched_ext_ops", "set_weight",        1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "set_cpumask",       1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "tick",              1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "enable",            1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "disable",           1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "exit_task",         1)
+EBPF_SCX_TASKARGS("sched_ext_ops", "cgroup_move",       1)
+
+// sched_ext kfuncs called through the generic
+// ebpf.kfunc.call (no ebpf.scx.* op — scx_kfunc_ids_any has no per-member allow).
+// The filter scx_kfunc_context_filter rejects them from a struct_ops program
+// whose ops type is not SCX (7.1.8 ext.c:9916-9917, 7.3.1 ext/ext.c:11073-11075);
+// 6.12.111 has no filter on the set. The compiler takes the strict side: in a
+// struct_ops program the ops type must be sched_ext_ops (ebpf-verify-schema).
+// EBPF_SCX_GENERIC_KFUNC(KFUNC): the UAPI kfunc table row.
+EBPF_SCX_GENERIC_KFUNC("scx_bpf_get_online_cpumask")                          // scx_kfunc_ids_any (KF_ACQUIRE)
+EBPF_SCX_GENERIC_KFUNC("scx_bpf_put_cpumask")                                 // scx_kfunc_ids_any (KF_RELEASE)
+EBPF_SCX_GENERIC_KFUNC("scx_bpf_task_cgroup")                                 // scx_kfunc_ids_any (KF_RCU | KF_ACQUIRE, no RET_NULL)

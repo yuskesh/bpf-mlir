@@ -102,10 +102,11 @@ struct ProgramAttachInfo {
   llvm::StringLiteral attachType; // expected_attach_type spelling, or '-'.
   llvm::StringLiteral reqAttach;  // Requirements '<type> <target>', or '-'.
   llvm::StringLiteral verdicts;   // Verdict family: <family>[:<verdict>,...][|int[:<range>]].
+  llvm::StringLiteral flags;      // "" or a closed flag word ("sleepable"): the row is selected only when the program op carries it.
 };
 
 inline constexpr ProgramAttachInfo kProgramAttachTable[] = {
-#define EBPF_PROGRAM_ATTACH(KIND, ATTACH, SECTION, ATYPE, REQATTACH, VERDICTS) {KIND, ATTACH, SECTION, ATYPE, REQATTACH, VERDICTS},
+#define EBPF_PROGRAM_ATTACH(KIND, ATTACH, SECTION, ATYPE, REQATTACH, VERDICTS, FLAGS) {KIND, ATTACH, SECTION, ATYPE, REQATTACH, VERDICTS, FLAGS},
 #include "bpf-mlir/Support/ProgramAttaches.def"
 };
 
@@ -174,6 +175,11 @@ inline llvm::StringRef attachFreeValue(const ProgramAttachInfo &a, llvm::StringR
   return isHookPrefixedRow(a) && attach.starts_with(hookPrefixOf(a)) ? attach.drop_front(hookPrefixOf(a).size()) : attach;
 }
 
+// True if the kind has an attach row selected by the given FLAGS word (e.g. "sleepable").
+inline bool kindHasFlagRow(const ProgramKindInfo &k, llvm::StringRef flag) {
+  return llvm::any_of(attachRowsOf(k), [&](const ProgramAttachInfo *a) { return a->flags == flag; });
+}
+
 // Enumerated attach values in table order, excluding empty, '*' and <hook>:* rows.
 inline llvm::SmallVector<llvm::StringRef, 4> attachValuesOf(const ProgramKindInfo &k) {
   llvm::SmallVector<llvm::StringRef, 4> out;
@@ -183,19 +189,36 @@ inline llvm::SmallVector<llvm::StringRef, 4> attachValuesOf(const ProgramKindInf
   return out;
 }
 
+// Preserve TCX's existing diagnostic choices; netkit has its own explicit prefix.
+inline llvm::SmallVector<llvm::StringRef, 4> attachDiagnosticValuesOf(const ProgramKindInfo &k, llvm::StringRef attach) {
+  auto values = attachValuesOf(k);
+  if (k.attach != AttachForm::TcxDirection)
+    return values;
+  llvm::SmallVector<llvm::StringRef, 4> out;
+  for (auto value : values)
+    if (value.starts_with("netkit_") == attach.starts_with("netkit_"))
+      out.push_back(value);
+  return out;
+}
+
 // Resolve attach rows: exact empty/enumerated match first, then a nonempty
 // <hook>: suffix match, then a nonempty '*' value (TracefsEvent validates its
 // category/event shape). Return nullptr for a verifier to diagnose by shape.
-inline const ProgramAttachInfo *lookupProgramAttach(const ProgramKindInfo &k, llvm::StringRef attach) {
-  for (const ProgramAttachInfo *a : attachRowsOf(k))
+// `flags` is the program op's flag word ("" when it carries none): only rows whose
+// FLAGS column equals it are candidates, so a flagged row never answers a
+// flag-less program and the reverse.
+inline const ProgramAttachInfo *lookupProgramAttach(const ProgramKindInfo &k, llvm::StringRef attach, llvm::StringRef flags = "") {
+  auto rows = attachRowsOf(k);
+  llvm::erase_if(rows, [&](const ProgramAttachInfo *a) { return a->flags != flags; });
+  for (const ProgramAttachInfo *a : rows)
     if (a->attach != "*" && !isHookPrefixedRow(*a) && a->attach == attach)
       return a;
   if (attach.empty() || (k.attach == AttachForm::TracefsEvent && !isTracefsEventName(attach)) || (k.attach == AttachForm::SyscallName && !isSyscallName(attach)))
     return nullptr;
-  for (const ProgramAttachInfo *a : attachRowsOf(k))
+  for (const ProgramAttachInfo *a : rows)
     if (isHookPrefixedRow(*a) && attach.starts_with(hookPrefixOf(*a)) && attach.size() > hookPrefixOf(*a).size())
       return a;
-  for (const ProgramAttachInfo *a : attachRowsOf(k))
+  for (const ProgramAttachInfo *a : rows)
     if (a->attach == "*")
       return a;
   return nullptr;
@@ -207,9 +230,9 @@ inline llvm::StringRef mapSymbolOfAttach(const ProgramKindInfo &k, llvm::StringR
   const ProgramAttachInfo *a = lookupProgramAttach(k, attach);
   return a ? attachFreeValue(*a, attach) : attach;
 }
-inline const ProgramAttachInfo *lookupProgramAttach(llvm::StringRef kind, llvm::StringRef attach) {
+inline const ProgramAttachInfo *lookupProgramAttach(llvm::StringRef kind, llvm::StringRef attach, llvm::StringRef flags = "") {
   const ProgramKindInfo *k = lookupProgramKind(kind);
-  return k ? lookupProgramAttach(*k, attach) : nullptr;
+  return k ? lookupProgramAttach(*k, attach, flags) : nullptr;
 }
 
 // Return PACKET context start/end field names for packet operations, or false.
@@ -308,6 +331,19 @@ inline bool kindAllows(llvm::StringRef kind, llvm::StringRef tag) {
 inline std::string kindsAllowing(llvm::StringRef tag) {
   return joinProgramKinds([&](const ProgramKindInfo &k) { return kindAllows(k, tag); }, "", ", ", " and ");
 }
+// a sched_ext op (ebpf.scx.<op>) is allowed in the kinds with the
+// OPS tag "scx" (all of them) and in the kinds with its own OPS tag
+// "scx.<op>" (one op each — scx.dsq_reenq: tp_btf, scx.now: syscall). Empty
+// when allowed; otherwise the diagnostic text (the op verifier and
+// ebpf-verify-call-contexts share it).
+inline std::string scxKindRule(llvm::StringRef scxOp, llvm::StringRef kind) {
+  std::string own = ("scx." + scxOp).str();
+  if (kindAllows(kind, "scx") || kindAllows(kind, own))
+    return {};
+  std::string also = kindsAllowing(own);
+  return "is only for " + kindsAllowing("scx") + " programs (kind \"" + kind.str() + "\")" +
+         (also.empty() ? std::string() : " or " + also);
+}
 
 // Resolve an ELF section to a kind/attach row. Exact literal sections take
 // priority over nonempty '{}' prefix/suffix matches, preventing unknown
@@ -338,7 +374,7 @@ inline const ProgramKindInfo *kindOfSection(llvm::StringRef section, std::string
 inline bool isCompanionAttachType(llvm::StringRef type) {
   // Format-11 families emit tpfield/arch/signature companions. Format-12
   // multi families emit arch/ctxfield/binary/mtarget and argument companions.
-  for (llvm::StringRef t : {"trace_raw_tp", "trace_fentry", "trace_fexit", "kprobe", "uprobe", "tcx", "kretprobe", "uretprobe", "trace_fmod_ret",
+  for (llvm::StringRef t : {"trace_raw_tp", "trace_fentry", "trace_fexit", "kprobe", "uprobe", "tcx", "netkit", "kretprobe", "uretprobe", "trace_fmod_ret",
                             "trace_tp", "trace_perf", "trace_lsm", "freplace", "trace_struct_ops",
                             "kprobe_multi", "kretprobe_multi", "uprobe_multi", "uretprobe_multi",
                             "usdt", // USDT companions: arch, ctxfield, binary, usdtsem and usdtarg.

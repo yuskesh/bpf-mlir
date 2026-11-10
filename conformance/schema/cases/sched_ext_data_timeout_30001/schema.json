@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "coverage": {"programs": "complete", "maps": "complete", "records": "complete", "telemetry": "complete"},
+  "core": {
+    "kernel_types": [{"name": "task_struct", "fields": [{"name": "tgid", "type": {"kind": "int", "bits": 32, "signed": true, "endianness": "little", "alignment": 4}}]}],
+    "records": [],
+    "maps": [
+      {"symbol": "target_tgid", "kind": "array", "key": {"kind": "int", "bits": 32, "signed": false, "endianness": "little", "alignment": 4}, "value": {"kind": "int", "bits": 32, "signed": false, "endianness": "little", "alignment": 4}, "max_entries": 1, "flags": 0, "record": ""},
+      {"symbol": "seen", "kind": "array", "key": {"kind": "int", "bits": 32, "signed": false, "endianness": "little", "alignment": 4}, "value": {"kind": "int", "bits": 32, "signed": false, "endianness": "little", "alignment": 4}, "max_entries": 2, "flags": 0, "record": ""},
+      {"symbol": "e492ops", "kind": "struct_ops", "key": {"kind": "int", "bits": 32, "signed": false, "endianness": "little", "alignment": 4}, "max_entries": 1, "flags": 0, "record": "", "struct_ops": {"type": "sched_ext_ops", "name": "e592data", "dispatch_max_batch": 2147483647, "flags": 8, "timeout_ms": 30001, "exit_dump_len": 4096, "hotplug_seq": 18446744073709551615, "sub_cgroup_id": 72623859790382856, "ops": [{"member": "tick", "program": "e492_tick"}]}}
+    ],
+    "programs": [{"name": "e492_tick", "kind": "struct_ops", "attach_target": "e492ops", "maps": ["target_tgid", "seen"], "nargs": 1, "ret": "void", "args": ["task_struct"]}]
+  },
+  "telemetry": {"clocks": [], "value_maps": [], "bounds_sets": [], "signals": []},
+  "extensions": {}
+}

@@ -9,6 +9,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/LLVM.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Error.h"
 
 #include <functional>
 #include <string>
@@ -36,6 +37,9 @@ inline constexpr llvm::StringLiteral kRecordsSection = ".ebpf_records";
 // See docs/requirements_format.md and emitRequirements in ObjectEmitter.cpp.
 inline constexpr llvm::StringLiteral kRequirementsSection = ".ebpf_requirements";
 
+// Resolve relocatable DATASEC ranges through ELF symbols, as loaders do.
+llvm::Error validateObjectLayout(llvm::StringRef bytes);
+
 // Emit BTF-enabled BPF ELF from an LLVM-dialect module and canonical schema.
 // schemaSHA256 is the hexadecimal SHA-256 of the schema file bytes, recorded in
 // .ebpf_requirements for binding generation and load-time checks.
@@ -43,6 +47,9 @@ inline constexpr llvm::StringLiteral kRequirementsSection = ".ebpf_requirements"
 // presentCostOut optionally writes cost TSV without changing the ELF.
 // Regions above presentOutlineThreshold move into internal functions; the
 // default is kPresentOutlineThreshold in PresentOutline.h.
+// testSkipCoreRelocationPass (testing only) skips the BPF
+// PipelineStartEP passes of a CO-RE module so the check for CO-RE intrinsics
+// left unrelocated is reached; it must then stop the emission.
 mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
                                llvm::StringRef schemaSHA256,
                                llvm::raw_pwrite_stream &os,
@@ -50,7 +57,8 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
                                llvm::StringRef license = "GPL",
                                llvm::raw_ostream *llvmIROut = nullptr,
                                llvm::raw_ostream *presentCostOut = nullptr,
-                               uint64_t presentOutlineThreshold = 23552);
+                               uint64_t presentOutlineThreshold = 23552,
+                               bool testSkipCoreRelocationPass = false);
 
 } // namespace ebpf
 

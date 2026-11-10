@@ -5,10 +5,240 @@
 Each operation documents **Stage** (① Input = source-writable / ② Internal = created only by ebpf-expand-regions), **Meaning**, **Constraints**, **Lowering**, **Evidence** (feature IDs in [release_scope](../release_scope.md)), and **Unsupported**.
 See also [types](ebpf_types.md).
 
-- ① Input operations (143): `ebpf.bloom.peek` `ebpf.break` `ebpf.byteorder.from_be` `ebpf.byteorder.to_be` `ebpf.call` `ebpf.continue` `ebpf.ctx.arg` `ebpf.ctx.field` `ebpf.ctx.field.store` `ebpf.ctx.load` `ebpf.ctx.retval` `ebpf.devmap.lookup` `ebpf.dynptr.read` `ebpf.dynptr.write` `ebpf.elem.load` `ebpf.elem.store` `ebpf.ext.arg` `ebpf.flow_keys.load` `ebpf.flow_keys.store` `ebpf.func` `ebpf.global.atomic_add` `ebpf.global.load` `ebpf.if` `ebpf.if.yield` `ebpf.kernel.read_scalar` `ebpf.kernel.read_str` `ebpf.kfield.copy` `ebpf.kfield.load` `ebpf.kfield.ptr` `ebpf.kfield.store` `ebpf.kfunc.call` `ebpf.kprobe.arg` `ebpf.kptr.addr` `ebpf.kptr.check` `ebpf.kptr.xchg` `ebpf.kref.check` `ebpf.ksyscall.arg` `ebpf.ktime.ns` `ebpf.lirc.sample` `ebpf.loop` `ebpf.loop.yield` `ebpf.lwt.seg6_action` `ebpf.lwt.seg6_adjust_srh` `ebpf.lwt.seg6_store_bytes` `ebpf.map.atomic_add` `ebpf.map.delete` `ebpf.map.for_each` `ebpf.map.for_each.yield` `ebpf.map.inner` `ebpf.map.lookup` `ebpf.map.lookup_percpu` `ebpf.map.peek` `ebpf.map.pop` `ebpf.map.push` `ebpf.map.try_delete` `ebpf.map.try_update` `ebpf.map.update` `ebpf.msg.apply_bytes` `ebpf.msg.cork_bytes` `ebpf.msg.pop_data` `ebpf.msg.pull_data` `ebpf.msg.redirect` `ebpf.packet.check` `ebpf.packet.load` `ebpf.packet.store` `ebpf.packet.window_load` `ebpf.perf.output` `ebpf.probe.retval` `ebpf.probe.target_arg` `ebpf.probe.target_index` `ebpf.program` `ebpf.record.make` `ebpf.redirect` `ebpf.redirect_map` `ebpf.ref.atomic_add` `ebpf.ref.check` `ebpf.ref.field.atomic_add` `ebpf.ref.field.load` `ebpf.ref.field.store` `ebpf.ref.index` `ebpf.ref.load` `ebpf.ref.store` `ebpf.return` `ebpf.ringbuf.discard` `ebpf.ringbuf.discard_dynptr` `ebpf.ringbuf.if_reserved` `ebpf.ringbuf.output` `ebpf.ringbuf.reserve` `ebpf.ringbuf.reserve_dynptr` `ebpf.ringbuf.store_field` `ebpf.ringbuf.store_record` `ebpf.ringbuf.submit` `ebpf.ringbuf.submit_dynptr` `ebpf.seq.write` `ebpf.session.cookie.load` `ebpf.session.cookie.store` `ebpf.session.is_return` `ebpf.sk.assign` `ebpf.sk.redirect` `ebpf.sk.reuseport_cookie` `ebpf.sk.select_reuseport` `ebpf.skb.under_cgroup` `ebpf.sock.map_lookup` `ebpf.sock.map_update` `ebpf.sock.ref_check` `ebpf.sock.release` `ebpf.sock_addr.set_sun_path` `ebpf.spin.region` `ebpf.stack.kernel_id` `ebpf.stack.user_id` `ebpf.storage.delete` `ebpf.storage.get` `ebpf.sys.bpf` `ebpf.sys.close` `ebpf.sysctl.set_new_value` `ebpf.tail_call` `ebpf.task.cgroup_id` `ebpf.task.comm` `ebpf.task.pid_tgid` `ebpf.task.under_cgroup` `ebpf.timer.callback` `ebpf.timer.done` `ebpf.timer.init` `ebpf.timer.set_callback` `ebpf.timer.start` `ebpf.tp.buffer.load` `ebpf.tp.buffer.store` `ebpf.tp.field` `ebpf.tp.field.copy` `ebpf.uprobe.arg` `ebpf.usdt.arg` `ebpf.user.read` `ebpf.user.read_str` `ebpf.user.str_at` `ebpf.user_ringbuf.callback` `ebpf.user_ringbuf.done` `ebpf.user_ringbuf.drain` `ebpf.verdict` `ebpf.verdict.if` `ebpf.xdp.adjust_head` `ebpf.xdp.adjust_tail` `ebpf.xsk.lookup` `ebpf.yield`
-- ② Internal operations (14): `ebpf.assume_present` `ebpf.bpf_loop` `ebpf.callback.return` `ebpf.elem.at` `ebpf.elem.in_range` `ebpf.elem.mask` `ebpf.for_each_map_elem` `ebpf.is_present` `ebpf.loop.spill` `ebpf.loop_callback` `ebpf.pkt.check_br` `ebpf.spin.lock` `ebpf.spin.unlock` `ebpf.tail_call.try`
+- ① Input operations (278): `ebpf.arena.alloc` `ebpf.arena.base` `ebpf.arena.check` `ebpf.arena.free` `ebpf.arena.load` `ebpf.arena.store` `ebpf.bloom.peek` `ebpf.break` `ebpf.byteorder.from_be` `ebpf.byteorder.to_be` `ebpf.call` `ebpf.cgroup.retval` `ebpf.cgroup.set_retval` `ebpf.clone_redirect` `ebpf.continue` `ebpf.core.enum_value` `ebpf.core.field_exists` `ebpf.core.type_exists` `ebpf.cpu.id` `ebpf.csum.diff` `ebpf.csum.update` `ebpf.ctx.arg` `ebpf.ctx.field` `ebpf.ctx.field.store` `ebpf.ctx.func_arg` `ebpf.ctx.func_arg_cnt` `ebpf.ctx.func_ip` `ebpf.ctx.func_ret` `ebpf.ctx.load` `ebpf.ctx.retval` `ebpf.ctx.stack` `ebpf.devmap.lookup` `ebpf.dynptr.read` `ebpf.dynptr.write` `ebpf.elem.load` `ebpf.elem.store` `ebpf.ext.arg` `ebpf.fib.lookup` `ebpf.flow_keys.load` `ebpf.flow_keys.store` `ebpf.func` `ebpf.global.atomic_add` `ebpf.global.atomic_or` `ebpf.global.cmpxchg` `ebpf.global.kptr_load_rcu` `ebpf.global.kptr_xchg` `ebpf.global.load` `ebpf.global.ref` `ebpf.global.store` `ebpf.if` `ebpf.if.yield` `ebpf.iter.num` `ebpf.iter.scx_dsq` `ebpf.iter.yield` `ebpf.jiffies64` `ebpf.kaddr.container_of` `ebpf.kaddr.eq` `ebpf.kaddr.nonnull` `ebpf.kaddr.read` `ebpf.kaddr.strncmp` `ebpf.kconfig.load` `ebpf.kernel.d_path` `ebpf.kernel.read_scalar` `ebpf.kernel.read_str` `ebpf.kernel.read_str_buf` `ebpf.kfield.copy` `ebpf.kfield.load` `ebpf.kfield.ptr` `ebpf.kfield.store` `ebpf.kfield.strncmp` `ebpf.kfunc.call` `ebpf.kprobe.arg` `ebpf.kptr.addr` `ebpf.kptr.check` `ebpf.kptr.load_rcu` `ebpf.kptr.xchg` `ebpf.kref.check` `ebpf.ksym.exists` `ebpf.ksym.per_cpu_load` `ebpf.ksyscall.arg` `ebpf.ktime.boot_ns` `ebpf.ktime.coarse_ns` `ebpf.ktime.ns` `ebpf.ktime.tai_ns` `ebpf.l3_csum_replace` `ebpf.l4_csum_replace` `ebpf.lirc.sample` `ebpf.loop` `ebpf.loop.yield` `ebpf.lwt.seg6_action` `ebpf.lwt.seg6_adjust_srh` `ebpf.lwt.seg6_store_bytes` `ebpf.map.atomic_add` `ebpf.map.delete` `ebpf.map.for_each` `ebpf.map.for_each.yield` `ebpf.map.inner` `ebpf.map.lookup` `ebpf.map.lookup_percpu` `ebpf.map.peek` `ebpf.map.pop` `ebpf.map.push` `ebpf.map.try_delete` `ebpf.map.try_update` `ebpf.map.update` `ebpf.msg.apply_bytes` `ebpf.msg.cork_bytes` `ebpf.msg.pop_data` `ebpf.msg.pull_data` `ebpf.msg.redirect` `ebpf.numa.node_id` `ebpf.packet.check` `ebpf.packet.load` `ebpf.packet.store` `ebpf.packet.window_load` `ebpf.perf.output` `ebpf.probe.retval` `ebpf.probe.target_arg` `ebpf.probe.target_index` `ebpf.program` `ebpf.random.u32` `ebpf.rcu.region` `ebpf.record.field` `ebpf.record.make` `ebpf.redirect` `ebpf.redirect_map` `ebpf.ref.atomic_add` `ebpf.ref.check` `ebpf.ref.field.addr` `ebpf.ref.field.atomic_add` `ebpf.ref.field.atomic_or` `ebpf.ref.field.cmpxchg` `ebpf.ref.field.load` `ebpf.ref.field.store` `ebpf.ref.index` `ebpf.ref.load` `ebpf.ref.store` `ebpf.return` `ebpf.ringbuf.discard` `ebpf.ringbuf.discard_dynptr` `ebpf.ringbuf.if_reserved` `ebpf.ringbuf.output` `ebpf.ringbuf.reserve` `ebpf.ringbuf.reserve_dynptr` `ebpf.ringbuf.store_field` `ebpf.ringbuf.store_record` `ebpf.ringbuf.submit` `ebpf.ringbuf.submit_dynptr` `ebpf.scx.const` `ebpf.scx.cpu_curr` `ebpf.scx.cpuperf_cap` `ebpf.scx.cpuperf_set` `ebpf.scx.create_dsq` `ebpf.scx.dsq_insert` `ebpf.scx.dsq_insert_vtime` `ebpf.scx.dsq_move_to_local` `ebpf.scx.dsq_nr_queued` `ebpf.scx.dsq_peek` `ebpf.scx.dsq_reenq` `ebpf.scx.dump` `ebpf.scx.error` `ebpf.scx.exit` `ebpf.scx.exit_info` `ebpf.scx.kick_cpu` `ebpf.scx.now` `ebpf.scx.pick_idle_cpu` `ebpf.scx.select_cpu_dfl` `ebpf.scx.task_cpu` `ebpf.scx.task_set_dsq_vtime` `ebpf.scx.task_set_slice` `ebpf.seq.write` `ebpf.session.cookie.load` `ebpf.session.cookie.store` `ebpf.session.is_return` `ebpf.sk.assign` `ebpf.sk.redirect` `ebpf.sk.redirect.request` `ebpf.sk.reuseport_cookie` `ebpf.sk.select_reuseport` `ebpf.skb.adjust_room` `ebpf.skb.ancestor_cgroup_id` `ebpf.skb.cgroup_classid` `ebpf.skb.cgroup_id` `ebpf.skb.change_head` `ebpf.skb.change_proto` `ebpf.skb.change_tail` `ebpf.skb.change_type` `ebpf.skb.check_mtu` `ebpf.skb.csum_level` `ebpf.skb.ecn_set_ce` `ebpf.skb.get_tunnel_key` `ebpf.skb.hash_recalc` `ebpf.skb.load_bytes` `ebpf.skb.load_bytes_relative` `ebpf.skb.netns_cookie` `ebpf.skb.pull_data` `ebpf.skb.set_hash` `ebpf.skb.set_hash_invalid` `ebpf.skb.set_tunnel_key` `ebpf.skb.socket_uid` `ebpf.skb.store_bytes` `ebpf.skb.under_cgroup` `ebpf.skb.vlan_pop` `ebpf.skb.vlan_push` `ebpf.sock.lookup_tcp` `ebpf.sock.lookup_udp` `ebpf.sock.map_lookup` `ebpf.sock.map_update` `ebpf.sock.ref_check` `ebpf.sock.release` `ebpf.sock.skc_lookup_tcp` `ebpf.sock_addr.getsockopt` `ebpf.sock_addr.set_sun_path` `ebpf.sock_addr.setsockopt` `ebpf.sock_ops.cb_flags_set` `ebpf.sock_ops.getsockopt` `ebpf.sock_ops.setsockopt` `ebpf.sock_ops.setsockopt_name` `ebpf.spin.region` `ebpf.stack.kernel_id` `ebpf.stack.user_id` `ebpf.storage.delete` `ebpf.storage.get` `ebpf.str.snprintf` `ebpf.str_buf.literal` `ebpf.sys.bpf` `ebpf.sys.close` `ebpf.sysctl.set_new_value` `ebpf.tail_call` `ebpf.task.ancestor_cgroup_id` `ebpf.task.cgroup_id` `ebpf.task.comm` `ebpf.task.current_btf` `ebpf.task.current_raw` `ebpf.task.find_vma` `ebpf.task.find_vma.yield` `ebpf.task.ns_pid_tgid` `ebpf.task.pid_tgid` `ebpf.task.pt_regs` `ebpf.task.send_signal` `ebpf.task.send_signal_thread` `ebpf.task.uid_gid` `ebpf.task.under_cgroup` `ebpf.timer.callback` `ebpf.timer.cancel` `ebpf.timer.done` `ebpf.timer.init` `ebpf.timer.set_callback` `ebpf.timer.start` `ebpf.tp.buffer.load` `ebpf.tp.buffer.store` `ebpf.tp.field` `ebpf.tp.field.copy` `ebpf.trace.printk` `ebpf.uprobe.arg` `ebpf.usdt.arg` `ebpf.user.addr` `ebpf.user.copy` `ebpf.user.copy_task` `ebpf.user.read` `ebpf.user.read_str` `ebpf.user.str_at` `ebpf.user_ringbuf.callback` `ebpf.user_ringbuf.done` `ebpf.user_ringbuf.drain` `ebpf.verdict` `ebpf.verdict.if` `ebpf.xdp.adjust_head` `ebpf.xdp.adjust_meta` `ebpf.xdp.adjust_tail` `ebpf.xdp.buff_len` `ebpf.xdp.load_bytes` `ebpf.xdp.meta_check` `ebpf.xdp.meta_load` `ebpf.xdp.meta_store` `ebpf.xdp.store_bytes` `ebpf.xsk.lookup` `ebpf.yield`
+- ② Internal operations (28): `ebpf.arena.alloc_br` `ebpf.arena.check_br` `ebpf.arena.free_pages` `ebpf.assume_present` `ebpf.bpf_loop` `ebpf.callback.return` `ebpf.elem.at` `ebpf.elem.in_range` `ebpf.elem.mask` `ebpf.find_vma_call` `ebpf.for_each_map_elem` `ebpf.is_present` `ebpf.iter_num.begin` `ebpf.iter_num.end` `ebpf.iter_num.next_br` `ebpf.iter_scx_dsq.begin` `ebpf.iter_scx_dsq.end` `ebpf.iter_scx_dsq.next_br` `ebpf.ksym.per_cpu_br` `ebpf.loop.spill` `ebpf.loop_callback` `ebpf.meta.check_br` `ebpf.pkt.check_br` `ebpf.rcu.lock` `ebpf.rcu.unlock` `ebpf.spin.lock` `ebpf.spin.unlock` `ebpf.tail_call.try`
 
 ## ① Input operations
+
+### `ebpf.arena.alloc` (ebpf::ArenaAllocOp)
+
+_Allocate a fixed arena page range with explicit success and failure_
+
+**Stage**: ① Input
+**Meaning**: Requests page_count pages at canonical base + page_offset * 4096,
+NUMA_NO_NODE, flags zero. Success requires a non-NULL result equal to the
+entire requested address and its low 32 bits. Any mismatch takes failure.
+A non-NULL mismatch does not guarantee cleanup; map destruction remains the
+final owner. Success introduces a lexical arena_pages proof, not a pointer.
+**Constraints**: One arena, x86_64, sleepable syscall entry body, constant
+nonnegative offset and positive count inside the schema map. No nesting,
+loops, callbacks, unknown free effects or proof transport..
+**Lowering**: ② arena.alloc_br; ③ named kfunc call and address comparisons;
+④ BTF-resolved extern relocation. No automatic free on region exit.
+**Evidence**: Out of scope — the static contract is checked; kernel execution is a separate experiment.
+**Unsupported**: Automatic address selection, partial free, external free,
+first-class pointers, allocation proof across programs or calls.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>page_offset</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>page_count</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `map` | a BPF map handle with kind, key type and value type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `results` | variadic of any non-token type |
+
+
+
+### `ebpf.arena.base` (ebpf::ArenaBaseOp)
+
+_Read the arena's user-space start address (window base) from its map_
+
+Syntax:
+
+```
+operation ::= `ebpf.arena.base` $map attr-dict `:` type($map) `->` type($base)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads `user_vm_start` of the arena map — the user address at which the arena memory is mapped (the schema's `map_extra`). The result `!ebpf.arena_base` is only the base operand of ebpf.arena.check; it addresses nothing by itself.
+
+**Constraints**: The map is a schema `arena` map bound as `!ebpf.map<"arena", none, none>` (the schema allows one arena per module). Only in an ebpf.program body (nested regions included): an ebpf.func, ebpf.timer.callback, ebpf.user_ringbuf.callback, a callback loop (H) body or an ebpf.map.for_each body is rejected by name — the result is not passed through calls. Inside ebpf.loop, only when every enclosing loop is unroll (like arena.check); the result may be captured by a loop without callback.
+
+**Lowering**: Stage ③ reads `bpf_arena.user_vm_start` (u64) through a CO-RE relocation from the map's `.maps` placeholder address: `bpfabi.core_field_load` → ④ marker `__ebpf_core.bpf_arena.user_vm_start` → ObjectEmitter preserve.struct.access.index and one volatile 8-byte load. ebpf-build-btf-types adds the local type `bpf_arena { user_vm_start: u64 }` to `@kernel` for an arena map; the requirements carry `kfield <prog> bpf_arena user_vm_start u64`. an arena map also gets an `arena <map>` row (format 29, after the map rows), which precheck checks against the loader declarations `arena_cast` / `arena_premmap` — a loader that rewrites addr_space_cast or does not mmap the arena at `map_extra` (the cilium v0.22 presets) blocks with `arena_loader`, an undeclared one with `arena_loader_unknown`; bml-libbpf-v1.7 passes.
+
+**Evidence**: Out of scope — kernel evidence is not yet measured (a separate VM run covers it); static checks cover compile, ELF form and comparison with clang's C.
+
+**Unsupported**: Use in subprograms and callbacks; generic arena kfunc calls (use arena.alloc/free for page lifecycle); more than one arena.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `map` | a BPF map handle with kind, key type and value type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `base` | the user-space start address of the module's arena |
+
+
+
+### `ebpf.arena.check` (ebpf::ArenaCheckOp)
+
+_Check an arena range and introduce a scoped window_
+
+Syntax:
+
+```
+operation ::= `ebpf.arena.check` $base `[` $offset `]` `len` $len attr-dict `:` type($offset) (`->` type($results)^)?
+              `in_range` $inRange `out_of_range` $outOfRange
+```
+
+**Stage**: ① Input
+
+**Meaning**: Checks [offset, offset + len) against the arena size (schema pages × 4096). The offset is an unsigned bit pattern, zero-extended to 64 bits. Success executes in_range with its sole block argument !ebpf.arena_window<len>; failure executes explicit out_of_range. Both arms may return integer values via ebpf.yield (`-> T…`). **The check is only a range check; it does not prove allocation** — a read of a page that is not allocated gives 0 and a write to it is discarded; after a fault on 7.3.1 kernels the read is not guaranteed to be 0.
+
+**Constraints**: The base is an ebpf.arena.base result. len is 1..65535. The offset is i8 / i16 / i32 / i64. len ≤ size and, for a constant offset c, c ≤ size − len (subtraction form) are checked by ebpf-verify-schema against the schema pages (the op verifier does not know the size). in_range has exactly one matching window argument; out_of_range has none. Window uses are arena.load / arena.store within in_range only — no yield, block-argument transport, call argument, or capture into an ebpf.loop / callback body. Same placement as arena.base: only in an ebpf.program body (ebpf.func, timer / user_ringbuf callbacks, callback loop (H) and map.for_each bodies are rejected by name). Inside ebpf.loop, **all enclosing loops must be U / unroll** (like packet.check). Integer result widths are i1 / 8 / 16 / 32 / 64.
+
+**Lowering**: Stage ② ebpf-expand-regions zero-extends the offset to i64 and emits arena.check_br with ^in(%w) / ^out blocks (no window-load rewrites — the packet optimizations W0 / C1 / W1 do not apply). Stage ③ compares `off64 ule size − len` once (an unsigned scalar compare, no address) and creates the window address `bpfabi.arena_addr base, off64` (`!llvm.ptr<1>`) inside the in-range block only; ④ expands it to add and inttoptr into address space 1, and the BPF backend emits addr_space_cast before the first access.
+
+**Evidence**: Out of scope — kernel evidence is not yet measured (a separate VM run covers it); static checks cover compile rules, ELF form, comparison with clang's C.
+
+**Unsupported**: B / H body checks, windows across regions, iterations, calls or callbacks, use in subprograms and callbacks, variable indices (check a window at the variable offset instead), and atomics / ordering between program and user-space accesses.
+
+Traits: `RecursiveMemoryEffects`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `base` | the user-space start address of the module's arena |
+| `offset` | signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `results` | variadic of signless integer |
+
+
+
+### `ebpf.arena.free` (ebpf::ArenaFreeOp)
+
+_Invalidate a lexical allocation proof and request page release_
+
+**Stage**: ① Input
+**Meaning**: Frees the full allocation range, once. The kfunc returns void;
+neither physical completion nor the timing of a later fault is acknowledged.
+**Constraints**: Directly in the owning success block, outside every window.
+No subsequent arena access or reconstituted proof in that success arm.
+**Lowering**: ② arena.free_pages; ③ named void kfunc; ④ extern relocation.
+**Evidence**: Out of scope — checks the static contract; kernel completion is not measured.
+**Unsupported**: Partial release, conditional release, external concurrent free.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `pages` | a lexical proof of one successful arena page allocation |
+
+
+
+### `ebpf.arena.load` (ebpf::ArenaLoadOp)
+
+_Load an integer from a checked arena window_
+
+Syntax:
+
+```
+operation ::= `ebpf.arena.load` $window `[` $index `]` attr-dict `:` type($window) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads a little-endian integer at a constant index of a checked arena window, without another range check. Always volatile: each read is one access at the declared width or, when the alignment is not provable, one access per byte — reads are never merged (the memory is shared with user space). A page that is not allocated reads as 0 (not guaranteed after a fault on 7.3.1).
+
+**Constraints**: Result is i8 / i16 / i32 / i64. [index, index + width) must fit the window, checked by subtraction (index > len or width > len − index is rejected). The window is the in_range argument of an arena.check, used inside that region.
+
+**Lowering**: Stage ③ reads at `arena_addr + index` (address space 1). When the window's arena.check_br offset c is constant (looking through ②'s extui) and (c + index) mod width = 0 it is one volatile width-aligned load; otherwise one volatile byte load per byte assembled with zext / shl / or. No memory-effect interface (effects unknown, like the `once` loads ref.load / ref.field.load / kfield.load), so ① cse / canonicalize neither merge nor erase reads before ③ makes them volatile.
+
+**Evidence**: Out of scope — kernel evidence is not yet measured (a separate VM run covers it); static checks cover ELF form and comparison with clang's C.
+
+**Unsupported**: Variable indices, sign-extending loads (no LDSX), atomics, ordering with user-space writes.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>index</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `window` | a range-checked window of len bytes in the arena |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | signless integer |
+
+
+
+### `ebpf.arena.store` (ebpf::ArenaStoreOp)
+
+_Store an integer to a checked arena window_
+
+Syntax:
+
+```
+operation ::= `ebpf.arena.store` $window `[` $index `]` `,` $value attr-dict `:` type($window) `,` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Writes a little-endian integer at a constant index of a checked arena window. Always volatile: one access at the declared width or, when the alignment is not provable, one access per byte (user space may observe the bytes one at a time). A write to a page that is not allocated is discarded.
+
+**Constraints**: Value is i8 / i16 / i32 / i64. [index, index + width) must fit the window, checked by subtraction. The window is the in_range argument of an arena.check, used inside that region.
+
+**Lowering**: Stage ③ writes at `arena_addr + index` (address space 1): one volatile width-aligned store when the window's constant offset c satisfies (c + index) mod width = 0, otherwise lshr / trunc and one volatile byte store per byte. Memory effect is arena write.
+
+**Evidence**: Out of scope — kernel evidence is not yet measured (a separate VM run covers it); static checks cover ELF form and comparison with clang's C.
+
+**Unsupported**: Variable indices, atomics, ordering with user-space accesses.
+
+Interfaces: `MemoryEffectOpInterface (MemoryEffectOpInterface)`
+
+Effects: `MemoryEffects::Effect{MemoryEffects::Write on ::mlir::ebpf::ArenaResource}`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>index</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `window` | a range-checked window of len bytes in the arena |
+| `value` | signless integer |
+
+
 
 ### `ebpf.bloom.peek` (ebpf::BloomPeekOp)
 
@@ -61,7 +291,7 @@ operation ::= `ebpf.break` ($values^ `:` type($values))? attr-dict
 
 **Meaning**: Exits the nearest ebpf.loop; the explicit carried-value tuple becomes loop results.
 
-**Constraints**: Parent is an ebpf.if or ebpf.ref.check arm. Between it and the nearest loop, only ebpf.if / ebpf.ref.check / scf.if may be crossed. Rejected outside loops. Types must match nearest-loop iter_args. Reservation-region exits cannot arise because ring-buffer operations are forbidden in loops.
+**Constraints**: Parent is an ebpf.if or ebpf.ref.check arm (or an ebpf.kref.check arm when the nearest loop is ebpf.iter.scx_dsq; an acquired reference must be released before it). Between it and the nearest loop, only ebpf.if / ebpf.ref.check / scf.if may be crossed (also ebpf.kref.check / ebpf.kptr.check for ebpf.iter.scx_dsq). Rejected outside loops. Types must match nearest-loop iter_args. Reservation-region exits cannot arise because ring-buffer operations are forbidden in loops.
 
 **Lowering**: Stage ② branches to the exit: after the loop for B, after all copies for U, or callback.return 1 for H (write context and stop).
 
@@ -69,7 +299,7 @@ operation ::= `ebpf.break` ($values^ `:` type($values))? attr-dict
 
 **Unsupported**: Labeled breaks to outer loops; target is always the nearest loop.
 
-Traits: `HasParent<IfOp, RefCheckOp>`, `Terminator`
+Traits: `Terminator`
 
 #### Operands:
 
@@ -165,7 +395,7 @@ operation ::= `ebpf.call` $callee `(` $args `)` attr-dict `:` functional-type($a
 
 **Meaning**: Directly calls an ebpf.func in the same module and returns the callee's integer result.
 
-**Constraints**: Symbol-use checking rejects absent callees, ebpf.program entries, non-functions, and argument / result type mismatches. ebpf-verify-call-graph rejects cycles and depth > 8 frames including entry (a conservative compiler limit), and rejects loop calls whose callee reaches ring-buffer operations. After stage ②, ebpf-verify-structured rechecks recursion and ≤ 8 frames across both calls and bpf_loop callback edges. Checked borrowed references may be passed only within ref.check present regions.
+**Constraints**: Symbol-use checking rejects absent callees, ebpf.program entries, non-functions, and argument / result type mismatches. ebpf-verify-call-graph rejects cycles and depth > 8 frames including entry (a conservative compiler limit), and rejects loop calls whose callee reaches ring-buffer operations. After stage ②, ebpf-verify-structured rechecks recursion and ≤ 8 frames across both calls and bpf_loop callback edges. Checked borrowed references may be passed only within ref.check present regions. A call passes each context of its caller — adjusted by the regions around the call: ebpf.rcu.region (not sleepable), ebpf.loop / scf.if, the iterator bodies, a helper callback — to the callee, where ebpf-verify-call-contexts and ebpf-verify-schema check the context-dependent ops (see ebpf.func); ebpf.spin.region rejects every call and names a call of a global function. A call does not bypass the program body's placement rules: the regions around the call site count as ancestors of the callee's ops — the sched_ext ops' allowlist of ancestors (a call inside ebpf.ringbuf.if_reserved, ebpf.packet.check, ebpf.ref.index, ... reaching an ebpf.scx.* op is rejected), scf.if around ebpf.iter.num / ebpf.rcu.region, and the loop body's allowlist (ebpf.rcu.region reached from an ebpf.loop body with no iterator body in between is rejected); two or more calls carry them. ebpf-verify-ownership rejects a call made while a ring buffer reservation (ebpf.ringbuf.if_reserved or reserve_dynptr) is live when the callee reaches, at any depth, ebpf.loop, ebpf.iter.num, ebpf.iter.scx_dsq or ebpf.rcu.region (the ops a live reservation may not cross), naming the callee, the call path and the op; a callee reaching none of them, and any call after the submit / discard, is accepted. A call into a **global** function drops only the RCU guarantee of a caller's ebpf.rcu.region (the kernel verifies a global function once with the program's sleepable flag) — the RCU-dependent ops of the callee need the callee's own section; the no-sleep constraint and the placement / ownership marks carry on, and a static callee keeps the caller's whole state. Calls from a sched_ext_ops owner's ebpf.timer.callback carry the timer callback context (not sleepable, no RCU unless a section is held, kScxTimerCallbackOps — see ebpf.timer.callback) to every function they reach.
 
 **Lowering**: Unchanged in ②. Stage ③ emits llvm.call, distinct from helper bpfabi.helper_call. Requirements record each program's call-graph reachability set.
 
@@ -196,6 +426,113 @@ Interfaces: `SymbolUserOpInterface`
 
 
 
+### `ebpf.cgroup.retval` (ebpf::CgroupRetvalOp)
+
+_Read the cgroup run-context retval integer_
+
+Syntax:
+
+```
+operation ::= `ebpf.cgroup.retval` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads get_retval (helper 186), the signed int bits in the cgroup run context. This is distinct from ctx.func_ret (helper 184).
+
+**Constraints**: Program body or non-callback loop, cgroup_sock/device/sysctl/sockopt or sock_addr bind/connect/sendmsg hooks. The verifier uses a conservative subset of kernel permissions.
+
+**Lowering**: Stage ③ calls UAPI get_retval and truncates the returned register to i32; unused calls remain.
+
+**Evidence**: Out of scope — kernel values are reserved for a later measurement. Static contract only.
+
+**Unsupported**: Static functions, callbacks, cgroup_skb, sock_ops, LSM_CGROUP and sock_addr receive/name hooks.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 32-bit signless integer |
+
+
+
+### `ebpf.cgroup.set_retval` (ebpf::CgroupSetRetvalOp)
+
+_Write the cgroup run-context retval integer_
+
+Syntax:
+
+```
+operation ::= `ebpf.cgroup.set_retval` $value attr-dict `:` type($value) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls set_retval with the i32 int bits and returns raw helper status. A negative retval can set the caller's errno; this is not a program verdict.
+
+**Constraints**: Same conservative kind/hook and program/loop placement as cgroup.retval.
+
+**Lowering**: Stage ③ calls UAPI set_retval; unused calls remain.
+
+**Evidence**: Out of scope — kernel values are reserved for a later measurement. Static contract only.
+
+**Unsupported**: Static functions, callbacks and hooks excluded by cgroup.retval.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `value` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.clone_redirect` (ebpf::CloneRedirectOp)
+
+_Clone an skb to an interface and return raw helper status_
+
+Syntax:
+
+```
+operation ::= `ebpf.clone_redirect` $ctx `,` $ifindex `flags` $flags attr-dict `:` type($ctx) `,` type($ifindex) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Request an egress or ingress clone while continuing the original skb.
+The raw status is neither a TC verdict nor a delivery acknowledgement.
+**Constraints**: Own sched_cls entry context; i32 interface index; flags egress or ingress.
+Packet windows are invalidated on success and failure. Recheck bounds before reading again.
+**Lowering**: Zero-extend the interface index and call clone_redirect with the UAPI direction flag.
+**Evidence**: F79. Static contracts; kernel delivery measurements are pending.
+**Unsupported**: Other program kinds, loop/static-function use, and delivery acknowledgement.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>flags</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `ifindex` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.continue` (ebpf::ContinueOp)
 
 _Continue the nearest ebpf.loop with explicit carried values, incrementing IV once and rechecking bounds_
@@ -210,7 +547,7 @@ operation ::= `ebpf.continue` ($values^ `:` type($values))? attr-dict
 
 **Meaning**: Continues the nearest loop with the explicit carried-value tuple. B increments IV once and rechecks count / bound at the header.
 
-**Constraints**: Same as ebpf.break: parent if / ref.check arm, inside nearest loop, types matching iter_args.
+**Constraints**: Same as ebpf.break: parent if / ref.check arm (kref.check for ebpf.iter.scx_dsq), inside nearest loop, types matching iter_args.
 
 **Lowering**: Stage ② branches to latch (B), current copy's join / next guard (U), or callback.return 0 (H).
 
@@ -218,13 +555,229 @@ operation ::= `ebpf.continue` ($values^ `:` type($values))? attr-dict
 
 **Unsupported**: Labeled continues to outer loops.
 
-Traits: `HasParent<IfOp, RefCheckOp>`, `Terminator`
+Traits: `Terminator`
 
 #### Operands:
 
 | Operand | Description |
 | :-----: | ----------- |
 | `values` | variadic of signless integer |
+
+
+
+### `ebpf.core.enum_value` (ebpf::CoreEnumValueOp)
+
+_A kernel enum constant read through a CO-RE enum value relocation (any program kind)_
+
+Syntax:
+
+```
+operation ::= `ebpf.core.enum_value` $enum_name $name attr-dict `:` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `bpf_core_enum_value(enum E, NAME)`: the i64 value of the target kernel's enumerator NAME of enum E, which the loader writes into the instruction at load (the compiler does not choose it). The compiler's local value (the UAPI table's) is the relocation's expected value only.
+
+**Constraints**: The (enum, name) pair is a scxenum row of the UAPI table (the enum must be the row's enum); the result is i64. Unlike ebpf.scx.const it does not depend on the program kind: allowed wherever arith is (any program body, ebpf.if / ebpf.loop bodies, ebpf.func, loop callbacks, ebpf.map.for_each, ebpf.iter.num, ebpf.timer.callback and ebpf.user_ringbuf.callback) — not inside ebpf.spin.region.
+
+**Lowering**: Stage ③ bpfabi.core_enum_value, ④ marker `__ebpf_core_enum.<enum>.<name>` → ObjectEmitter llvm.bpf.preserve.enum.value(seq, "<name>:<value>", 1) with a local ENUM64 E (unsigned, one enumerator) — `ld_imm64` and `.BTF.ext` kind 11 (enumval_value). Requirements row `coreenum <prog> <enum> <name>` (format 26) for every program reaching the use; the loader checks existence only (coreenum / coreenum_unknown block the load).
+
+**Evidence**: Out of scope — kernel evidence: is compile and offline (cilium v0.22 CORERelocate against 7.3.1 / 7.1.8 / 6.12.111 / 6.6.157 BTF); a separate VM run covers it.
+
+**Unsupported**: Enums outside the scxenum rows, the enum value existence relocation (kind 10) and a guard on it.
+
+Traits: `AlwaysSpeculatableImplTrait`
+
+Interfaces: `ConditionallySpeculatable`, `NoMemoryEffect (MemoryEffectOpInterface)`
+
+Effects: `MemoryEffects::Effect{}`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>enum_name</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>name</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `value` | 64-bit signless integer |
+
+
+
+### `ebpf.core.field_exists` (ebpf::CoreFieldExistsOp)
+
+_CO-RE field existence of a kernel struct field (a guard)_
+
+Syntax:
+
+```
+operation ::= `ebpf.core.field_exists` $struct_name $field attr-dict
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `bpf_core_field_exists(p->a.b)`: a CO-RE field-existence relocation the loader resolves to 1 or 0 at load. It is a **guard** for the kfield rows of the same struct and path it dominates.
+
+**Constraints**: S and the path (up to three embedded levels, as kfield.load) are declared in btf.scope @kernel. Its i1 has exactly one use, the condition of an ebpf.if.
+
+**Lowering**: Stage ③ bpfabi.core_exists. Stage ④ marker `__ebpf_core_exists.field.S.path` becomes preserve.struct.access.index from a NULL base and llvm.bpf.preserve.field.info(…, 2), and a compare with 0 (clang's form).
+
+**Evidence**: Out of scope — kernel evidence: compile only (CO-RE relocation kind field_exists in the ELF, compared with clang); a separate VM run covers it.
+
+**Unsupported**: Other field-info kinds (byte size / offset / signedness), bitfields and arrays.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>struct_name</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 1-bit signless integer |
+
+
+
+### `ebpf.core.type_exists` (ebpf::CoreTypeExistsOp)
+
+_CO-RE type existence of a kernel struct (a guard)_
+
+Syntax:
+
+```
+operation ::= `ebpf.core.type_exists` $struct_name attr-dict
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `bpf_core_type_exists(struct S)`: a CO-RE type-existence relocation the loader resolves to 1 or 0 against the target BTF at load. The compiler does not decide it. It is a **guard** for the kfield rows of struct S it dominates (`guarded <g>`).
+
+**Constraints**: S is a btf.scope @kernel struct (schema core.kernel_types — ebpf-verify-kptr). Its i1 has exactly one use, the condition of an ebpf.if (as ksym.exists).
+
+**Lowering**: Stage ③ bpfabi.core_exists. Stage ④ marker `__ebpf_core_exists.type.S` becomes llvm.bpf.preserve.type.info(seq, 0) with the local S debug type, and a compare with 0 (clang's form).
+
+**Evidence**: Out of scope — kernel evidence: compile only (CO-RE relocation kind type_exists in the ELF, compared with clang); a separate VM run covers it.
+
+**Unsupported**: Type size / match relocations, enums and typedefs.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>struct_name</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 1-bit signless integer |
+
+
+
+### `ebpf.cpu.id` (ebpf::CpuIdOp)
+
+_Raw bpf_get_smp_processor_id() value_
+
+Syntax:
+
+```
+operation ::= `ebpf.cpu.id` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns the u32 CPU number the program runs on as raw i32 bits. Not a NUMA node or task identity.
+
+**Constraints**: Result i32 only. No compile-time kind restriction; requirements helper rows check availability at load. Program bodies, static functions and B / U loops. Direct placement in helper callbacks ((H) loop callback, bpf_loop, map.for_each, timer.callback, user_ringbuf.callback) is rejected; reaching it through a static function called from a callback is not rejected. Unknown memory effects: unused or repeated calls are retained. Not packet-neutral.
+
+**Lowering**: Stage ③ calls UAPI get_smp_processor_id and truncates its i64 return to i32.
+
+**Evidence**: F80. Static: lit for ③ helper / truncation, placement negatives and ELF requirements. Kernel load and value meaning is measured separately.
+
+**Unsupported**: Kernel measurement earlier. Callback placement.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 32-bit signless integer |
+
+
+
+### `ebpf.csum.diff` (ebpf::CsumDiffOp)
+
+_Compute a checksum difference over 0 / 4 / 8-byte from and to values (raw i64)_
+
+Syntax:
+
+```
+operation ::= `ebpf.csum.diff` (`from` $from^ `:` type($from))? (`to` $to^ `:` type($to))? `seed` $seed attr-dict `:` type($seed) `->` type($result)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of csum_diff(from, from_size, to, to_size, seed). Each present value's in-memory little-endian bytes are summed (use `byteorder.to_be` for network-order data); an absent side is a NULL pointer with size 0. The helper does not touch the packet.
+**Constraints**: Directly in a sched_cls or xdp program body (OPS `csum.diff`), outside loops, static functions and callbacks. Each present value is i32 or i64; at least one of from / to is present. Seed is i32.
+**Lowering**: Each present value gets its own 4 / 8-byte stack slot (align 4), fully written by one store before the call (no uninitialized stack reaches the helper); seed is zero-extended.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Arbitrary buffers, packet ranges, sizes other than 4 / 8, other kinds.
+
+Traits: `AttrSizedOperandSegments`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `from` | integer |
+| `to` | integer |
+| `seed` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.csum.update` (ebpf::CsumUpdateOp)
+
+_Add a checksum difference to skb->csum (CHECKSUM_COMPLETE) and return the raw result_
+
+Syntax:
+
+```
+operation ::= `ebpf.csum.update` $ctx `,` $csum attr-dict `:` type($ctx) `,` type($csum) `->` type($result)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of csum_update(ctx, csum): the new skb->csum, or a negative errno when the skb is not CHECKSUM_COMPLETE. Writes skb metadata; outside the packet-neutral whitelist.
+**Constraints**: Own sched_cls entry context (OPS `skb.meta`), outside loops, static functions and callbacks.
+**Lowering**: Zero-extend csum and call helper csum_update.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `csum` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
 
 
 
@@ -371,6 +924,152 @@ operation ::= `ebpf.ctx.field.store` $ctx $field `,` $value attr-dict `:` type($
 
 
 
+### `ebpf.ctx.func_arg` (ebpf::CtxFuncArgOp)
+
+_Read an indexed raw function argument with status_
+
+Syntax:
+
+```
+operation ::= `ebpf.ctx.func_arg` $ctx `,` $n attr-dict `:` type($ctx) `,` type($n) `->` type($status) `,` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls get_func_arg(ctx, unsigned n, &slot). Returns raw i64 status and the low W bits of the u64 slot on status zero, otherwise value zero. iW carries no signedness; upper bits of narrow kernel arguments are not guaranteed.
+
+**Constraints**: Own fentry/fexit/fmod_ret/fsession/tp_btf context, program body or non-callback loop. W is 8/16/32/64; n is an unsigned i32, constant or dynamic. Availability on the target is checked by helper requirements, never a compile-time kernel version.
+
+**Lowering**: Stage ③ allocates an entry 8-byte slot aligned to 8, clears it on each call, zero-extends n, calls UAPI get_func_arg, loads i64, truncates, then selects zero on failure.
+
+**Evidence**: Out of scope — kernel values are reserved for a later measurement. Static contract only.
+
+**Unsupported**: Static functions, helper callbacks, LSM, and arbitrary output pointers or buffers.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `n` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `value` | signless integer |
+
+
+
+### `ebpf.ctx.func_arg_cnt` (ebpf::CtxFuncArgCntOp)
+
+_Read the runtime function argument count_
+
+Syntax:
+
+```
+operation ::= `ebpf.ctx.func_arg_cnt` $ctx attr-dict `:` type($ctx) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns the raw get_func_arg_cnt(ctx) value. No argument count is baked into the object from schema.
+
+**Constraints**: Own fentry/fexit/fmod_ret/fsession/tp_btf context, program body or non-callback loop. Target availability uses helper requirements.
+
+**Lowering**: Stage ③ calls UAPI get_func_arg_cnt(ctx); unused calls remain.
+
+**Evidence**: Out of scope — kernel values are reserved for a later measurement. Static contract only.
+
+**Unsupported**: Static functions, helper callbacks, LSM and other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.ctx.func_ip` (ebpf::CtxFuncIpOp)
+
+_Read the traced function address as raw integer bits_
+
+Syntax:
+
+```
+operation ::= `ebpf.ctx.func_ip` $ctx attr-dict `:` type($ctx) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls get_func_ip and returns raw address bits, including a possible zero. It creates no typed pointer.
+
+**Constraints**: Own program context, program body or non-callback loop. The kind table permits the KPROBE family and fentry/fexit/fmod_ret/fsession, a conservative subset of kernel permissions.
+
+**Lowering**: Stage ③ calls UAPI get_func_ip(ctx). The call has effects and remains when unused.
+
+**Evidence**: Out of scope — kernel values are reserved for a later measurement. Static contract only.
+
+**Unsupported**: Static functions, helper callbacks, tp_btf, raw_tp, iter, LSM and non-tracing kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.ctx.func_ret` (ebpf::CtxFuncRetOp)
+
+_Read a kernel-function return value through bpf_get_func_ret_
+
+Syntax:
+
+```
+operation ::= `ebpf.ctx.func_ret` $ctx attr-dict `:` type($ctx) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads the traced function's return value with bpf_get_func_ret (helper 184) and truncates the u64 to iW. The kernel supplies the argument count at run time, so the object does not fix N (unlike `ctx.retval after N`). The helper's status is discarded: it is always 0 for fexit.
+
+**Constraints**: fexit context of the program body only (not static / global funcs or callbacks — the meaning depends on the attach point); result i8 / i16 / i32 / i64. Allowed in loop bodies. ebpf-verify-schema checks the width only against the schema's fexit `ret` (iW carries no sign). The schema's `nargs` may be omitted for fexit; the requirements then carry `funcret <p> <i|u><width>`, checked before load against the target FUNC_PROTO's return width and sign (Unmet funcret; no query or Unknown — funcret_unknown — also blocks).
+
+**Lowering**: Stage ③ passes an entry-block 8-byte stack slot (align 8) to helper get_func_ret with the context, loads the u64 and truncates.
+
+**Evidence**: F22. offline checking against four pinned target BTFs (7.3.1 / 7.1.8 / 6.12.111 / 6.6.157) — sign / width / void mismatches block as funcret; an absent function is checked on a synthetic target name and in the corpus. Kernel values versus C bpf_get_func_ret are measured separately.
+
+**Unsupported**: Non-fexit kinds (fmod_ret / fsession and others), pointer / void results, static funcs and callbacks.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | signless integer |
+
+
+
 ### `ebpf.ctx.load` (ebpf::CtxLoadOp)
 
 _Read an integer at a fixed byte offset of a user-supplied syscall-program context_
@@ -460,6 +1159,50 @@ Effects: `MemoryEffects::Effect{}`
 | Result | Description |
 | :----: | ----------- |
 | `result` | signless integer |
+
+
+
+### `ebpf.ctx.stack` (ebpf::CtxStackOp)
+
+_Write a kernel stack into a reserved i64 array and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.ctx.stack` $reservation $field `,` $ctx `flags0` attr-dict `:` type($reservation) `,` type($ctx) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: get_stack writes kernel PCs into a reservation field; raw i64 status is bytes written or negative errno. Nonconsuming and effectful even if status is unused.
+
+**Constraints**: Ordinary kprobe entry context, flags0 only; present record reservation, one-dimensional i64[1..16], offset aligned to eight bytes. No function, loop, callback, absent or post-consumption use.
+
+**Lowering**: Stage ③ get_stack(ctx, reservation + schema offset, 8 * count, flags0). Success zeros the unwritten tail; failure clears the destination.
+
+**Evidence**: Out of scope — no release F row yet; measured on 3 kernels (7.1.8 / 6.12.111 / 6.6.157) in a VM as root, ordinary kprobe: status, pcs[0] against the C witness, zero tail and invalid flags -EINVAL matched C. Source witness depends on x86 perf_hw_regs and raw regs.ip, not an assumed symbol PC.
+
+**Unsupported**: User stacks, build IDs, frame skipping, dynamic flags, generic writable buffers and dynamic whole-callchain equality.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `reservation` | a successful ring-buffer reservation, linearly consumed exactly once |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
 
 
 
@@ -703,6 +1446,46 @@ Effects: `MemoryEffects::Effect{}`
 
 
 
+### `ebpf.fib.lookup` (ebpf::FibLookupOp)
+
+_Look up the kernel FIB with a 64-byte record and return a readonly output record and the raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.fib.lookup` $ctx `,` $input `flags` $flags attr-dict `:` type($ctx) `,` type($input) `->` type($output) `,` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Call fib_lookup (helper 69) once on a compiler-owned 64-byte copy of the input record, with plen = sizeof(struct bpf_fib_lookup) and flags 0 (`"none"`) or BPF_FIB_LOOKUP_DIRECT (`"direct"`). The first result is the helper-written copy, readable only with `ebpf.record.field`; the input record is never modified. The second result is the raw i64 status (0 success, positive FIB reasons, negative errno) — it is not converted to a predicate, and a nonzero status leaves whatever bytes the kernel wrote.
+**Constraints**: Own xdp entry context (OPS `fib.lookup`), directly in the program body, `ebpf.if` or `packet.check` regions — not inside loops, static functions, helper callbacks or other regions. The input is an `ebpf.record.make` result; the output is used only by `ebpf.record.field`. Flags are exactly `"none"` or `"direct"`. The record's schema declaration must be the exact 64-byte view of struct bpf_fib_lookup (the UAPI table's `fibfield` rows; ebpf-verify-records checks names, offsets and types).
+**Lowering**: Stage ③ allocates a 64-byte stack buffer aligned to 8, copies the input record into it, calls fib_lookup(ctx, buffer, plen, flags) with plen and the flag value from the UAPI table, and binds the output record to the buffer. The call has no memory attributes and remains when the status is unused. Requirements: the helper row and one `fibflags <program> <none|direct> <mask>` row per program and flag.
+**Evidence**: F82. static contracts (compile, lowering, ELF and requirements); kernel execution, flags probes and packet delivery are measured separately.
+**Unsupported**: sched_cls and other kinds, flags other than none / direct (MARK, VLAN, OUTPUT, SKIP_NEIGH, TBID, SRC), dynamic flags, map values or borrowed records as input, multi-buffer packets.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>flags</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `input` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `output` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.flow_keys.load` (ebpf::FlowKeysLoadOp)
 
 _Read a named integer field of flow_dissector's bpf_flow_keys_
@@ -802,15 +1585,18 @@ operation ::= `ebpf.func` $sym_name $linkage $function_type (`maps` $map_symbols
 At most five arguments: i8 / i16 / i32 / i64 or !ebpf.maybe_ref / !ebpf.borrowed pointing to such integers or records. **Static functions may also take !ebpf.pkt_window<N>**, passed from a caller's packet.check in_range region. Three-kernel verifier observations preserve packet pointers / bounds across static calls. A callee window may be used only by packet.window_load, packet.store (only if all reaching programs are XDP; stage ③ checks), or calls to other static functions. Global-window arguments are verifier-rejected: the kernel treats global pointer arguments as non-packet memory.
 **Static functions may take caller context !ebpf.ctx<"K">**. Three-kernel observations over seven kinds preserve PTR_TO_CTX. Context type fixes one callee kind. Permitted uses are packet.load / packet.check / stack.kernel_id / stack.user_id / perf.output and calls to other static functions. Attach-dependent ctx.arg / ctx.retval / kprobe.arg / uprobe.arg are explicitly rejected: checking one caller's schema would not cover callers attached elsewhere. Invalidating xdp.adjust_head / adjust_tail / tail_call are also rejected, as are global context arguments.
 Exactly one integer result is required. Entry arguments are followed by map handles corresponding by position to `maps [...]`.
+**Body ops and contexts** — besides the reference-argument ops, calls, arith, map ops and the global ops (global.load / store / ref / atomic_add / cmpxchg / atomic_or — already allowed), a static or global function body may hold the **context-dependent ops** kfunc.call (and kref.check), iter.num, iter.scx_dsq and rcu.region (each closed inside the function — never across a call), kptr.xchg / kptr.load_rcu on a map value the function looks up, global.kptr_xchg / global.kptr_load_rcu, trace.printk and the sched_ext ops. Such an op is accepted only when **every context that reaches the function** allows it as its owner's body would. A context is the owner program (its kind; its sched_ext_ops member and schema sleepable flag), the entry — the program body, an ebpf.timer.callback, a helper callback (a callback does not inherit its owner's context) — and the regions around the call sites on the way. Contexts pass through ebpf.call (`@p → @f → @g`: @g has every context of @f, adjusted at the call site): a call inside ebpf.rcu.region makes the callee not sleepable (the kernel's in_sleepable_context), so a may-sleep op / KF_SLEEPABLE kfunc there is rejected and an rcu.region there would nest (in a static callee — a global callee starts a fresh section, below); a call inside ebpf.loop / scf.if, an ebpf.iter.num body or an ebpf.iter.scx_dsq body applies those bodies' rules (and the ownership placement) to the callee's ops. **A global function does not inherit its caller's RCU section**: 7.1.8 / 6.12.111 / 6.6.157 verify a global function once with the program's sleepable flag (7.3.1 per call context), so an RCU-dependent op (kptr.load_rcu, global.kptr_load_rcu, iter.scx_dsq, task_struct.cpus_ptr, the RCU-section sched_ext ops) in a global function of a sleepable program — or in a static function reached through one — needs an ebpf.rcu.region in the global function's body; a caller's section counts only through static calls (verified on the caller's state). What the global boundary drops is the guarantee and the nesting rule (the verifier checks a global function from a fresh state, so a global function reached through a call inside ebpf.rcu.region may hold its own rcu.region; a nested bpf_rcu_read_lock is correct at run time): the constraint of the caller's section (no may-sleep op) and the placement / ownership marks carry on. ** A timer callback context** (a sched_ext_ops owner's ebpf.timer.callback and every function it reaches) is not sleepable and assumes no RCU: may-sleep ops and KF_SLEEPABLE kfuncs are rejected, the RCU-dependent ops need a held ebpf.rcu.region, the sched_ext ops are limited to ScxContract.h kScxTimerCallbackOps (a conservative compiler subset, not the kernel's filter; an RCU-dependent sched_ext op also needs a held section — scx.cpu_curr / scx.dsq_peek are outside the set), and trace.printk is rejected. A function no entry reaches has no context (ebpf-verify-call-graph rejects it). A single failing context is named per op (owner, kind, member, entry, call path, sleepable).
 
 **Constraints**: The op verifier rejects unknown linkage, six or more arguments, i1 / kptr or other unsupported argument types, non-single-integer results, global contexts, context after map handles, and exits other than ebpf.return. Reference arguments support ref.check / ref.load / ref.field.load / ref.store / ref.field.store / ref.atomic_add / ref.field.atomic_add and forwarding through ebpf.call. Passing an lpm_trie value to a writing callee, including transitively, is rejected; these values remain read-only in programs. Lock / timer fields follow program rules.
-ebpf-verify-call-graph requires no recursion, reachability from a program, and ≤ 8 frames. Loops in callees have path depth ≤ 2 and product ≤ 64 from the program entry.
+**Global functions** — a `borrowed` argument whose record has a kptr, spin_lock or timer as a direct, non-array member is rejected by name in ebpf-verify-records — the kernel checks a global function's pointer argument as helper memory access and rejects such a field on every kernel (6.6.157 / 6.12.111 / 7.1.8 / 7.3.1, "Caller passes invalid args"). `maybe_ref` arguments, a special field in a nested record or array, cpumask fields and static functions are accepted (the kernel may accept them).
+ebpf-verify-call-graph requires no recursion, reachability from a program, and ≤ 8 frames. Loops in callees have path depth ≤ 2 from the program entry. The path product limit is 4096 when a bounded back edge is present and no helper callback is present; otherwise it is 64. Individual strategy limits still apply.
+The context-dependent ops: the op verifiers check what does not depend on the caller (types, the regions inside the function); **ebpf-verify-call-contexts** (after ebpf-verify-call-graph in ebpf-compile) checks the kind level per context — kfunc program types (also of iter.num / iter.scx_dsq / rcu.region's kfuncs), the OPS tags `scx` / `scx.dsq_reenq` / `trace.printk` / `sleepable`, the call path's regions above — and the timer callback context's rules, and rejects these ops in a function reached through a helper callback; **ebpf-verify-schema** checks the sched_ext_ops member table (scx_kf_allow_flags), KF_SLEEPABLE and SleepableOps.def ops only in a sleepable context, the RCU-section ops and sleepable-member kptr RCU reads / iter.scx_dsq / task cpus_ptr only outside one, dump only in the dump members and the generic sched_ext kfuncs only for sched_ext_ops owners. scx_bpf_task_cgroup is rejected in a function (no member task argument). A call of a global function inside ebpf.spin.region is rejected by name.
 
-**Lowering**: Stage ② expands bodies like programs and removes functions made unreachable by expansion. Stage ③ emits noinline .text llvm.func: internal for static, external for global. Global borrowed arguments carry arg:nonnull through BTF DECL_TAG and requirements argtag.
+**Lowering**: Stage ② expands bodies like programs and removes functions made unreachable by expansion. Stage ③ emits noinline .text llvm.func: internal for static, external for global. Global borrowed arguments carry arg:nonnull through BTF DECL_TAG and requirements argtag. The context-dependent ops lower as in a program body (the lowering uses no owner fact for them); their kfunc / helper rows go to every program that reaches the function (the requirements' call-graph reachability set).
 
-**Evidence**: F08. Three-target C noinline oracle; op / call graph / reference arguments; three-target arg:nonnull; record borrows; callee / callback loops; lit for static context arguments.
+**Evidence**: F08. Three-target C noinline oracle; op / call graph / reference arguments; three-target arg:nonnull; record borrows; callee / callback loops; lit for static context arguments. lit only (compile, requirements rows of two owners); no kernel load. the timer callback context and the global-RCU correction are lit only (compile); whether 6.12.111 / 7.1.8 load them as predicted is unmeasured.
 
-**Unsupported**: Reservation, kptr, and pointer arguments except the static window / context cases; attach-dependent and invalidating callee operations; pointer returns; functions without results. spin.region and timer operations require program bodies. A function called from a loop cannot reach ring-buffer operations.
+**Unsupported**: Reservation, kptr, and pointer arguments except the static window / context cases; attach-dependent and invalidating callee operations; pointer returns; functions without results. spin.region and timer operations require program bodies. A function called from a loop cannot reach ring-buffer operations. Iterators, RCU sections and kernel references passed to or held across a call; the context-dependent ops in a function reached through a helper callback.
 
 Traits: `IsolatedFromAbove`
 
@@ -865,27 +1651,108 @@ operation ::= `ebpf.global.atomic_add` $name `,` $delta attr-dict `:` type($delt
 
 
 
-### `ebpf.global.load` (ebpf::GlobalLoadOp)
+### `ebpf.global.atomic_or` (ebpf::GlobalAtomicOrOp)
 
-_Read a schema core.globals variable_
+_Atomically OR into a schema core.globals bss variable_
 
 Syntax:
 
 ```
-operation ::= `ebpf.global.load` $name attr-dict `:` type($result)
+operation ::= `ebpf.global.atomic_or` $name `,` $value attr-dict `:` type($value)
 ```
 
 **Stage**: ① Input
 
-**Meaning**: Reads a named integer global in rodata or bss. Volatile, like C const volatile, prevents assuming its value. ELF symbols determine byte positions; compiler does not calculate layout. Loader sets / freezes rodata before load; verifier tracks the configured value as constant.
+**Meaning**: `ebpf.global.atomic_or @g, %v : iN` ORs v atomically into a .bss global without returning a value (non-FETCH).
 
-**Constraints**: No op verifier. ebpf-verify-schema checks declared name / width in **both program and function bodies**; older behavior missed functions. No timer.callback; allowed in loops. Schema rejects map / program name collisions; stage ③ rejects other symbol collisions.
+**Constraints**: The global.atomic_add rules: width i32 / i64 only, a declared integer .bss global of that width (ebpf-verify-schema, program and function bodies), allowed in loops, rejected in timer.callback.
 
-**Lowering**: Stage ③ emits addressof of a placeholder llvm.mlir.global marked ebpf.global and a volatile load aligned to width/8. BuildBTF creates btf.var in .rodata / .bss DATASEC. No helper.
+**Lowering**: Stage ③ addressof of the placeholder global; i64 is result-unused monotonic llvm.atomicrmw or (BPF non-FETCH `lock *(u64 *) |=`); i32 is inline asm `lock *(u32 *)($0 + 0) |= w2` with constraints `r,{r2},~{memory}`. The contract is monotonic non-FETCH (not C's seq_cst `__sync_fetch_and_or`); the asm clobber is a compiler barrier only. No helper.
 
-**Evidence**: F26. C oracle; rodata configuration; three-target DATASEC / CheckGlobals (cilium replaces zero-size DATASEC offsets from symbols and does not inspect VAR type); function-body validation.
+**Evidence**: Out of scope — release evidence: no F id yet. Static: lit, instruction match against clang -mcpu=v3 (__sync arm: C's FETCH or at both widths is a named expected row; relaxed `__atomic_fetch_or` arm: exact match), named mutant M-or-add, elf-snapshot, opcheck host row run by the B0 root smoke (7.1.8 load). Values and multi-CPU atomicity: measured separately.
 
-**Unsupported**: Non-integer globals (arrays / records), .data, and post-load rodata updates. Go LoadObjectsWithRodata configures before load.
+**Unsupported**: FETCH, and / xor / xchg, 8 / 16-bit widths, .rodata globals, acquire / release orderings.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `value` | signless integer |
+
+
+
+### `ebpf.global.cmpxchg` (ebpf::GlobalCmpxchgOp)
+
+_Atomically compare and exchange a schema core.globals bss variable, returning the old value_
+
+Syntax:
+
+```
+operation ::= `ebpf.global.cmpxchg` $name `,` $expected `,` $desired attr-dict `:` type($old)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `%old = ebpf.global.cmpxchg @g, %expected, %new : iN` atomically compares the .bss global with expected and, when equal, writes new; %old is the value before the operation either way (C's `__sync_val_compare_and_swap`). A boolean CAS is `arith.cmpi eq %old, %expected`.
+
+**Constraints**: Width i32 / i64 only (BPF atomics); expected, new and the result share the type. ebpf-verify-schema requires a declared integer .bss global of that width in program and function bodies (.rodata is frozen after load; record / kptr / kaddr globals are rejected). Allowed in ebpf.loop / ebpf.iter.num bodies (the retry loop); rejected in timer.callback.
+
+**Lowering**: Stage ③ addressof of the placeholder global; i64 is llvm.cmpxchg seq_cst seq_cst (result 0 — BPF `r0 = cmpxchg_64`); i32 is inline asm `w0 = cmpxchg32_32($1 + 0, w0, w2)` with constraints `={r0},r,{r0},{r2},~{memory}` (the same form — LLVM rejects a 32-bit cmpxchg below CPU v3). The kernel's cmpxchg instruction is a full barrier; the asm `~{memory}` clobber is a compiler barrier only. No helper.
+
+**Evidence**: Out of scope — release evidence: no F id yet. Static: lit, instruction match against clang -mcpu=v3 with the value paths, named mutants, elf-snapshot, opcheck host row run by the B0 root smoke (7.1.8 load). Values and multi-CPU atomicity: measured separately.
+
+**Unsupported**: 8 / 16-bit widths, .rodata globals, acquire / release orderings.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `expected` | signless integer |
+| `desired` | signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `old` | signless integer |
+
+
+
+### `ebpf.global.kptr_load_rcu` (ebpf::GlobalKPtrLoadRcuOp)
+
+_Read a kptr global as an RCU pointer (bpf_cpumask only)_
+
+Syntax:
+
+```
+operation ::= `ebpf.global.kptr_load_rcu` $name attr-dict `:` type($ptr)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads a schema core.globals kptr (section "data:<name>") without taking ownership, like ebpf.kptr.load_rcu reads a map value's kptr field: the verifier marks the loaded register MEM_RCU | PTR_MAYBE_NULL in the RCU read section (bpf_cpumask is in rcu_protected_types in 6.6.157 / 6.12.111 / 7.1.8 / 7.3.1). The result is `!ebpf.rcu_ptr_or_null<"bpf_cpumask">`; check it with ebpf.kptr.check, whose present `!ebpf.rcu_ptr<"bpf_cpumask">` reaches only KF_RCU kfunc.call arguments.
+
+**Constraints**: @name is a core.globals kptr of struct bpf_cpumask (ebpf-verify-schema). Placement follows ebpf.kptr.load_rcu: an ebpf.program body or an ebpf.func body checked per reaching context (also inside ebpf.if, ref.check, kptr.check, ebpf.iter.num, ebpf.rcu.region); rejected in callbacks, ebpf.loop, map.for_each, spin.region and scf.if. In a sleepable program (a kind with the OPS tag `sleepable`, or a struct_ops member declared sleepable — ebpf-verify-schema) it must be inside ebpf.rcu.region. The result is used only by one ebpf.kptr.check.
+
+**Lowering**: Unchanged in ②. Stage ③ is one volatile 8-byte load of the global's address (not split, not merged). Requirements are those of the global (btf type_tag, datakptr).
+
+**Evidence**: Out of scope — kernel evidence: (static compare and the host cilium load of a syscall program).
+
+**Unsupported**: Struct types other than bpf_cpumask. The compiler does not take an RCU lock implicitly.
 
 #### Attributes:
 
@@ -898,7 +1765,167 @@ operation ::= `ebpf.global.load` $name attr-dict `:` type($result)
 
 | Result | Description |
 | :----: | ----------- |
-| `result` | signless integer |
+| `ptr` | a nullable RCU-protected kernel struct pointer returned by a KF_RCU_PROTECTED kfunc |
+
+
+
+### `ebpf.global.kptr_xchg` (ebpf::GlobalKPtrXchgOp)
+
+_Exchange an owned reference with a kptr global (bpf_kptr_xchg helper194, bpf_cpumask only)_
+
+Syntax:
+
+```
+operation ::= `ebpf.global.kptr_xchg` $name `,` ($newRef^ `:` type($newRef)):(`null`)? attr-dict `->` type($old)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Installs a new reference into a schema core.globals kptr (section "data:<name>" — the hidden C private(name) global, BTF PTR → TYPE_TAG kptr → STRUCT bpf_cpumask in the .data.<name> DATASEC), returning the old reference as kref_or_null<"bpf_cpumask">. The null form empties the global and returns its reference. Ownership is that of ebpf.kptr.xchg: the new reference transfers to the global's map, consuming it like release, and later use is rejected; the program checks the returned reference exactly once, then releases or transfers its present kref exactly once. The verifier treats the global's address (BPF_PSEUDO_MAP_VALUE) as the PTR_TO_MAP_VALUE of a lookup, with the kptr in the map's record built from the DATASEC VAR.
+
+**Constraints**: @name is a core.globals entry with "section": "data:<name>" and a kptr type of struct bpf_cpumask (ebpf-verify-schema; other structs are rejected by the schema). New value is an acquired kref<"bpf_cpumask"> or null. Result is kref_or_null<"bpf_cpumask"> with exactly one kref.check use. Placement and ownership follow ebpf.kptr.xchg: an ebpf.program body or an ebpf.func body with kfunc.call's per-context rules (also ebpf.if, ref.check, kref.check / kptr.check, and an ebpf.rcu.region inside ebpf.iter.num with no iterator or loop in between); rejected in callbacks, ebpf.loop, map.for_each, spin.region and scf.if. A kptr global cannot be read by global.load or written by global.store / global.atomic_add.
+
+**Lowering**: Unchanged in ②. Stage ③ calls UAPI kptr_xchg (194) with the global's address (an addressof of the placeholder llvm.mlir.global marked ebpf.global) and the new pointer (null is 0). BTFToLLVMDI places the global in .data.<name> with hidden visibility (8-byte, zero-initialized). Requirements include helper kptr_xchg, btf type_tag (format 13) and datakptr .data.<name> (format 23 — the loader declaration hidden_data_vars).
+
+**Evidence**: Out of scope — kernel evidence: (static ELF / BTF compare with the C private() arm, offline precheck, and the host cilium load of a syscall program).
+
+**Unsupported**: Struct types other than bpf_cpumask, kptr arrays, percpu_kptr, kptr_untrusted, and kptr globals in rodata / bss / data sections.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `newRef` | a checked owned kernel-struct reference, consumed exactly once by release or map transfer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `old` | an owned nullable kernel-struct reference acquired by a kfunc, with linear checking |
+
+
+
+### `ebpf.global.load` (ebpf::GlobalLoadOp)
+
+_Read a schema core.globals variable_
+
+Syntax:
+
+```
+operation ::= `ebpf.global.load` $name attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads a named integer global in rodata or bss. Volatile, like C const volatile, prevents assuming its value. ELF symbols determine byte positions; compiler does not calculate layout. Loader sets / freezes rodata before load; verifier tracks the configured value as constant. : a bss kaddr global (`{"kind": "kaddr", "struct": S}`) reads as an untrusted !ebpf.kaddr<"S"> (a scalar to the verifier — C's `static struct S *g`).
+
+**Constraints**: The op verifier confines a !ebpf.kaddr<"S"> result (a bss kaddr global) to the kaddr ops and global.store, like other untrusted kernel addresses. ebpf-verify-schema checks declared name / width in **both program and function bodies**; older behavior missed functions. No timer.callback; allowed in loops. Schema rejects map / program name collisions; stage ③ rejects other symbol collisions.
+
+**Lowering**: Stage ③ emits addressof of a placeholder llvm.mlir.global marked ebpf.global and a volatile load aligned to width/8. BuildBTF creates btf.var in .rodata / .bss DATASEC. No helper.
+
+**Evidence**: F26. C oracle; rodata configuration; three-target DATASEC / CheckGlobals (cilium replaces zero-size DATASEC offsets from symbols and does not inspect VAR type); function-body validation.
+
+**Unsupported**: Record / array globals (borrowed with ebpf.global.ref instead), kaddr globals outside bss and a void kaddr, .data, and post-load rodata updates. Go LoadObjectsWithRodata configures before load.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | signless integer or an untrusted kernel address read from a per-CPU typed ksym slot |
+
+
+
+### `ebpf.global.ref` (ebpf::GlobalRefOp)
+
+_Borrow a schema core.globals rodata / bss record global_
+
+Syntax:
+
+```
+operation ::= `ebpf.global.ref` $name attr-dict `:` type($ref)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `%r = ebpf.global.ref @g : !ebpf.borrowed<!ebpf.record<"S", N>>` borrows a record global of .rodata or .bss (C's struct and array globals — an array global is a one-field record) so the existing ref ops read and write it: ref.field.load / store (normal or once), ref.field.atomic_add, ref.index (integer elements, and record elements as a borrowed record), and calls to functions taking a borrowed record. The address is always valid (an ELF data section), so there is no null check. Field offsets come from @records; the compiler does not compute layout.
+
+**Constraints**: The op verifier requires a borrowed record. Allowed in an ebpf.loop (B / U) and ebpf.iter.num body, borrowed in each iteration (a borrow from outside is not captured — the loop capture rule); rejected in a callback loop (H) — directly in its body or in any ebpf.func reached through its calls, named by the call path — and in ebpf.map.for_each. ebpf-verify-schema requires a declared rodata / bss record global of the same record and size (a .data record is written only by scx.exit_info), in program and function bodies. A .rodata borrow is read-only (frozen after load): stores, atomics and kptr.xchg through it, through ref.index elements and element borrows, and passing it to a callee argument that writes are rejected (the read-only walk keyed by callee and argument position). Record globals hold no kptr, spin_lock or timer fields (the schema rejects them).
+
+**Lowering**: Stage ③ emits addressof of the placeholder llvm.mlir.global (a byte array of the record size, marked ebpf.global); BuildBTF makes a VAR of the record struct in the section's DATASEC, and BTF-to-DI turns the placeholder into a zero-initialized, non-constant typed global (codegen never assumes its value). No helper.
+
+**Evidence**: Out of scope — release evidence: no F id yet. Static: lit (schema, ref ops, read-only negatives, ELF / BTF shape), elf-snapshot, opcheck host row run by the B0 root smoke.
+
+**Unsupported**: .data record globals (scx.exit_info only), kptr / spin_lock / timer fields in global records, Go bindings for record globals (bindgen stops by name).
+
+Traits: `AlwaysSpeculatableImplTrait`
+
+Interfaces: `ConditionallySpeculatable`, `NoMemoryEffect (MemoryEffectOpInterface)`
+
+Effects: `MemoryEffects::Effect{}`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `ref` | a checked borrowed reference without ownership |
+
+
+
+### `ebpf.global.store` (ebpf::GlobalStoreOp)
+
+_Store to a schema core.globals bss integer variable_
+
+Syntax:
+
+```
+operation ::= `ebpf.global.store` $name `,` $value attr-dict `:` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Stores value once to a named integer .bss global (a volatile store of the declared width, like global.load — each occurrence is one access, never merged). Not atomic and not a synchronization: concurrent stores race as in C (scx_simple's vtime_now update is racy in C too). : a !ebpf.kaddr<"S"> value is stored to a bss kaddr global of the same S (8 bytes).
+
+**Constraints**: Value width equals the declared width (no implicit extension). Schema checks name / width / section in **both program and function bodies** (like global.load): .rodata is frozen after load and rejected by name, a .data record global is not an integer and rejected by name, an undeclared name is rejected. No timer.callback; loops allowed. Not in the packet-neutral table (an op outside the table stops C1 / W1, the safe side).
+
+**Lowering**: Stage ③ emits addressof of the placeholder llvm.mlir.global marked ebpf.global and a volatile store aligned to width/8. No helper.
+
+**Evidence**: Out of scope — release evidence: no F id yet. Static: lit for ③ store, schema negatives (rodata / width / undeclared / data record), opcheck host row (global-store — load acceptance only on the host, run by the B0 root smoke; opcheck does not test-run the program or compare the stored value — corrected, the stored value is not verified on a kernel).
+
+**Unsupported**: rodata and .data stores, atomic or ordered stores (use global.atomic_add for a counter), stores narrower or wider than the declaration.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `value` | signless integer or an untrusted kernel address read from a per-CPU typed ksym slot |
 
 
 
@@ -922,7 +1949,7 @@ operation ::= `ebpf.if` $cond (`->` type($results)^)? $thenRegion `else` $elseRe
 
 **Evidence**: F07. break / continue, nesting, three-target tests, and result-width / i1 differential tests.
 
-**Unsupported**: Non-integer results (references / reservations / records) and missing else; express an empty else with valueless if.yield. Result widths are i1 or 8 / 16 / 32 / 64 only; other widths are verifier-rejected (older behavior accepted i1–i128). i1 has three-target differential evidence in kernel/cmd/i1check. Loop-carried values remain i8 / i16 / i32 / i64.
+**Unsupported**: Non-integer results (references / reservations / records — the one exception is `!ebpf.str_buf<N>`, merged for an ebpf.scx.dump `%s`) and missing else; express an empty else with valueless if.yield. Result widths are i1 or 8 / 16 / 32 / 64 only; other widths are verifier-rejected (older behavior accepted i1–i128). i1 has three-target differential evidence in kernel/cmd/i1check. Loop-carried values remain i8 / i16 / i32 / i64.
 
 Traits: `RecursiveMemoryEffects`
 
@@ -936,7 +1963,7 @@ Traits: `RecursiveMemoryEffects`
 
 | Result | Description |
 | :----: | ----------- |
-| `results` | variadic of signless integer |
+| `results` | variadic of signless integer or a NUL-terminated N-byte stack string snapshot, passed only to a sched_ext dump's %s |
 
 
 
@@ -968,7 +1995,454 @@ Traits: `HasParent<IfOp>`, `Terminator`
 
 | Operand | Description |
 | :-----: | ----------- |
+| `values` | variadic of signless integer or a NUL-terminated N-byte stack string snapshot, passed only to a sched_ext dump's %s |
+
+
+
+### `ebpf.iter.num` (ebpf::IterNumOp)
+
+_Open-coded number iterator over [lo, hi) as a closed region (bpf_iter_num_new / next / destroy)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter.num` $lo `,` $hi `(` $inits `)` attr-dict `:` functional-type($inits, $results) $body
+```
+
+**Stage**: ① Input
+
+**Meaning**: Runs the body once for each i32 i in [lo, hi), in increasing order, through the kernel's open-coded number iterator (`bpf_for` in C). Integer iter_args carry values across iterations; results are the final values. lo > hi (bpf_iter_num_new -EINVAL) and a range over BPF_MAX_LOOPS (-E2BIG) run the body zero times: the failed iterator's first next returns NULL (6.6.157 / 6.12.111 / 7.1.8 / 7.3.1 kernel/bpf/bpf_iter.c). Unlike ebpf.loop there is no compile-time count: the verifier checks the body by state convergence, not by unrolling.
+
+**Constraints**: lo / hi are i32; carried values i8 / i16 / i32 / i64; one body block taking (i32, carried…) and ending in ebpf.iter.yield. ebpf.loop and ebpf.iter.num nest at most 2 deep together (an enclosing ebpf.iter.scx_dsq counts one level too — a third level is rejected by name); an iterator counts as factor 1 in the loop count product. Allowed in an ebpf.program body or an ebpf.func body (also inside ebpf.if, ref.check, kptr.check, ebpf.loop (B) / (U), ebpf.rcu.region and an ebpf.iter.scx_dsq body, whose exclusions — no ebpf.loop, iterator, rcu.region or kptr read / exchange — hold in the nested body too); the iterator closes inside that body (never across a call); rejected in callbacks other than a sched_ext_ops owner's ebpf.timer.callback (a place like an ebpf.func body), and an (H) callback loop inside it is rejected. In an ebpf.func, every context that reaches the function must allow bpf_iter_num_new for its program type and must not come through a helper callback (ebpf-verify-call-contexts — a call inside an ebpf.iter.scx_dsq body is accepted, the DSQ body's exclusions holding in the callee), and loops / iterators of the callers on the call path count toward the depth (ebpf-verify-call-graph). Body ops: the ebpf.loop allowlist plus kfunc.call without acquire / release, the sched_ext ops, kptr.check and ebpf.rcu.region. Acquire / release kfuncs, kref.check and kptr.xchg are rejected directly in the body (allowed only inside an rcu.region with no iterator or loop in between — also through calls: a function reached from the body follows the same rule). Captures are integers, context and map handles. ** A live reference may cross the iterator**: a resource that is not a reservation (a kfunc kref or kref_or_null, a socket reference) taken before the iterator and released after it — directly, or at a call whose callee (any depth) holds the iterator — is accepted wherever the iterator stands (an ebpf.iter.scx_dsq body, a program, function or timer callback body); the verifier's refsafe compares the reference set at the iterator's next and a reference held from before keeps its id (7.3.1 states.c:868-919). The premise is that the body cannot capture the reference (the capture rule above), so it is neither used nor released inside — a change that widens the captures must re-check this. A ring buffer reservation or dynptr may not cross it (ebpf-verify-ownership), and every resource stays rejected across ebpf.loop and ebpf.iter.scx_dsq. break / continue in ebpf.if / ref.check arms leave or continue the nearest ebpf.loop or ebpf.iter.num.
+
+**Lowering**: Stage ② expands to ebpf.iter_num.begin (stack slot + new), a header ending in ebpf.iter_num.next_br, the body, a latch back to the header, and one done block with ebpf.iter_num.end (destroy). next's NULL and break both reach done, so destroy runs exactly once on every exit, including after a failed new. Stage ③ calls bpf_iter_num_new / _next / _destroy (UAPI kfunc rows) on a dedicated 8-byte entry alloca (of the function in an ebpf.func).
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it on 4 kernels. the ebpf.func case is compile only. the iterator in an ebpf.iter.scx_dsq body and a reference live across it are compile only (lit — the kernel's acceptance is).
+
+**Unsupported**: Other iterators (bpf_iter_task, bpf_for_each), iterators in callbacks (also in functions reached only through them), an iterator passed to or across a call, two iterators advanced alternately (no iterator value type), and spin.region around an iterator (KF_SPINLOCK_SAFE of 7.3.1 is not modelled). Acceptance of an arbitrary body depends on verifier convergence and the kernel version.
+
+Traits: `RecursiveMemoryEffects`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `lo` | 32-bit signless integer |
+| `hi` | 32-bit signless integer |
+| `inits` | variadic of signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `results` | variadic of signless integer |
+
+
+
+### `ebpf.iter.scx_dsq` (ebpf::IterScxDsqOp)
+
+_Open-coded sched_ext DSQ iterator as a closed region (bpf_iter_scx_dsq_new / next / destroy)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter.scx_dsq` $dsqId `flags` $flags `(` $inits `)` attr-dict `:` functional-type($inits, $results) $body
+```
+
+**Stage**: ① Input
+
+**Meaning**: Runs the body once for each task queued on the user DSQ dsq_id when the iterator starts (`bpf_for_each(scx_dsq, p, dsq_id, 0)` in C), in dispatch order. The body's first argument is the task as a checked `!ebpf.rcu_ptr<"task_struct">` (KF_RET_NULL: NULL ends the iteration, so the body never sees NULL); integer iter_args carry values across iterations and the results are the final values. A failed bpf_iter_scx_dsq_new (-ENODEV / -EINVAL / -ENOENT — e.g. a built-in or unknown dsq_id) runs the body zero times: next returns NULL (7.3.1 ext.c:9910-9949).
+
+**Constraints**: dsq_id is i64; flags is 0 (SCX_DSQ_ITER_REV is rejected by name); carried values i8 / i16 / i32 / i64; one body block taking (!ebpf.rcu_ptr<"task_struct">, carried…) and ending in ebpf.iter.yield. Only in a struct_ops program that implements a sched_ext_ops member: in a member that is not sleepable, or inside ebpf.rcu.region in any member (ebpf-verify-schema — KF_RCU_PROTECTED, 7.3.1 verifier.c:13993-13994); also inside ebpf.if, ref.check and kptr.check. Also in an ebpf.func body when every context that reaches the function is such a program body (kind struct_ops in ebpf-verify-call-contexts; the sched_ext_ops member and, in a sleepable context — sleepable member, no ebpf.rcu.region on the call path or around the iterator — the RCU section rule in ebpf-verify-schema), not through a helper callback, and with no ebpf.loop, scf.if, ebpf.iter.num or ebpf.iter.scx_dsq around a call on the path. Also in a sched_ext_ops owner's ebpf.timer.callback body and the functions it reaches, but only inside a held ebpf.rcu.region (the callback context assumes no RCU); a caller's region counts only through static calls — a global function needs its own region (also for a sleepable member's program body). Rejected in other callbacks, ebpf.loop, ebpf.iter.num, another iter.scx_dsq and other kinds (tp_btf / fentry / syscall are out of scope). Body ops: the ebpf.iter.num body allowlist without ebpf.loop, ebpf.iter.scx_dsq, ebpf.rcu.region and the kptr reads / exchanges, plus — as the exception to the iterator rule of — kfunc acquire / release and ebpf.kref.check directly in the body (allowed only bpf_task_from_pid, its kref.check and bpf_task_release; any kfunc reference, e.g. scx_bpf_get_online_cpumask / scx_bpf_put_cpumask — each reference must be released on every path of the iteration, before break / continue and the iteration's end, which ebpf-verify-ownership checks; kptr.xchg stays rejected). The same holds in a function reached from the body (ebpf-verify-call-contexts). One nested ebpf.iter.num is allowed — directly or in a function called from the body — and counts toward the depth with the DSQ iterator (2 at most; a third level is named by the op verifier or, through calls, by ebpf-verify-call-graph). Its body keeps the DSQ body's exclusions (no ebpf.loop, iterator, rcu.region or kptr read / exchange) and its own rules (no acquire / release directly in it; no capture of a reference). A reference of the DSQ body (the task from bpf_task_from_pid, a cpumask from scx_bpf_get_online_cpumask) may be live across the nested ebpf.iter.num (see ebpf.iter.num), not across ebpf.loop or ebpf.iter.scx_dsq; a reservation may not. The task argument is used only by ebpf.kfield.load (not yielded, broken out with, stored, captured, passed to calls or kfuncs — a KF_RCU-less kfunc would need a trusted pointer, 7.3.1 verifier.c:13096-13110 — or checked again). break / continue in ebpf.if / ref.check / kref.check / kptr.check arms leave or continue the nearest iterator.
+
+**Lowering**: Stage ② expands to ebpf.iter_scx_dsq.begin (stack slot + new), a header ending in ebpf.iter_scx_dsq.next_br, the body, a latch back to the header, and one done block with ebpf.iter_scx_dsq.end (destroy) — the expansion of ebpf.iter.num with the DSQ ops. next's NULL and break both reach done, so destroy runs exactly once on every exit; continue reaches the latch and the next next. Stage ③ calls the UAPI kfunc rows on a dedicated entry alloca of the struct's UAPI-table size. A nested ebpf.iter.num expands inside the body with its own entry alloca (a separate slot): its break reaches its own destroy and then the rest of the DSQ body, its continue its own latch; the DSQ iterator's break / continue (after the nested one has closed) reach the DSQ done / latch.
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it. the ebpf.func case is compile only. the nested ebpf.iter.num and any kfunc reference in the body are compile only (lit — the kernel's acceptance is).
+
+**Unsupported**: SCX_DSQ_ITER_REV, scx_bpf_dsq_move* with the iterator, the iterator in TRACING / SYSCALL programs, callbacks (also functions reached only through them), and passing the task to scx ops or kfuncs (take a reference with bpf_task_from_pid of its pid instead — LAVD main.bpf.c:1377).
+
+Traits: `RecursiveMemoryEffects`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>flags</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dsqId` | 64-bit signless integer |
+| `inits` | variadic of signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `results` | variadic of signless integer |
+
+
+
+### `ebpf.iter.yield` (ebpf::IterYieldOp)
+
+_End an iterator iteration with carried values_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter.yield` $values attr-dict (`:` type($values)^)?
+```
+
+**Stage**: ① Input
+
+**Meaning**: Ends an ebpf.iter.num or ebpf.iter.scx_dsq body, passing values to the next iteration (or to the results when the iterator ends).
+
+**Constraints**: The parent is ebpf.iter.num or ebpf.iter.scx_dsq; types / count match the parent's carried values, checked by the parent verifier.
+
+**Lowering**: Stage ② branches to the latch, which returns to the header's next. Absent at ③.
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: A stop condition (use ebpf.if and ebpf.break).
+
+Traits: `HasParent<IterNumOp, IterScxDsqOp>`, `Terminator`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
 | `values` | variadic of signless integer |
+
+
+
+### `ebpf.jiffies64` (ebpf::Jiffies64Op)
+
+_Raw bpf_jiffies64() value_
+
+Syntax:
+
+```
+operation ::= `ebpf.jiffies64` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns raw 64-bit jiffies. Not converted to nanoseconds; the tick rate is the kernel's HZ.
+
+**Constraints**: Result i64 only. Same placement as cpu.id. Unknown memory effects; not packet-neutral.
+
+**Lowering**: Stage ③ calls UAPI jiffies64 and keeps its i64 return.
+
+**Evidence**: F80. Static: lit for ③ helper and ELF requirements. Kernel load is measured separately.
+
+**Unsupported**: Unit conversion, kernel measurement.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.kaddr.container_of` (ebpf::KAddrContainerOfOp)
+
+_Step back from an embedded-member address to its containing struct (CO-RE field offset)_
+
+Syntax:
+
+```
+operation ::= `ebpf.kaddr.container_of` $addr $struct_name $field attr-dict `:` type($addr) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `(void *)a - bpf_core_field_offset(struct S, field)` (container_of — LAVD power.bpf.c:1030-1031): a is the address of S's embedded member field (of struct T), and the result is the untrusted address of the S. The offset is CO-RE relocated (BPF_FIELD_BYTE_OFFSET), so it is the target kernel's.
+
+**Constraints**: a is `!ebpf.kaddr<"T">`; S.field is declared in core.kernel_types as the embedded struct `{"kind": "struct", "struct": T}` (1 to 3 path components); the result is `!ebpf.kaddr<"S">`. Same placement and guard rules as ebpf.kaddr.read.
+
+**Lowering**: Stage ③ bpfabi.core_field_offset (stage ④ marker __ebpf_core_offset.<S>.<field>, expanded by ObjectEmitter into llvm.bpf.preserve.field.info(…, 0)) and a byte GEP by its negation. requirements: kfield <prog> S field struct:T (format 17).
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+**Unsupported**: Non-embedded fields (pointers, integers, arrays) and trusted kptr bases.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>struct_name</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `addr` | an untrusted kernel address read from a per-CPU typed ksym slot |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | an untrusted kernel address read from a per-CPU typed ksym slot |
+
+
+
+### `ebpf.kaddr.eq` (ebpf::KAddrEqOp)
+
+_Compare two untrusted kernel addresses for equality_
+
+Syntax:
+
+```
+operation ::= `ebpf.kaddr.eq` $lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs)
+```
+
+**Stage**: ① Input
+
+**Meaning**: i1 true when two `!ebpf.kaddr` values are the same address — C's `BPF_CORE_READ(sg_cpu, sg_policy) == BPF_CORE_READ(policy, governor_data)`. Any two kaddr types may be compared (`kaddr<"">` is a `void *`); it is an integer compare of scalars and makes neither trusted.
+
+**Constraints**: Both operands are kaddr. The i1 is an ordinary integer.
+
+**Lowering**: Stage ③ emits icmp eq of the two pointers.
+
+**Evidence**: Out of scope — kernel evidence: compile only; runs the LAVD power path in a VM.
+
+**Unsupported**: Ordering compares and address arithmetic.
+
+Traits: `AlwaysSpeculatableImplTrait`
+
+Interfaces: `ConditionallySpeculatable`, `NoMemoryEffect (MemoryEffectOpInterface)`
+
+Effects: `MemoryEffects::Effect{}`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `lhs` | an untrusted kernel address read from a per-CPU typed ksym slot |
+| `rhs` | an untrusted kernel address read from a per-CPU typed ksym slot |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 1-bit signless integer |
+
+
+
+### `ebpf.kaddr.nonnull` (ebpf::KAddrNonNullOp)
+
+_Test an untrusted kernel address for non-NULL_
+
+Syntax:
+
+```
+operation ::= `ebpf.kaddr.nonnull` $addr attr-dict `:` type($addr)
+```
+
+**Stage**: ① Input
+
+**Meaning**: i1 true when a `!ebpf.kaddr<"S">` (a per-CPU slot's pointer value) is not NULL — C's `if (*pp)` after bpf_per_cpu_ptr. It is an integer compare on a scalar; it does not make the address trusted.
+
+**Constraints**: The operand is a kaddr. The i1 is an ordinary integer.
+
+**Lowering**: Stage ③ emits icmp ne against NULL.
+
+**Evidence**: Out of scope — kernel evidence: compile only; records the NULL / non-NULL witness in a VM.
+
+**Unsupported**: Reading through the address as a trusted BTF pointer (ebpf.kaddr.read reads it with bpf_probe_read_kernel).
+
+Traits: `AlwaysSpeculatableImplTrait`
+
+Interfaces: `ConditionallySpeculatable`, `NoMemoryEffect (MemoryEffectOpInterface)`
+
+Effects: `MemoryEffects::Effect{}`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `addr` | an untrusted kernel address read from a per-CPU typed ksym slot |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 1-bit signless integer |
+
+
+
+### `ebpf.kaddr.read` (ebpf::KAddrReadOp)
+
+_Read a kernel-struct field through an untrusted kernel address (CO-RE + bpf_probe_read_kernel)_
+
+Syntax:
+
+```
+operation ::= `ebpf.kaddr.read` $addr $field attr-dict `:` type($addr) `->` type($status) `,` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `BPF_CORE_READ(p, path)` on an untrusted `!ebpf.kaddr<"S">`: bpf_probe_read_kernel(tmp, sizeof(T), &p->path) with the field address relocated by CO-RE (byte_off). status is the raw helper value (0, or -EFAULT on a fault — the kernel then zeroes the copy); value is the field, 0 when the read failed. The field type T follows schema core.kernel_types: an integer field reads as iN of its width (8 / 16 / 32 / 64 — the sign is checked by the kfield row); a `{"kind": "kptr", "struct": U}` field reads as `!ebpf.kaddr<"U">` (still untrusted — probe_read_kernel output is a scalar); a `{"kind": "ptr"}` (void *) field reads as `!ebpf.kaddr<"">`.
+
+**Constraints**: The operand is a kaddr of a declared struct (not `kaddr<"">`). path has 1 to 3 components (a.b.c — intermediate components are embedded structs). ebpf-verify-kptr matches the leaf and the result type. In the body of an ebpf.program or a static ebpf.func. CO-RE guards (ebpf.core.field_exists / type_exists) enclosing it bind its kfield row like kfield.load's.
+
+**Lowering**: Stage ③ zeroes an 8-byte aligned stack slot, gets the field address with bpfabi.core_field_addr (stage ④ marker __ebpf_core_addr.<S>.<path>, expanded by ObjectEmitter into llvm.preserve.struct.access.index), calls helper probe_read_kernel (113) with sizeof(T), and loads T from the slot. requirements: kfield <prog> S path <iN | ptr:U | ptr:void> (ptr:void is format 25) and helper 113.
+
+**Evidence**: Out of scope — kernel evidence: compile only (the ELF matches clang's BPF_CORE_READ); a separate VM run covers it. probe_read_kernel needs CAP_PERFMON (bpf_base_func_proto).
+
+**Unsupported**: Struct and array leaves, strptr fields (ebpf.kernel.read_str), trusted kptr bases (ebpf.kfield.load), and writes.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `addr` | an untrusted kernel address read from a per-CPU typed ksym slot |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `value` | any non-token type |
+
+
+
+### `ebpf.kaddr.strncmp` (ebpf::KAddrStrncmpOp)
+
+_Read a kernel char-array field through an untrusted address and compare it with a literal (probe_read_kernel_str + bpf_strncmp)_
+
+Syntax:
+
+```
+operation ::= `ebpf.kaddr.strncmp` $addr $field `,` $literal attr-dict `:` type($addr) `->` type($status) `,` type($cmp)
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `char buf[sizeof(lit)]; bpf_core_read_str(buf, sizeof(buf), &p->field); bpf_strncmp(buf, sizeof(buf), lit)` (LAVD power.bpf.c:1016-1017). status is the raw probe_read_kernel_str value (length including the NUL, truncated to len(lit) + 1, or negative — the kernel then zeroes buf); cmp is bpf_strncmp's raw value (-1 / 0 / 1 on x86_64 — only `== 0` is a contract). When status < 0 the buffer is zeros, so cmp compares lit with an empty string.
+
+**Constraints**: The operand is a kaddr of a declared struct (not `kaddr<"">`); field is a declared 8-bit integer array (1 to 3 path components). lit is 1 to 64 bytes without NUL. Same placement and guard rules as ebpf.kaddr.read.
+
+**Lowering**: Stage ③ a len(lit) + 1 byte stack buffer, bpfabi.core_field_addr for the source, helper probe_read_kernel_str (115), then helper strncmp (182) with the buffer, len(lit) + 1 and the address of a compiler-owned .rodata NUL-terminated literal (bpf_strncmp's arg 3 is ARG_PTR_TO_CONST_STR: a frozen BPF_F_RDONLY_PROG map value — cilium and libbpf freeze .rodata). requirements: kfield [N]i8 / [N]u8 and helpers 115 and 182.
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+**Unsupported**: char * (strptr) sources, literals longer than 64 bytes, and using the order of cmp.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>literal</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `addr` | an untrusted kernel address read from a per-CPU typed ksym slot |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `cmp` | 64-bit signless integer |
+
+
+
+### `ebpf.kconfig.load` (ebpf::KconfigLoadOp)
+
+_Read a kernel config option (C's extern __kconfig)_
+
+Syntax:
+
+```
+operation ::= `ebpf.kconfig.load` $name attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads a schema core.kconfig option, which the loader fills from the target's kconfig file at load (libbpf's .kconfig map, frozen read-only). bool and char read i8, tristate i32 (enum libbpf_tristate — 0 no, 1 yes, 2 module), integers their width. A weak option absent from the file reads 0; a strong one fails the load (the requirements kconfig row lets precheck stop it first). The compiler never knows the value.
+
+**Constraints**: @CONFIG_X is a core.kconfig entry and the result width matches its type (ebpf-verify-schema).
+
+**Lowering**: Stage ③ emits addressof of the extern (or extern_weak) .kconfig global and a load of the declared width (not volatile — C's form; the map is frozen). ObjectEmitter writes the kconfig row and the VAR type (bool is _Bool, char is char, tristate is enum libbpf_tristate).
+
+**Evidence**: Out of scope — kernel evidence: compile only (DATASEC .kconfig compared with clang, offline precheck with saved config files); a separate VM run covers it.
+
+**Unsupported**: String options (char arrays) and libbpf's virtual LINUX_* values.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | signless integer |
+
+
+
+### `ebpf.kernel.d_path` (ebpf::KernelDPathOp)
+
+_Write a checked kernel path into a reservation's byte array_
+
+Syntax:
+
+```
+operation ::= `ebpf.kernel.d_path` $reservation $field `,` $ptr attr-dict `:` type($reservation) `,` type($ptr) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: d_path writes a path into the reserved field, returning raw i64 status. Positive status counts the NUL-inclusive prefix. The tail and negative-result payload are not promised zero. Nonconsuming and effectful.
+
+**Constraints**: fentry on the closed table vfs_getattr / security_inode_getattr only (not the kernel's d_path allowlist). vfs_getattr attaches on every target but is inlined into the stat path of some kernels, where an ordinary stat does not fire it (firing observed on 6.12.111 only). security_inode_getattr needs CONFIG_SECURITY; without it the symbol is absent and the load stops loudly. Checked struct path pointer from the same entry context's argument0; i8[1..128] field. Present reservation only, no function, loop, callback or post-consumption use. Requires the target-specific typed helper query.
+
+**Lowering**: Stage ③ d_path(path, reservation + field offset, count). Requirements carry helper_target with actual target and farg0/path; a generic helper prototype probe cannot authorize it.
+
+**Evidence**: Out of scope — no release F row yet; measured on 3 kernels (7.1.8 / 6.12.111 / 6.6.157) in a VM as root, fentry security_inode_getattr only: status and path bytes matched C; a disallowed target is refused by the C verifier and by helper_target before load. vfs_getattr values are not formally measured.
+
+**Unsupported**: Arbitrary pointers, field-derived paths, other hooks/targets, generic buffers and interpretation of bytes beyond the returned prefix.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `reservation` | a successful ring-buffer reservation, linearly consumed exactly once |
+| `ptr` | a pointer to an internal kernel struct obtained from tracing arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
 
 
 
@@ -1062,6 +2536,50 @@ operation ::= `ebpf.kernel.read_str` $reservation $path `,` $ptr $field attr-dic
 
 
 
+### `ebpf.kernel.read_str_buf` (ebpf::KernelReadStrBufOp)
+
+_Snapshot a kernel-struct char-pointer string into a stack string buffer, returning raw helper status_
+
+Syntax:
+
+```
+operation ::= `ebpf.kernel.read_str_buf` $ptr $field attr-dict `:` type($ptr) `->` type($buf) `,` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: As kernel.read_str, but into a fresh `!ebpf.str_buf<N>`: CO-RE reads the kptr<S> strptr field, then probe_read_kernel_str(buf, N, ptr). The helper writes up to and including the NUL (at most N − 1 bytes and a NUL), or on failure zeroes all N bytes (an empty string — 7.3.1 bpf_trace.c:280-298), so no initial value survives the read; the bytes after the NUL are never read by the allowed uses. The snapshot is the string at the time of the read (a later rename or free does not change it). **Raw** i64 status as kernel.read_str.
+
+**Constraints**: The pointer is a checked kptr; the field is declared strptr (ebpf-verify-kptr, requirements kfield strptr — format 15). 1 <= N <= 64. Only in the body of a sched_ext dump member program (ebpf-verify-schema, as scx.dump). Uses follow `!ebpf.str_buf`.
+
+**Lowering**: Stage ③ a dedicated entry-block `alloca [N x i8]` (align 8, no lifetime markers, not prefilled — the helper's ARG_PTR_TO_UNINIT_MEM), core_field_load of the 8-byte pointer, then probe_read_kernel_str(alloca, N, pointer).
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+**Unsupported**: As kernel.read_str; other destinations.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ptr` | a pointer to an internal kernel struct obtained from tracing arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `buf` | a NUL-terminated N-byte stack string snapshot, passed only to a sched_ext dump's %s |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.kfield.copy` (ebpf::KFieldCopyOp)
 
 _Copy fixed N bytes from a kernel-struct array field into a borrowed record or ring reservation array (CO-RE)_
@@ -1114,7 +2632,7 @@ operation ::= `ebpf.kfield.load` $ptr $field attr-dict `:` type($ptr) `->` type(
 
 **Stage**: ① Input
 
-**Meaning**: Reads named field through kptr<S> or checked kfunc-acquired kref<S>. Borrowed read does not consume the reference. Field-byte-offset relocation is resolved against target BTF at load. **Always once**: one volatile load per occurrence, never merged. Treated as effectful.
+**Meaning**: Reads named field through kptr<S>, checked kfunc-acquired kref<S> or the checked rcu_ptr<S> of scx.cpu_curr / scx.dsq_peek. Borrowed read does not consume the reference. Field-byte-offset relocation is resolved against target BTF at load. **Always once**: one volatile load per occurrence, never merged. Treated as effectful.
 
 **Constraints**: Nonempty field; result i8 / i16 / i32 / i64. S is btf.scope @kernel struct from schema core.kernel_types. Local fields are little-endian integers with naturally aligned placeholder offsets in declaration order. ebpf-verify-kptr checks member presence / width. Load-time kfield iN|uN checks target BTF. kfield_unknown also blocks (policy2); caps lacking KernelTypes, e.g. bpftool-recorded ebpf-target, stop CO-RE ELF loads.
 
@@ -1136,7 +2654,7 @@ operation ::= `ebpf.kfield.load` $ptr $field attr-dict `:` type($ptr) `->` type(
 
 | Operand | Description |
 | :-----: | ----------- |
-| `ptr` | a pointer to an internal kernel struct obtained from tracing arguments or a checked owned kernel-struct reference, consumed exactly once by release or map transfer |
+| `ptr` | a pointer to an internal kernel struct obtained from tracing arguments or a checked owned kernel-struct reference, consumed exactly once by release or map transfer or a checked RCU-protected kernel struct pointer |
 
 #### Results:
 
@@ -1153,12 +2671,12 @@ _Read a nullable kernel-struct pointer field using CO-RE_
 Syntax:
 
 ```
-operation ::= `ebpf.kfield.ptr` $ptr $field attr-dict `:` type($ptr) `->` type($result)
+operation ::= `ebpf.kfield.ptr` $ptr $field attr-dict `:` custom<KFieldPtrBase>(type($ptr)) `->` type($result)
 ```
 
 **Stage**: ① Input
 
-**Meaning**: Reads named field declared {kind:kptr,struct:T} from !ebpf.kptr<"S">, yielding !ebpf.kptr_or_null<"T">. Uses an eight-byte CO-RE field-offset read, always once. **Result is always nullable**; pointee reads require kptr.check present.
+**Meaning**: Reads named field declared {kind:kptr,struct:T} from a checked !ebpf.kptr<"S"> or a nonnull owned !ebpf.kref<"S"> (non-consuming, as kfield.load), yielding !ebpf.kptr_or_null<"T">. Uses an eight-byte CO-RE field-offset read, always once. **Result is always nullable**; pointee reads require kptr.check present. The result does not inherit the kref (the verifier gives the walked pointer no ref_obj_id — 7.3.1 verifier.c mark_btf_ld_reg): it stays usable after the kref is released inside the RCU read section, which the compiler does not restrict further.
 
 **Constraints**: Nonempty field name. ebpf-verify-kptr checks S member points to T; load-time kfield ptr:T checks target BTF pointer-to-struct T.
 
@@ -1180,7 +2698,7 @@ operation ::= `ebpf.kfield.ptr` $ptr $field attr-dict `:` type($ptr) `->` type($
 
 | Operand | Description |
 | :-----: | ----------- |
-| `ptr` | a pointer to an internal kernel struct obtained from tracing arguments |
+| `ptr` | a pointer to an internal kernel struct obtained from tracing arguments or a checked owned kernel-struct reference, consumed exactly once by release or map transfer |
 
 #### Results:
 
@@ -1228,6 +2746,51 @@ operation ::= `ebpf.kfield.store` $ptr $field `,` $value attr-dict `:` type($ptr
 
 
 
+### `ebpf.kfield.strncmp` (ebpf::KFieldStrncmpOp)
+
+_Compare a trusted kernel-struct char-array field with a literal (bpf_strncmp)_
+
+Syntax:
+
+```
+operation ::= `ebpf.kfield.strncmp` $ptr $field `len` $len `,` $literal attr-dict `:` type($ptr) `->` type($cmp)
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `bpf_strncmp(p->comm, N, lit)` on a trusted `!ebpf.kptr<"S">` (LAVD introspec.bpf.c:111): the field's address (CO-RE relocated) is bpf_strncmp's arg 1 directly, no copy. cmp is the raw value (-1 / 0 / 1 on x86_64 — only `== 0` is a contract).
+
+**Constraints**: field is a declared 8-bit integer array of at least N elements (1 to 3 path components); 1 ≤ N. lit is 1 to 64 bytes without NUL and may differ in length from N. In the body of an ebpf.program or a static ebpf.func; CO-RE guards bind its kfield row. the pointer must be shown trusted (bpf_strncmp takes PTR_TO_BTF_ID only with PTR_TRUSTED) — ebpf.task.current_btf, or an ebpf.ctx.arg of a tp_btf or struct_ops program directly or through ebpf.kptr.check; a field traversal (kfield.ptr — MEM_RCU), a ctx.arg of another kind (fentry) and a ctx.field pointer are rejected by name.
+
+**Lowering**: Stage ③ bpfabi.core_field_addr on the kptr, then helper strncmp (182) with N and a compiler-owned .rodata literal (as ebpf.kaddr.strncmp). requirements: kfield [M]i8 / [M]u8 (M the declared count) and helper 182.
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it (the trusted-origin rule follows the 7.3.1 source — not a kernel load).
+
+**Unsupported**: kref / rcu bases, strptr fields, and using the order of cmp. The trusted-origin rule is not a guarantee that every tp_btf ctx.arg is trusted: a raw_tp_null_args 0x2 (IS_ERR) argument (e.g. cachefiles_lookup's) becomes SCALAR_VALUE (7.3.1 btf.c:7094 → :7150-7153) and a NULL check does not make it trusted — the kernel rejects it at load (the same limit as for a direct ctx.arg).
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>literal</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ptr` | a pointer to an internal kernel struct obtained from tracing arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `cmp` | 64-bit signless integer |
+
+
+
 ### `ebpf.kfunc.call` (ebpf::KfuncCallOp)
 
 _Call a named kfunc using UAPI-declared types, flags, and program types_
@@ -1240,15 +2803,15 @@ operation ::= `ebpf.kfunc.call` $callee `(` $args `)` attr-dict `:` functional-t
 
 **Stage**: ① Input
 
-**Meaning**: Calls a kernel BTF-published function, e.g. bpf_task_from_pid(i32) -> kref_or_null<task_struct>. UAPI kfunc rows define name, signature, flags (KF_ACQUIRE / KF_RELEASE / KF_RET_NULL), and allowed program types. ebpf-abigen generates them from vmlinux FUNC_PROTO and kernel BTF_ID_FLAGS / register_btf_kfunc_id_set, not manual edits. Integer table types match widths. *S arguments accept kref<S> or kptr<S>, except release requires kref and **consumes it**. acquire + ret_null returns kref_or_null checked by kref.check; acquire alone returns kref. void has no result.
+**Meaning**: Calls a kernel BTF-published function, e.g. bpf_task_from_pid(i32) -> kref_or_null<task_struct>. UAPI kfunc rows define name, signature, flags (KF_ACQUIRE / KF_RELEASE / KF_RET_NULL), and allowed program types. ebpf-abigen generates them from vmlinux FUNC_PROTO and kernel BTF_ID_FLAGS / register_btf_kfunc_id_set, not manual edits. Integer table types match widths. *S arguments accept kref<S> or kptr<S>, except release requires kref and **consumes it**. acquire + ret_null returns kref_or_null checked by kref.check; acquire alone returns kref. void has no result. a bool result is one i1 (the kernel defines only r0's low byte); a KF_RCU kfunc also takes the checked rcu_ptr<S>; a kfunc that neither acquires nor releases takes a T of the UAPI firstmember table (struct T whose offset-0 member is S — bpf_cpumask for cpumask) for *S (btf_struct_ids_match's walk; release and acquire stay strict). A non-NULL acquire result (kref) is used only by kfunc.call, kfield.load and kptr.xchg.
 
-**Constraints**: Name must exist; flags must be known (acquire / release / ret_null / rcu); argument count / types / result must match. Release requires exactly one *S argument. Pointer results without acquire are rejected (unowned returns unsupported). Enclosing program type must be listed. Only program bodies: no func / callback / loop / map.for_each / scf.if / spin.region, which ownership checking does not traverse. Every kref path must release exactly once; every kref_or_null path must check exactly once. Ownership diagnostics identify missing release / double release / use after release.
+**Constraints**: Name must exist; flags must be known (acquire / release / ret_null / rcu / implicit_args: the kernel fills the trailing aux, the table row already omits it); argument count / types / result must match. Release requires exactly one *S argument. Pointer results without acquire are rejected (unowned returns unsupported). A memory-region parameter (`*void` followed by `<name>__sz`, e.g. bpf_cpumask_populate) is rejected by name. An rcu_ptr argument to a kfunc without KF_RCU is rejected. Enclosing program type must be listed; the sched_ext kfuncs of ScxContract.def's generic rows (scx_bpf_get_online_cpumask / scx_bpf_put_cpumask / scx_bpf_task_cgroup) are allowed in struct_ops only for sched_ext_ops members (ebpf-verify-schema — scx_kfunc_context_filter of 7.1.8 / 7.3.1). scx_bpf_task_cgroup is rejected outside struct_ops (fentry / tp_btf / syscall — the table registers tracing / syscall, but no task is in kf_tasks there) and in a call no schema member check reaches; it takes only a task argument of the member at a current->scx.kf_tasks position (ScxContract.def EBPF_SCX_TASKARGS — ctx.arg, then kptr.check); any other task (init_task / cgroup_prep_move / cgroup_cancel_move arguments, a field-chased task, scx.cpu_curr) is rejected by name (the kernel fails the scheduler with scx_error on it), and in an ebpf.func it is rejected by name (a function has no member task argument). Only program bodies or ebpf.func bodies: no callback / loop / map.for_each / scf.if / spin.region, which ownership checking does not traverse; in an ebpf.func the ownership closes in the function, and every context that reaches it must allow the call as its owner's body would (ebpf-verify-call-contexts: the program type of every reaching kind, no ebpf.loop / scf.if around a call on the path, the iterator rule for acquire / release through calls, not through a helper callback; also in a sched_ext_ops owner's ebpf.timer.callback body and the functions it reaches, with the owner's program type — scx_bpf_task_cgroup is rejected there; ebpf-verify-schema: the generic sched_ext rows only for sched_ext_ops owners) — the failing context is named. Every kref path must release exactly once; every kref_or_null path must check exactly once. Ownership diagnostics identify missing release / double release / use after release.
 
 **Lowering**: Stage ③ emits bpfabi.kfunc_call; exit checking validates table and leaves availability as Unknown for load-time loader / verifier. Stage ④ emits llvm.call to extern .ksyms llvm.func. ObjectEmitter attaches DISubprogram declaration with signature and local CO-RE structs for *S; BPF backend emits extern BTF FUNC / FUNC_PROTO / .ksyms DATASEC, call -1 (src_reg1), and R_BPF_64_32 relocation like clang __ksym. Loader resolves kernel BTF ID and rewrites src_reg2. Format13 requirements record each program / reachable subprogram kfunc signature (`*S` becomes ptr:S). Missing or differing target FUNC_PROTO blocks with kfunc_sig, guarding integer width / sign mismatches that loader / verifier may silently accept.
 
 **Evidence**: F56. Root-stage 7.1.8 syscall test-run retval / maps match C for bpf_task_from_pid / bpf_task_acquire / bpf_task_release.
 
-**Unsupported**: The table covers only bpf_task_from_pid / bpf_task_acquire / bpf_task_release; later groups add rows. Unowned pointer returns, unknown flags such as KF_SLEEPABLE, dynptr / iter / variable-length parameters, and ebpf.func calls are excluded. Availability / flags / signatures vary by kernel; original evidence is 7.1.8 only, not 6.12 / 6.6. Passing kptr such as fentry arguments to KF_RCU is unmeasured.
+**Unsupported**: The table covers bpf_task_from_pid / bpf_task_acquire / bpf_task_release, lowering-only rows and 26 bpf_cpumask_* and 2 scx_bpf_*_cpumask rows (bpf_cpumask_populate is a row but not callable), bpf_cgroup_from_id / bpf_cgroup_release / bpf_cgroup_ancestor / scx_bpf_task_cgroup; later groups add rows. rows are compile only (kernel evidence is); are compile only (kernel evidence is). Unowned pointer returns, unknown flags such as KF_SLEEPABLE, dynptr / iter / variable-length parameters, and krefs passed to or returned from an ebpf.func are excluded. The ebpf.func case is compile only. Availability / flags / signatures vary by kernel; original evidence is 7.1.8 only, not 6.12 / 6.6. Passing kptr such as fentry arguments to KF_RCU is unmeasured.
 
 #### Attributes:
 
@@ -1379,7 +2942,7 @@ operation ::= `ebpf.kptr.check` $ptr attr-dict `:` type($ptr) (`->` type($result
 
 **Meaning**: Executes present with kptr<"S"> argument for non-NULL kptr_or_null<"S">, absent otherwise. Results come from both arms' yields, like ref.check.
 
-**Constraints**: Present has one kptr with identical S; absent no arguments; both yields match result types.
+**Constraints**: Present has one kptr with identical S; absent no arguments; both yields match result types. on `!ebpf.rcu_ptr_or_null<"S">` (scx.cpu_curr / scx.dsq_peek / kptr.load_rcu) the present argument is `!ebpf.rcu_ptr<"S">` instead, and neither pointer type may be yielded.
 
 **Lowering**: Stage ② emits is_present cf.cond_br and true-edge assume_present with merge-block results. Stage ③ compares != NULL and preserves the pointer.
 
@@ -1393,13 +2956,56 @@ Traits: `RecursiveMemoryEffects`
 
 | Operand | Description |
 | :-----: | ----------- |
-| `ptr` | a nullable pointer to an internal kernel struct |
+| `ptr` | a nullable pointer to an internal kernel struct or a nullable RCU-protected kernel struct pointer returned by a KF_RCU_PROTECTED kfunc |
 
 #### Results:
 
 | Result | Description |
 | :----: | ----------- |
 | `results` | variadic of any non-token type |
+
+
+
+### `ebpf.kptr.load_rcu` (ebpf::KPtrLoadRcuOp)
+
+_Read a map-record kptr field as an RCU pointer (bpf_cpumask only)_
+
+Syntax:
+
+```
+operation ::= `ebpf.kptr.load_rcu` $ref $field attr-dict `:` type($ref) `->` type($ptr)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads the schema kptr field (BTF PTR → TYPE_TAG kptr → STRUCT S) of a checked map value record without taking ownership. The verifier marks the loaded register MEM_RCU | PTR_MAYBE_NULL when S is in rcu_protected_types (bpf_cpumask is in it in 6.6.157 / 6.12.111 / 7.1.8 / 7.3.1) and the load is in the RCU read section: an RCU lock is held, or the program is not sleepable (in_rcu_cs). Outside the section a sleepable program reads it untrusted. The result is `!ebpf.rcu_ptr_or_null<"S">`; check it with ebpf.kptr.check, whose present `!ebpf.rcu_ptr<"S">` reaches only KF_RCU kfunc.call arguments (the bpf_cpumask read kfuncs).
+
+**Constraints**: The record is a checked borrow (the block argument of ebpf.ref.check). The field path follows kptr.xchg: a non-empty dotted path of at most 3 record fields, no array indices, with a kptr leaf of struct S (ebpf-verify-records). **S is bpf_cpumask only** (the compiler's capability; other rcu_protected_types are rejected by name). Placement: an ebpf.program body, an ebpf.func body or a sched_ext_ops owner's ebpf.timer.callback body (also inside ebpf.if, ref.check, kptr.check, ebpf.iter.num, ebpf.rcu.region); rejected in other callbacks, ebpf.loop, map.for_each, spin.region and scf.if. In an ebpf.func every reaching context is checked as its owner's body (ebpf-verify-call-contexts / ebpf-verify-schema: the sleepable rule below with the call path's ebpf.rcu.region — counted only through static calls, a global function needs its own region — no ebpf.loop / scf.if / ebpf.iter.scx_dsq around a call on the path, not through a helper callback). In a timer callback context (the callback body and the functions it reaches) it must be inside a held ebpf.rcu.region (the callback assumes no RCU). In a sleepable program — a kind with the OPS tag `sleepable` (syscall, lsm_s) or a struct_ops member declared sleepable (ebpf-verify-schema) — it must be inside ebpf.rcu.region. The result is used only by one ebpf.kptr.check; rcu_ptr values are not yielded, captured, stored, passed to calls, released or exchanged.
+
+**Lowering**: Unchanged in ②. Stage ③ is one volatile 8-byte load at the field's @records offset (not split, not merged). No requirements row of its own; the map value kptr keeps the format-13 `btf type_tag` row.
+
+**Evidence**: Out of scope — kernel evidence: compile only (lit, ELF compare with the C arm); a separate VM run covers it.
+
+**Unsupported**: Struct types other than bpf_cpumask, arrays of kptr, percpu_kptr, and kptr fields of local storage or nested maps beyond kptr.xchg's placements. The compiler does not take an RCU lock implicitly.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ref` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `ptr` | a nullable RCU-protected kernel struct pointer returned by a KF_RCU_PROTECTED kfunc |
 
 
 
@@ -1417,7 +3023,7 @@ operation ::= `ebpf.kptr.xchg` $ref $field `,` ($newRef^):(`null`)? attr-dict `:
 
 **Meaning**: Installs a new reference into a schema kptr field (BTF PTR → TYPE_TAG kptr → STRUCT T), returning the old reference as kref_or_null<T>. The null form empties the field and returns its reference. **New-reference ownership transfers to the map**, consuming it like release; later use is rejected. The program owns the returned reference and must check it exactly once, then release or transfer its present kref exactly once. Kernel dtors release references left in maps on element deletion, userspace update, or map destruction.
 
-**Constraints**: Destination is checked borrowed record; new value is acquired kref<T> or null, not kptr / unchecked kref_or_null. Result is kref_or_null<T> with exactly one kref.check use. Program-body placement only, as with kfunc.call: no func / callback / loop / map.for_each / scf.if / spin.region. Record checking requires nonempty dotted record_ref path of depth ≤ 3 (e.g. in.t), no array indices, matching kptr leaf T, and each / cumulative offset divisible by8. T must be @kernel struct / schema core.kernel_types. Ownership checks every-path new-reference consumption and one result check. Direct kptr-field ref.field.load / store / atomic_add / ref.index are rejected, as is record.make of kptr-bearing records or nested parents; kernel forbids direct stores.
+**Constraints**: Destination is checked borrowed record; new value is acquired kref<T> or null, not kptr / unchecked kref_or_null. Result is kref_or_null<T> with exactly one kref.check use. Program-body placement only, as with kfunc.call: no callback / loop / map.for_each / scf.if / spin.region; also an ebpf.func body (the map value looked up in the function — a function's reference argument cannot reach it), with kfunc.call's per-context rules. Record checking requires nonempty dotted record_ref path of depth ≤ 3 (e.g. in.t), no array indices, matching kptr leaf T, and each / cumulative offset divisible by8. T must be @kernel struct / schema core.kernel_types. Ownership checks every-path new-reference consumption and one result check. Direct kptr-field ref.field.load / store / atomic_add / ref.index are rejected, as is record.make of kptr-bearing records or nested parents; kernel forbids direct stores.
 
 **Lowering**: Unchanged in ②. Stage ③ calls UAPI kptr_xchg (194) with field pointer + @records offset and new pointer (null is0). Nullable result is checked by kref.check expansion. Requirements include helper kptr_xchg, btf type_tag (format13), and map value record:S.
 
@@ -1462,13 +3068,13 @@ operation ::= `ebpf.kref.check` $ptr attr-dict `:` type($ptr) (`->` type($result
 
 **Meaning**: Non-NULL kref_or_null<S> executes present with owned kref<S>; NULL executes absent. Results come from both arm yields, like kptr.check. Each present path must transfer the reference exactly once to a release kfunc or kptr.xchg (map ownership). Absent holds no reference; NULL is not released.
 
-**Constraints**: Present has one kref with identical S; absent none; yields match result types without kref escape. kref uses are kfunc.call, kfield.load, and the new-reference operand of kptr.xchg.
+**Constraints**: Present has one kref with identical S; absent none; yields match result types without kref escape. kref uses are kfunc.call, kfield.load, and the new-reference operand of kptr.xchg. Each arm ends with ebpf.yield, or ebpf.break / ebpf.continue when the nearest loop is ebpf.iter.scx_dsq — the present reference must be released before it, and both arms escaping allows no results.
 
 **Lowering**: Stage ② emits is_present cf.cond_br / true-edge assume_present and merge arguments. Stage ③ compares != NULL and preserves the pointer.
 
 **Evidence**: F56. Acquired-reference ownership tests.
 
-**Unsupported**: Reference transport outside the region, into functions or loops; ownership checking is region-local.
+**Unsupported**: Reference transport outside the region, into functions (as arguments) or loops; ownership checking is region-local (a kref.check in an ebpf.func body checks a reference the function took itself).
 
 Traits: `RecursiveMemoryEffects`
 
@@ -1477,6 +3083,89 @@ Traits: `RecursiveMemoryEffects`
 | Operand | Description |
 | :-----: | ----------- |
 | `ptr` | an owned nullable kernel-struct reference acquired by a kfunc, with linear checking |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `results` | variadic of any non-token type |
+
+
+
+### `ebpf.ksym.exists` (ebpf::KsymExistsOp)
+
+_Test whether a weak per-CPU typed ksym VAR resolved (a guard)_
+
+Syntax:
+
+```
+operation ::= `ebpf.ksym.exists` $name attr-dict
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `bpf_ksym_exists(&v)` for a weak schema core.ksyms VAR: true when the loader resolved v in the target's BTF. libbpf 1.7 leaves an unresolved weak typed ksym at address 0 with src_reg 0, so the verifier prunes the false branch of `if (&v)` as a constant. It is a **guard**: the requirements rows of the reads it dominates carry `guarded <g>`, and the precheck excuses them only when absence is certain (requirements_format.md §9).
+
+**Constraints**: @v is a weak core.ksyms entry (ebpf-verify-schema). Its i1 has exactly one use, the condition of an ebpf.if. Stores, arith (and / or / select), call arguments, yield and other uses are rejected, so the compare stays the direct NULL test the verifier can prune (C's `a || b` folds the addresses with a bitwise OR the verifier rejects — compat.bpf.h:535-539). Write `!a || !b` as nested ebpf.if.
+
+**Lowering**: Stage ③ emits addressof of the extern_weak .ksyms global and icmp ne NULL (ld_imm64 v plus a compare with 0, like clang). ObjectEmitter writes the guard row and the ksymvar row.
+
+**Evidence**: Out of scope — kernel evidence: compile only (C shape with clang 23.1.1 and offline precheck); a separate VM run covers it.
+
+**Unsupported**: Strong VARs (they need no guard — absence fails the load), kfunc existence (bpf_ksym_exists of a function), and guards used other than as an ebpf.if condition.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 1-bit signless integer |
+
+
+
+### `ebpf.ksym.per_cpu_load` (ebpf::KsymPerCpuLoadOp)
+
+_Read a CPU's copy of a per-CPU typed ksym VAR (bpf_per_cpu_ptr and the slot load)_
+
+Syntax:
+
+```
+operation ::= `ebpf.ksym.per_cpu_load` $name `[` $cpu `]` attr-dict (`->` type($results)^)?
+              `present` $presentRegion `absent` $absentRegion
+```
+
+**Stage**: ① Input
+
+**Meaning**: C's `T *p = bpf_per_cpu_ptr(&v, cpu); if (p) { … *p … }` for a schema core.ksyms VAR with per_cpu true. bpf_per_cpu_ptr returns NULL for an out-of-range cpu, so the absent region runs then. Otherwise the present region receives the slot value: an integer iN for an integer slot, or `!ebpf.kaddr<"S">` for a `{"kind": "ptr", "struct": S}` slot (the verifier types the slot load as a scalar).
+
+**Constraints**: @v is a core.ksyms entry and the present argument matches its slot (ebpf-verify-schema). cpu is i32. Both regions end in ebpf.yield with integer results only; the slot value and kaddr do not escape. **A weak @v is read only inside the then region of an ebpf.if whose condition is ebpf.ksym.exists @v** (the same name — another VAR's guard does not count), in the same function and not across a loop callback. Otherwise ebpf-verify-guards rejects it, because the verifier could not prune the unresolved address.
+
+**Lowering**: Stage ② becomes ksym.per_cpu_br (the helper, NULL test and slot load) with the arms spliced in. Stage ③ calls helper per_cpu_ptr (153) on the address of the extern .ksyms global, compares it with NULL, and loads the slot (8 bytes for kaddr) on the true edge.
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+**Unsupported**: Struct slots (runqueues, pcpu_hot — PTR_TO_BTF_ID, another contract), plain (non-per-CPU) typed VARs, pointer-to-pointer slots, writes (MEM_RDONLY), and bpf_this_cpu_ptr.
+
+Traits: `RecursiveMemoryEffects`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `cpu` | 32-bit signless integer |
 
 #### Results:
 
@@ -1531,6 +3220,66 @@ operation ::= `ebpf.ksyscall.arg` $ctx $n attr-dict `:` type($ctx) `->` type($re
 
 
 
+### `ebpf.ktime.boot_ns` (ebpf::KtimeBootNsOp)
+
+_Raw bpf_ktime_get_boot_ns() value_
+
+Syntax:
+
+```
+operation ::= `ebpf.ktime.boot_ns` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns raw i64 nanoseconds of the boot-time clock (includes suspend), unlike ktime.ns (monotonic).
+
+**Constraints**: Result i64 only. Same placement as cpu.id. Unknown memory effects; not packet-neutral (unlike ktime.ns).
+
+**Lowering**: Stage ③ calls UAPI ktime_get_boot_ns.
+
+**Evidence**: F80. Static: lit for ③ helper and ELF requirements. Kernel load is measured separately.
+
+**Unsupported**: timer.callback (its helper set stays ktime.ns only), kernel measurement.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.ktime.coarse_ns` (ebpf::KtimeCoarseNsOp)
+
+_Raw bpf_ktime_get_coarse_ns() value_
+
+Syntax:
+
+```
+operation ::= `ebpf.ktime.coarse_ns` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns raw i64 nanoseconds of the coarse monotonic clock (tick resolution).
+
+**Constraints**: Result i64 only. Same placement as cpu.id. Unknown memory effects; not packet-neutral. 7.1.8 offers the helper only to networking program types (bpf_sk_base_func_proto: xdp, tc, socket kinds; also sock_addr / sk_reuseport), not to tracing; a tracing ELF stops at load precheck (requirements helper row), not at compile.
+
+**Lowering**: Stage ③ calls UAPI ktime_get_coarse_ns.
+
+**Evidence**: F80. Static: lit for ③ helper and ELF requirements. Kernel load is measured separately.
+
+**Unsupported**: Precision claims, kernel measurement.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
 ### `ebpf.ktime.ns` (ebpf::KtimeOp)
 
 _Raw bpf_ktime_get_ns() value_
@@ -1551,13 +3300,119 @@ operation ::= `ebpf.ktime.ns` attr-dict `:` type($result)
 
 **Evidence**: F30. Kernel op acceptance, requirements helper rows, and timer callback time reads.
 
-**Unsupported**: Other clocks (boot / tai / coarse).
+**Unsupported**: Other clocks use ktime.boot_ns / ktime.coarse_ns / ktime.tai_ns.
 
 #### Results:
 
 | Result | Description |
 | :----: | ----------- |
 | `result` | 64-bit signless integer |
+
+
+
+### `ebpf.ktime.tai_ns` (ebpf::KtimeTaiNsOp)
+
+_Raw bpf_ktime_get_tai_ns() value_
+
+Syntax:
+
+```
+operation ::= `ebpf.ktime.tai_ns` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns raw i64 nanoseconds of the TAI clock.
+
+**Constraints**: Result i64 only. Same placement as cpu.id. Unknown memory effects; not packet-neutral.
+
+**Lowering**: Stage ③ calls UAPI ktime_get_tai_ns.
+
+**Evidence**: F80. Static: lit for ③ helper and ELF requirements. Kernel load is measured separately.
+
+**Unsupported**: Clock synchronization claims, kernel measurement.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.l3_csum_replace` (ebpf::L3CsumReplaceOp)
+
+_Apply an IPv4 checksum difference and return raw helper status_
+
+Syntax:
+
+```
+operation ::= `ebpf.l3_csum_replace` $ctx `,` $offset `,` $diff attr-dict `:` type($ctx) `,` type($offset) `,` type($diff) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Apply a checksum difference at an unsigned byte offset, without terminating on failure.
+**Constraints**: Own sched_cls context. This exposes only the difference mode, not L4 checksum updates.
+All existing packet windows are invalidated on success and failure.
+**Lowering**: Call l3_csum_replace with from=0, to=diff and size=0. In net/core/filter.c,
+the zero BPF_F_HDR_FIELD_MASK branch passes to as a difference to csum_replace_by_diff.
+**Evidence**: F79. Static contracts; kernel delivery measurements are pending.
+**Unsupported**: Nonzero field sizes, general from/to replacement, L4 checksum helpers and other program kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `offset` | 32-bit signless integer |
+| `diff` | 64-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.l4_csum_replace` (ebpf::L4CsumReplaceOp)
+
+_Apply an L4 checksum difference (optional pseudo-header / mangled-zero flags) and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.l4_csum_replace` $ctx `,` $offset `,` $diff (`pseudo_hdr` $pseudo_hdr^)? (`mark_mangled_0` $mark_mangled_0^)? attr-dict `:` type($ctx) `,` type($offset) `,` type($diff) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Apply a checksum difference to the L4 checksum at an unsigned byte offset, like `l3_csum_replace`. `pseudo_hdr` marks the difference as covering pseudo-header fields (address / length changes); `mark_mangled_0` keeps a zero UDP checksum zero. Failure does not terminate the program.
+**Constraints**: Own sched_cls entry context (OPS `tc.mutation`), outside loops, static functions and callbacks. Only the difference mode (from 0, field size 0). All packet windows are invalidated on success and failure (UAPI pktinval).
+**Lowering**: Call helper l4_csum_replace(ctx, zext offset, 0, diff, flags) with flags the OR of the UAPI table's `csumflag` values for the given keywords.
+**Evidence**: F81. static contracts (lit, effect unit test); kernel execution is measured separately.
+**Unsupported**: Field sizes 2 / 4, BPF_F_MARK_ENFORCE, BPF_F_IPV6, other kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>pseudo_hdr</code></td><td>::mlir::UnitAttr</td><td>unit attribute</td></tr>
+<tr><td><code>mark_mangled_0</code></td><td>::mlir::UnitAttr</td><td>unit attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `offset` | 32-bit signless integer |
+| `diff` | 64-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
 
 
 
@@ -1611,13 +3466,13 @@ operation ::= `ebpf.loop` $count (`unroll` $unroll^)? (`callback` $callback^)? (
 
 **Meaning**: Bounded loop with constant attribute N, i32 IV starting at 0 with step 1 and unsigned comparison. Integer iter_args carry values across iterations; results are final values. Optional i32 `bound(%n)` is evaluated once at entry; iteration count is unsigned min(n, N). Strategies are default (B) bounded back edge, (U) unroll, and (H) callback via bpf_loop.
 
-**Constraints**: 0 ≤ N ≤ 64; one body block ending in ebpf.loop.yield; carried types i8 / i16 / i32 / i64; nesting depth ≤ 2 and product ≤ 64; estimated unrolled size ≤ 4096 ops. unroll and callback are mutually exclusive. Body ops come only from the allowlist, including arith, scf.if, map lookup / update / atomic_add / try_*, ref.*, packet.load, ktime, if / break / continue, loop, call, and record.make. Captures are integers, context, and map handles; (H) allows only integers and map handles. ebpf-verify-call-graph checks depth / product across callee paths. ebpf-verify-ownership rejects a live reservation crossing a loop. Limits are conservative compiler restrictions.
+**Constraints**: 0 ≤ N ≤ 4096 for (B), and 0 ≤ N ≤ 64 for (U) / (H); one body block ending in ebpf.loop.yield; carried types i8 / i16 / i32 / i64; nesting depth ≤ 2. Path products use max(N, 1): the limit is 4096 for paths containing (B) without (H), and 64 for pure (U) or any path containing (H). Mixed (U)/(B) paths retain the individual (U) count limit and estimated unrolled size ≤ 4096 ops. unroll and callback are mutually exclusive. Body ops come only from the allowlist, including arith, scf.if, map lookup / update / atomic_add / try_*, ref.*, packet.load, ktime, if / break / continue, loop, call, and record.make. Captures are integers, context, and map handles; (H) allows only integers and map handles. ebpf-verify-call-graph checks depth / product and strategy across callee paths; sibling loops do not multiply. ebpf-verify-ownership rejects a live reservation crossing a loop. Limits are conservative compiler restrictions, not a guarantee of kernel acceptance or verifier processing cost.
 
 **Lowering**: Stage ② expands (B), N ≥ 2, into header (i < N plus bound comparison), body, and latch (i + 1); N = 0 / 1 degenerate. (U) copies the body N times into straight-line code. (H) moves the body into module-level ebpf.loop_callback and replaces the loop with ebpf.bpf_loop, lowered in ③ to helper loop and a static LLVM callback. Remaining loops at ③ are rejected.
 
-**Evidence**: F07, F09. B / U on three targets; bound / stop, control flow, nesting, calls and callbacks across three targets; cross-function loops; callback extensions. Loaders without CAP_PERFMON reject (B) on 6.12 / 6.6.
+**Evidence**: F07, F09. B / U on three targets; bound / stop, control flow, nesting, calls and callbacks across three targets; cross-function loops; callback extensions. For the N=4096 integer loop combining runtime bound and trailing stop, root loads succeed on 7.1.8; both MLIR and C are rejected with 8193 jumps on 6.12.111 and return EFAULT on 6.6.157. The EFAULT cause and verifier verdict are unknown. Without CAP_PERFMON, the runtime-bound N=65 representative loads on 7.1.8, is rejected on 6.12.111, and returns EFAULT on 6.6.157 (verdict unknown). These observations do not guarantee load acceptance for other bodies within the compiler limits.
 
-**Unsupported**: N > 64, depth 3, product > 64; ring-buffer operations, packet.store, adjust_head / adjust_tail, tail_call, and map.delete in bodies. **packet.check / packet.window_load are accepted only within (U)**: all enclosing loops must be unrolled, because stage-② (U) has no cycle. Any enclosing B / H, including nesting, is explicitly rejected. References, reservations, and records cannot cross loops. There is no automatic fallback between U / B / H. A non-root loader's rejection of B is reported at load time without changing lowering.
+**Unsupported**: Counts or path products beyond the strategy-specific limits above, and depth 3; ring-buffer operations, packet.store, adjust_head / adjust_tail, tail_call, and map.delete in bodies. **packet.check / packet.window_load are accepted only within (U)**: all enclosing loops must be unrolled, because stage-② (U) has no cycle. Any enclosing B / H, including nesting, is explicitly rejected. References, reservations, and records cannot cross loops. There is no automatic fallback between U / B / H. A non-root loader's rejection of B is reported at load time without changing lowering.
 
 Traits: `AttrSizedOperandSegments`, `RecursiveMemoryEffects`
 
@@ -1997,7 +3852,7 @@ operation ::= `ebpf.map.lookup` $map `[` $key `]` attr-dict `:` type($map) `,` t
 
 **Constraints**: The op verifier rejects devmap (redirect_map only), prog_array (tail_call only), stack_trace (stack.kernel_id only), perf_event_array (perf.output only), and unknown kinds (including ringbuf here). Key type matches the map key; result pointee matches its value. Record keys are accepted only for hash / percpu_hash / lru_hash / lru_percpu_hash and lpm_trie, and must be record.make results. ebpf-verify-schema checks map kind / key / value; ebpf-verify-records checks record-value depth / dimensions.
 
-**Lowering**: Unchanged in ②; ref.check expansion supplies the NULL branch. Stage ③ calls map_lookup_elem(map, &key): integer keys use stack slots; record keys reuse record.make stack pointers. Integer key / value slots have store-to-helper lifetime.start / end markers (enabled by default), allowing LLVM to overlap per-op slots: stack use no longer scales with op count; without markers, 32 sixteen-byte operations hit the BPF stack limit. Measured processed-instruction counts mostly stay equal or decrease but sometimes increase: repository maximum is sdiv_i32_floordivsi on 6.6.157, 1057 → 1251 (+18%). **Downstream maximum on 7.1.8 is +145%, mojo-bpf-mlir testdata pkt 185 → 454**; constant-key NULL elision likely marks shared slots precise and weakens pruning. 6.x and acceptance are unchanged. `ebpf-compile --tune-spill-lifetime=false` restores v0.15.0 output.
+**Lowering**: Unchanged in ②; ref.check expansion supplies the NULL branch. After expansion, ebpf-reuse-dominated-lookup (default; `ebpf-compile --tune-reuse-dominated-lookup=false` keeps every lookup) removes a lookup of an `array` map whose map and key are the same SSA values as an earlier lookup whose assume_present properly dominates it in the same region, when its only uses are is_present branch conditions and assume_present: its NULL branch becomes the present edge and its borrow becomes the earlier one (an in-range array cell is fixed and cannot be deleted). Stage ③ calls map_lookup_elem(map, &key): integer keys use stack slots; record keys reuse record.make stack pointers. Integer key / value slots have store-to-helper lifetime.start / end markers (enabled by default), allowing LLVM to overlap per-op slots: stack use no longer scales with op count; without markers, 32 sixteen-byte operations hit the BPF stack limit. Measured processed-instruction counts mostly stay equal or decrease but sometimes increase: repository maximum is sdiv_i32_floordivsi on 6.6.157, 1057 → 1251 (+18%). **Downstream maximum on 7.1.8 is +145%, mojo-bpf-mlir testdata pkt 185 → 454**; constant-key NULL elision likely marks shared slots precise and weakens pruning. 6.x and acceptance are unchanged. `ebpf-compile --tune-spill-lifetime=false` restores v0.15.0 output.
 
 **Evidence**: F01, F04, F16. 7.1.8 acceptance and NULL-check-removal mutation rejected as map_value_or_null; record keys; hash-family records; three-target lpm_trie lookup / map-kind tests.
 
@@ -2484,6 +4339,36 @@ Traits: `HasParent<ProgramOp>`, `Terminator`
 
 
 
+### `ebpf.numa.node_id` (ebpf::NumaNodeIdOp)
+
+_Raw bpf_get_numa_node_id() value_
+
+Syntax:
+
+```
+operation ::= `ebpf.numa.node_id` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns the NUMA node of the current CPU as the helper's raw long (i64) return, without narrowing.
+
+**Constraints**: Result i64 only. Same placement as cpu.id. Unknown memory effects; not packet-neutral.
+
+**Lowering**: Stage ③ calls UAPI get_numa_node_id and keeps its i64 return.
+
+**Evidence**: F80. Static: lit for ③ helper and ELF requirements. Kernel load is measured separately.
+
+**Unsupported**: Kernel measurement earlier; multi-node behavior is not claimed from a single-node VM.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
 ### `ebpf.packet.check` (ebpf::PacketCheckOp)
 
 _Check a packet range and introduce a scoped window (stores only for XDP or cgroup_sockopt entry; window_load reads)_
@@ -2550,7 +4435,7 @@ operation ::= `ebpf.packet.load` $ctx `[` $offset `]` attr-dict `:` type($ctx) `
 
 **Constraints**: Context kind must have a PACKET range pair: XDP / __sk_buff data / data_end, cgroup_sockopt optval / optval_end, sk_msg_md data / data_end, or sk_reuseport_md data / data_end. For reuseport, UDP selection starts at UDP header, TCP SYN at TCP header, migration has length 0. **Result and offset widths are i8 / i16 / i32 / i64**; previous unsupported widths caused crashes, silent 3/16-byte reads, or internal errors. Stage ③ rejects constant offset > 65535 − width. Allowed in loops except callbacks, which cannot capture context.
 
-**Lowering**: Stage ③ reads the kind's range pair with UAPI widths via bpfabi.ctx_packet (cgroup_sockopt uses eight-byte optval / optval_end). For variable offsets, first branches to zero if off > MAX_PACKET_OFF − width, also catching high bits of i64 offsets. Then checks at + width ≤ data_end and loads bytes individually for strict alignment, except that a constant offset off with (2 + off) mod width = 0 (the strict-alignment verifier's NET_IP_ALIGN = 2 rule) is one width-aligned load (--tune-aligned-packet-load, enabled by default; =false keeps bytewise reads). i64 offsets are not zero-extended. Stage ② replaces provably in-range constant-offset reads with packet.window_load via W1.
+**Lowering**: Stage ③ reads the kind's range pair with UAPI widths via bpfabi.ctx_packet (cgroup_sockopt uses eight-byte optval / optval_end). For variable offsets, first branches to zero if off > MAX_PACKET_OFF − width, also catching high bits of i64 offsets. Then checks at + width ≤ data_end and loads bytes individually for strict alignment, except that a constant offset off with (2 + off) mod width = 0 (the strict-alignment verifier's NET_IP_ALIGN = 2 rule) is one width-aligned load (--tune-aligned-packet-load, default; =false keeps bytewise reads). i64 offsets are not zero-extended. Stage ② replaces provably in-range constant-offset reads with packet.window_load via W1.
 
 **Evidence**: F10, F20. Kernel op checks exposed variable-offset rejection; explicit offset bound; byte loads; one wide load at strict-aligned constant offsets (three targets, normal and BPF_F_STRICT_ALIGNMENT, misaligned mutant rejected); window_load rewrites; width checks and three-target i64 offsets 2^32 + 12 / 2^63 returning 0.
 
@@ -2633,9 +4518,9 @@ operation ::= `ebpf.packet.window_load` $window `[` $index `]` attr-dict `:` typ
 
 **Constraints**: Bytes must fit the window; out-of-range indices are rejected. Window is a packet.check in_range argument. Stage-② may-invalidate checking rejects any definition-to-use path crossing packet-pointer invalidation such as adjust_head / adjust_tail.
 
-**Lowering**: Stage ③ loads bytes individually at window + constant, with strict alignment; when the window's pkt.check_br offset c is constant and (2 + c + index) mod width = 0 it is one width-aligned load (--tune-aligned-packet-load, enabled by default). Stage ② rewrites constant-offset packet.load directly in in_range entry (initial rewrite), sinks it before first use (C1), and also rewrites loads in blocks dominated by in_range (W1).
+**Lowering**: Stage ③ loads bytes individually at window + constant, with strict alignment; when the window's pkt.check_br offset c is constant and (2 + c + index) mod width = 0 it is one width-aligned load (--tune-aligned-packet-load, default). Stage ② rewrites constant-offset packet.load directly in in_range entry (initial rewrite), sinks it before first use (C1), and also rewrites loads in blocks dominated by in_range (W1).
 
-**Evidence**: F10, aligned wide reads. Initial rewrite / C1 / W1, non-neutral rewrite barriers, and the decision to retain this as a source-writable op rather than stage-②-only.
+**Evidence**: F10, (aligned wide reads). Initial rewrite / C1 / W1, non-neutral rewrite barriers, and the decision to retain this as a source-writable op rather than stage-②-only.
 
 **Unsupported**: Variable indices (use packet.load). In loops, only windows from packet.check inside U loops are allowed; windows cannot cross iterations.
 
@@ -2835,7 +4720,7 @@ _EBPF program with an attach kind_
 Syntax:
 
 ```
-operation ::= `ebpf.program` $sym_name $kind custom<ProgramAttach>($attach, $attach_list) (`arch` $arch^)? (`maps` $map_symbols^)? attr-dict-with-keyword $body
+operation ::= `ebpf.program` $sym_name $kind custom<ProgramAttach>($attach, $attach_list) (`arch` $arch^)? (`sleepable` $sleepable^)? (`maps` $map_symbols^)? attr-dict-with-keyword $body
 ```
 
 **Stage**: ① Input
@@ -2845,12 +4730,13 @@ Exits use `ebpf.verdict`, `verdict.if`, `return` (kinds marked `|int` in VERDICT
 
 **Constraints**: The op verifier rejects unknown kinds, mismatched context/program kinds, mismatched or duplicate map arguments/symbols, and a second context.
 For ext (freplace), `attach` names the global BPF function being replaced (section `freplace/<function>`); the loader supplies the target program. Only `ebpf.ext.arg` may use the entry context. Stage ③ produces `llvm.func @name(i64 × (highest used index + 1)) -> i32|i64`; schema supplies the unsigned FUNC_PROTO signature (nargs / args / ret). Requirements carry family `freplace` and extret / extarg (format 11). All ebpf.return operations in a program must have the same type.
-`attach` is required for tp_btf / raw_tp (tracepoint); fentry / fexit / kprobe / kretprobe / fmod_ret (kernel function); uprobe / uretprobe (symbol); sched_cls (`ingress` / `egress`); iter (target); and sk_skb / sk_msg (a sockmap / sockhash symbol present in program maps). The latter have no map value in the section name; requirements use the schema attach_target `map:<symbol>`. sk_skb stream_parser uses `attach "stream_parser:<map>"` and `ebpf.return` for the integer message length. sk_reuseport optionally accepts `attach "migrate"` (select_or_migrate); absence means select. `arch` is required for kprobe / uprobe / kretprobe / uretprobe and is not accepted by other kinds, except the multi-probe forms below.
+`attach` is required for tp_btf / raw_tp (tracepoint); fentry / fexit / kprobe / kretprobe / fmod_ret (kernel function); uprobe / uretprobe (symbol); sched_cls (`ingress` / `egress` for TCX, `netkit_primary` / `netkit_peer` for netkit); iter (target); and sk_skb / sk_msg (a sockmap / sockhash symbol present in program maps). The latter have no map value in the section name; requirements use the schema attach_target `map:<symbol>`. sk_skb stream_parser uses `attach "stream_parser:<map>"` and `ebpf.return` for the integer message length. sk_reuseport optionally accepts `attach "migrate"` (select_or_migrate); absence means select. `arch` is required for kprobe / uprobe / kretprobe / uretprobe and is not accepted by other kinds, except the multi-probe forms below.
+sk_skb accepts `attach "verdict:<map>"` for the non-stream verdict hook (`sk_skb/verdict`, expected type sk_skb_verdict). A bare map retains stream_verdict, and `stream_parser:<map>` retains stream_parser. The prefix is excluded from the map symbol in requirements; the named target must be a bound sockmap or sockhash.
 Multi probes (kprobe_multi / kretprobe_multi / uprobe_multi / uretprobe_multi) require `arch` and an enumerated name list, e.g. `attach ["f1", "f2"]`. The verifier rejects an empty list, empty or duplicate names, and glob characters `*`, `?`, `[`. Other kinds cannot use a list. Item i becomes `mtarget <p> <i> <name>`; the loader attaches in list order and supplies cookie i, read by `ebpf.probe.target_index` (requirements_format.md §8). Schema attach_target must contain the identical ordered JSON string array, checked by ebpf-verify-schema.
 A GCC-suffixed kprobe name such as `__do_pipe_flags.part.0` may exist only in kallsyms, while BTF FUNC has the unsuffixed name. A program that reads no arguments can pass precheck, attach, and fire, but **does not observe the original function's semantics**: `.part` is an outlined remainder and omits calls returning in the inlined prefix. Argument readers stop with `kprobearg_unknown` when BTF FUNC is absent. An unsuffixed name absent from kallsyms fails attach; no other function is substituted. Downstream measurements cover three kernels.
 Schema checking requires declarations when coverage.programs = complete and checks kind / attach_target. fentry / fexit / sched_cls / kprobe / uprobe require declarations regardless of coverage. ebpf-compile accepts only program / func / timer.callback / user_ringbuf.callback directly under the module, and only `ebpf` / `arith` / `scf` operations in their bodies.
 
-**Lowering**: Stage ② (ebpf-expand-regions) expands checked regions into cf branches and multiple blocks. Stage ③ normally creates `llvm.func @name(ptr) -> i32`, with kind-derived sections: `xdp`, `tp_btf/<tp>`, `fentry/<fn>`, `fexit/<fn>`, `kprobe/<fn>`, `uprobe/<sym>`, `tcx/<direction>`, `raw_tp/<tp>`, `kretprobe/<fn>`, `uretprobe/<sym>`, `iter/<target>`, `syscall`, `fmod_ret/<fn>`, or suffix-free `kprobe.multi` / `kretprobe.multi` / `uprobe.multi` / `uretprobe.multi`. It attaches `bpfabi.prog_type`, consumed by bpfabi-requirements.
+**Lowering**: Stage ② (ebpf-expand-regions) expands checked regions into cf branches and multiple blocks. Stage ③ normally creates `llvm.func @name(ptr) -> i32`, with kind-derived sections: `xdp`, `tp_btf/<tp>`, `fentry/<fn>`, `fexit/<fn>`, `kprobe/<fn>`, `uprobe/<sym>`, `tcx/<direction>` or `netkit/primary` / `netkit/peer`, `raw_tp/<tp>`, `kretprobe/<fn>`, `uretprobe/<sym>`, `iter/<target>`, `syscall`, `fmod_ret/<fn>`, or suffix-free `kprobe.multi` / `kretprobe.multi` / `uprobe.multi` / `uretprobe.multi`. It attaches `bpfabi.prog_type`, consumed by bpfabi-requirements.
 
 **Evidence**: F01, F20, F21, F23, F24, F25, F54. Staged lowering; identical XDP ELF on two targets; tp_btf / fentry / fexit / kprobe / uprobe / sched_cls fixtures; kind × target legality; enumerated multi-probe targets.
 
@@ -2869,8 +4755,109 @@ Interfaces: `Symbol`
 <tr><td><code>attach</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
 <tr><td><code>attach_list</code></td><td>::mlir::ArrayAttr</td><td>string array attribute</td></tr>
 <tr><td><code>arch</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>sleepable</code></td><td>::mlir::UnitAttr</td><td>unit attribute</td></tr>
 <tr><td><code>map_symbols</code></td><td>::mlir::ArrayAttr</td><td>symbol ref array attribute</td></tr>
 </table>
+
+
+
+### `ebpf.random.u32` (ebpf::RandomU32Op)
+
+_Raw bpf_get_prandom_u32() value_
+
+Syntax:
+
+```
+operation ::= `ebpf.random.u32` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns a u32 pseudo-random value as raw i32 bits. Not cryptographically secure.
+
+**Constraints**: Result i32 only. Same placement as cpu.id: program bodies, static functions and B / U loops; direct helper-callback placement rejected. Unknown memory effects keep each call (two ops are two calls). Not packet-neutral.
+
+**Lowering**: Stage ③ calls UAPI get_prandom_u32 and truncates its i64 return to i32.
+
+**Evidence**: F80. Static: lit for ③ helper, truncation, retained repeated calls and ELF requirements. Kernel load is measured separately.
+
+**Unsupported**: Entropy or cryptographic quality, reproducible sequences, kernel measurement.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 32-bit signless integer |
+
+
+
+### `ebpf.rcu.region` (ebpf::RcuRegionOp)
+
+_Closed RCU read section (bpf_rcu_read_lock / bpf_rcu_read_unlock) with one exit_
+
+Syntax:
+
+```
+operation ::= `ebpf.rcu.region` (`->` type($results)^)? $body attr-dict
+```
+
+**Stage**: ① Input
+
+**Meaning**: Runs the region between bpf_rcu_read_lock and bpf_rcu_read_unlock. The only exit is the terminating ebpf.yield, so the unlock cannot be missed. Inside, the RCU-protected sched_ext ops (scx.cpu_curr / scx.dsq_peek) and task_struct.cpus_ptr are allowed even in a sleepable member, and an acquire / release kfunc pair is allowed when it closes inside the region.
+
+**Constraints**: Only in an ebpf.program body, an ebpf.func body or the body of an ebpf.timer.callback whose owners are sched_ext_ops programs (also inside ebpf.if, ref.check, kptr.check, ebpf.iter.num); the section closes inside that body (never across a call); rejected in other callbacks. Nested rcu.region is rejected (6.6.157 / 6.12.111 reject a nested bpf_rcu_read_lock — the compiler takes the strict side), also through calls: a function holding an rcu.region may not be reached through a call inside another rcu.region when every call from that region to the function is static (a global function is verified from a fresh state and may open its own section — addendum 1, decision (A)) (ebpf-verify-call-contexts, which also requires bpf_rcu_read_lock for every reaching program type and rejects the region in a function reached through a helper callback or a call inside an ebpf.iter.scx_dsq body). A call inside the region makes the callee's context not sleepable: a may-sleep op or KF_SLEEPABLE sched_ext kfunc in a function reached that way is rejected naming the context (ebpf-verify-schema) — also past a global function. ** The region's RCU guarantee reaches a callee only through static calls**: a global function does not inherit it (7.1.8 / 6.12.111 / 6.6.157 verify a global function once with the program's sleepable flag), so an RCU-dependent op there needs the global function's own region. In a timer callback context (the callback body and the functions it reaches) the region is the only RCU section — the RCU-dependent ops need it; scx.cpu_curr / scx.dsq_peek stay rejected inside it (outside kScxTimerCallbackOps). break / continue that leave the region for an enclosing loop or iterator are rejected (yield a flag and break after the region). Ops that may sleep (ebpf.sys.bpf, ebpf.sys.close and KF_SLEEPABLE sched_ext kfuncs such as scx.create_dsq) are rejected. rcu_ptr / rcu_ptr_or_null / kref / kref_or_null values may not be yielded; a kref defined outside may not be consumed inside; a reservation may not cross the region.
+
+**Lowering**: Stage ② expands to ebpf.rcu.lock, the body, ebpf.rcu.unlock. Stage ③ calls the kfuncs bpf_rcu_read_lock / bpf_rcu_read_unlock (UAPI kfunc rows).
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it on 4 kernels. the ebpf.func case and the call inside a region are compile only. the timer callback case and the global-function rule are compile only.
+
+**Unsupported**: Nested sections (7.1.8 / 7.3.1 accept them), exits other than the yield, and releasing a reference acquired outside the section (a compiler restriction that keeps ownership region-local — the kernel allows it).
+
+Traits: `NoRegionArguments`, `RecursiveMemoryEffects`
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `results` | variadic of signless integer |
+
+
+
+### `ebpf.record.field` (ebpf::RecordFieldOp)
+
+_Read one integer leaf of an ebpf.fib.lookup output record_
+
+Syntax:
+
+```
+operation ::= `ebpf.record.field` $record $path attr-dict `:` type($record) `->` type($value)
+```
+
+**Stage**: ① Input
+**Meaning**: The reading entry for the output record of `ebpf.fib.lookup` and `ebpf.skb.get_tunnel_key` only (a closed list of producers). It reads one integer leaf (`"ifindex"`) or one element of a fixed array leaf at a constant index (`"src[3]"`, `"mac[11]"`) from the helper-written buffer, as raw bytes (no byte-order conversion). The result is an ordinary integer, so it may be yielded from regions.
+**Constraints**: The operand is the first result of `ebpf.fib.lookup` or `ebpf.skb.get_tunnel_key` (a closed list; reading by the first producer type is not widened) — not a `record.make` result, a map value or another record. The path names a leaf of the record declaration with a constant in-range index for arrays; the result type equals the declared element type (ebpf-verify-records). This op is not a general record reader: other records are a separate plan.
+**Lowering**: Stage ③ loads the declared width from the buffer at the leaf's @records offset, after the helper call.
+**Evidence**: F82. static contracts; kernel values are measured separately.
+**Unsupported**: Variable indices, nested records, whole-record reads, other producers.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>path</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `record` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `value` | integer |
 
 
 
@@ -2930,22 +4917,25 @@ _Terminate with the bpf_redirect result (sched_cls or lwt_xmit)_
 Syntax:
 
 ```
-operation ::= `ebpf.redirect` $ifindex `:` type($ifindex) (`when` $cond^ `else` $else_action)? attr-dict
+operation ::= `ebpf.redirect` $ifindex `:` type($ifindex) (`flags` $flags^)? (`via` $via^)? (`when` $cond^)? (`else` $else_action^)? (`fallback` $fallback^)? attr-dict
 ```
 
 **Stage**: ① Input
 
 **Meaning**: A sched_cls / lwt_xmit terminator returning the unmodified result of `redirect(ifindex, 0)`. This requests an action; it does not report delivery. Even a nonexistent ifindex returns REDIRECT while the packet is not delivered.
 In lwt_xmit, 7 (TC_ACT_REDIRECT) equals BPF_REDIRECT and causes post-program forwarding to the ifindex device. Its skb lacks an L2 header, so **redirect to a device with a MAC header (veth, dummy, etc.) is silently dropped by the kernel**, via −ERANGE in `__bpf_redirect_common`, despite appearing successful to the sender. Only headerless devices such as tun receive it.
-With `when %c else "<verdict>"`, false returns the verdict. Ifindex belongs to the program's netns.
+With `when %c else "<verdict>"`, false returns the verdict. Alternatively, `when %c fallback { ... }` executes its region only on the false edge. The else form is semantically a single-verdict fallback; its existing lowering is retained. Ifindex belongs to the program's netns.
+In sched_cls, optional `flags "egress"` explicitly selects the default zero flags; `flags "ingress"` selects BPF_F_INGRESS. Both still return the requested action, not delivery status.
 
-**Constraints**: HasParent<"ProgramOp"> restricts this terminator to the program's top-level body. The kind must have OPS marker `redirect` (sched_cls / lwt_xmit). `when` requires `else`, whose verdict must be valid for that kind (sched_cls pass / drop; lwt_xmit ok / drop).
+**Constraints**: HasParent<"ProgramOp"> restricts this terminator to the program's top-level body. The kind must have OPS marker `redirect` (sched_cls / lwt_xmit). `when` requires exactly one of `else` or `fallback`. The fallback has one block without arguments, containing only integer arithmetic and ending in verdict or verdict.if. Helpers, nested redirects, tail calls and nested regions are rejected. Verdicts must be valid for the kind (sched_cls pass / drop; lwt_xmit ok / drop).
 
-**Lowering**: Stage ② expands the conditional form into `cf.cond_br` and unconditional `ebpf.redirect` / `ebpf.verdict`. Stage ③ zero-extends ifindex, calls `redirect` with flags 0, truncates the result to i32, and returns. A conditional form remaining at ③ is rejected.
+**Lowering**: Stage ② expands the conditional form into `cf.cond_br` and unconditional `ebpf.redirect` / `ebpf.verdict`, retaining the flags. For a fallback region, its operations move to the false-edge block and verdict.if expands normally. Stage ③ zero-extends ifindex, calls `redirect` with zero or the UAPI ingress flag, truncates the result to i32, and returns. A conditional form remaining at ③ is rejected.
 
 **Evidence**: F20. C oracle; program-kind checks; three-target and non-root measurements with nonexistent ifindex returning REDIRECT without delivery. F57: lwt_xmit test run and actual 7.1.8 netns route attach.
 
-**Unsupported**: XDP (use `ebpf.redirect_map`), lwt_in / lwt_out (kernel warns and converts BPF_REDIRECT to OK), redirect inside regions, configurable flags (always 0), and delivery-status observation. lwt_xmit cannot prepend L2 for MAC-header devices: no head-growth helper op exists.
+in sched_cls, `via "neigh"` calls redirect_neigh(ifindex, NULL, 0, 0) (the kernel fills L2 from the neighbour table; OPS `redirect.neigh`) and `via "peer"` calls redirect_peer(ifindex, 0) (switch to the peer device's netns; OPS `redirect.peer`, only attach "ingress" — the kernel drops it at egress). `via` excludes `flags`; `when` / `else` / `fallback` combine as before. Both still return the requested action, not delivery status.
+
+**Unsupported**: XDP (use `ebpf.redirect_map`), redirect_neigh nexthop params, lwt_in / lwt_out (kernel warns and converts BPF_REDIRECT to OK), redirect inside regions, flags other than egress/ingress, explicit flags in lwt_xmit, and delivery-status observation. lwt_xmit cannot prepend L2 for MAC-header devices: no head-growth helper op exists.
 
 Traits: `HasParent<ProgramOp>`, `Terminator`
 
@@ -2954,6 +4944,8 @@ Traits: `HasParent<ProgramOp>`, `Terminator`
 <table>
 <tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
 <tr><td><code>else_action</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>flags</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>via</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
 </table>
 
 #### Operands:
@@ -3079,6 +5071,55 @@ Traits: `RecursiveMemoryEffects`
 
 
 
+### `ebpf.ref.field.addr` (ebpf::RefFieldAddrOp)
+
+_The address of an embedded cpumask field of a borrowed record, for cpumask kfuncs_
+
+Syntax:
+
+```
+operation ::= `ebpf.ref.field.addr` $ref $field attr-dict `:` type($ref) `->` type($addr)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `%m = ebpf.ref.field.addr %r "path" : !ebpf.borrowed<!ebpf.record<"S", N>> -> !ebpf.cpumask_mem<M>` takes the address of a schema `{"kind": "cpumask", "size": M}` field (path rules are ref.field.load's) so cpumask kfuncs (`bpf_cpumask_set_cpu`, `test_cpu`, `copy`, …) work on the embedded struct in place — LAVD's `struct bpf_cpumask cpdom_cpumask[128]`.
+
+**Constraints**: Checked record borrow only (map value, .bss record global, record-array element). ebpf-verify-records requires the path to name a cpumask field of size M (other fields are rejected — ref.field.load / store / atomic_add on a cpumask field are rejected there too). A .rodata record cannot hold a cpumask (schema), and ebpf-verify-schema's read-only walk rejects the op through any .rodata borrow. The result is used only as a `*bpf_cpumask` / `*cpumask` argument of an ebpf.kfunc.call that neither acquires nor releases (UAPI table flags), in the same region; yield, stores, calls, other ops and loop capture are rejected by name.
+
+**Lowering**: Unchanged in ②. Stage ③ is the ref.field.* GEP (pointer + @records offset) as !llvm.ptr, passed to the kfunc call. ObjectEmitter writes `kstructsize bpf_cpumask <M>` once per distinct M (ascending; format 28) — the loader stops when the target's struct bpf_cpumask is larger than any M (`kstructsize`), absent or unknown (`kstructsize_unknown`).
+
+**Evidence**: Out of scope — release evidence: no F id yet. Static: lit (op / @records / schema negatives, btf-verify C7), BTF / ELF shape against C (argument = value or global address + field offset, same kfunc relocs), requirements corpus, layout and bindgen-hole tests, three named mutants (Check of the largest N only, GEP without the offset, yield allowed); 7.1.8 load by the B0 root smoke's opcheck row; values (neighbouring elements unchanged) are measured separately.
+
+**Unsupported**: acquire / release kfuncs (bpf_cpumask_release etc. take kptrs only), cpumask arrays (use an array of records), .rodata cpumasks, reading or writing the bytes directly.
+
+Traits: `AlwaysSpeculatableImplTrait`
+
+Interfaces: `ConditionallySpeculatable`, `NoMemoryEffect (MemoryEffectOpInterface)`
+
+Effects: `MemoryEffects::Effect{}`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ref` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `addr` | the address of an embedded struct bpf_cpumask field of a writable record |
+
+
+
 ### `ebpf.ref.field.atomic_add` (ebpf::RefFieldAtomicAddOp)
 
 _Atomically add to a named field of a borrowed record, without a result_
@@ -3114,6 +5155,89 @@ operation ::= `ebpf.ref.field.atomic_add` $ref $field `,` $delta attr-dict `:` t
 | :-----: | ----------- |
 | `ref` | any non-token type |
 | `delta` | signless integer |
+
+
+
+### `ebpf.ref.field.atomic_or` (ebpf::RefFieldAtomicOrOp)
+
+_Atomically OR into a named field of a borrowed record, without a result_
+
+Syntax:
+
+```
+operation ::= `ebpf.ref.field.atomic_or` $ref $field `,` $value attr-dict `:` type($ref) `,` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `ebpf.ref.field.atomic_or %r "path", %v : !ebpf.borrowed<!ebpf.record<…>>, iN` atomically ORs v into the field. No FETCH of the old value, like ref.field.atomic_add. Path rules are ref.field.load's.
+
+**Constraints**: The ref.field.atomic_add rules: checked record borrow only, no lpm_trie value, **width 32 / 64 only**, ebpf-verify-records path / width / spin_lock / timer / kptr / natural-alignment checks, read-only .rodata record borrows rejected (ebpf-verify-schema), allowed in loops and writing static functions, rejected inside spin.region / timer.callback.
+
+**Lowering**: Unchanged in ②. Stage ③: i64 is result-unused monotonic llvm.atomicrmw or (BPF non-FETCH `lock *(u64 *) |=`); i32 is inline asm `lock *(u32 *)($0 + 0) |= w2` with constraints `r,{r2},~{memory}` (LLVM rejects a 32-bit atomicrmw or below CPU v3). The contract is monotonic non-FETCH, as atomic_add — not the seq_cst of C's `__sync_fetch_and_or` (clang emits atomic_fetch_or there); the asm `~{memory}` clobber is a compiler barrier only.
+
+**Evidence**: Out of scope — release evidence: no F id yet. Static: lit, instruction match against clang -mcpu=v3 (__sync arm: C's FETCH or at both widths is a named expected row; relaxed `__atomic_fetch_or` arm: exact match), named mutant M-or-add, elf-snapshot, opcheck host row run by the B0 root smoke (7.1.8 load). Values and multi-CPU atomicity: measured separately.
+
+**Unsupported**: FETCH, and / xor / xchg, 8 / 16-bit widths, ref.atomic_or / map.atomic_or / elem.*, acquire / release orderings.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ref` | any non-token type |
+| `value` | signless integer |
+
+
+
+### `ebpf.ref.field.cmpxchg` (ebpf::RefFieldCmpxchgOp)
+
+_Atomically compare and exchange a named field of a borrowed record, returning the old value_
+
+Syntax:
+
+```
+operation ::= `ebpf.ref.field.cmpxchg` $ref $field `,` $expected `,` $desired attr-dict `:` type($ref) `,` type($old)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `%old = ebpf.ref.field.cmpxchg %r "path", %expected, %new : !ebpf.borrowed<!ebpf.record<…>>, iN` atomically compares the field with expected and, when equal, writes new; %old is the field's value before the operation either way (C's `__sync_val_compare_and_swap`). A boolean CAS is `arith.cmpi eq %old, %expected`. Path rules are ref.field.load's.
+
+**Constraints**: Checked record borrow only (map value, ebpf.global.ref of a .bss record, a record-array element borrow), no lpm_trie value; **width 32 / 64 only**; expected, new and the result share the type. ebpf-verify-records checks path / width, rejects spin_lock / timer / kptr fields and requires the field offset to be a multiple of the access width (natural alignment, the kernel's strict atomic access). A .rodata record borrow is read-only (ebpf-verify-schema's walk rejects it). Allowed in ebpf.loop / ebpf.iter.num bodies (the retry loop) and in static functions that write their borrowed argument; rejected inside spin.region / timer.callback.
+
+**Lowering**: Unchanged in ②. Stage ③ GEPs pointer + @records offset; i64 is llvm.cmpxchg seq_cst seq_cst (result 0 — BPF `r0 = cmpxchg_64`); i32 is inline asm `w0 = cmpxchg32_32($1 + 0, w0, w2)` with constraints `={r0},r,{r0},{r2},~{memory}` (the same form — LLVM rejects a 32-bit cmpxchg below CPU v3 and ObjectEmitter targets v1). The kernel's cmpxchg instruction is a full barrier (x86 JIT `lock cmpxchg`); the asm `~{memory}` clobber is a compiler barrier only.
+
+**Evidence**: Out of scope — release evidence: no F id yet. Static: lit (③ IR, asm string, negatives), instruction match against clang -mcpu=v3 with the value paths (expected → r0, new → r2, old from r0), named mutants, elf-snapshot, opcheck host row run by the B0 root smoke (7.1.8 load). Values and multi-CPU atomicity: measured separately.
+
+**Unsupported**: 8 / 16-bit widths, ref.cmpxchg (non-record borrows), elem.* (ref.index integer elements), acquire / release orderings (docs/memory_semantics.md).
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ref` | any non-token type |
+| `expected` | signless integer |
+| `desired` | signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `old` | signless integer |
 
 
 
@@ -3213,9 +5337,9 @@ operation ::= `ebpf.ref.index` $ref $field `[` $indices `]` attr-dict `:` type($
 
 **Stage**: ① Input
 
-**Meaning**: Indexes a borrowed record's array field with variable i32 indices. Each [] in a field template represents one variable index: arr equals arr[], and ins[].addr / m[][] are supported. For every dimension, checks unsigned index < element count. All checks passing executes in_range with a checked !ebpf.elem<iN> block argument; any failure executes out_of_range. The program explicitly defines out-of-range behavior: no implicit zero / clamp / mask result.
+**Meaning**: Indexes a borrowed record's array field with variable i32 indices. Each [] in a field template represents one variable index: arr equals arr[], and ins[].addr / m[][] are supported. For every dimension, checks unsigned index < element count. All checks passing executes in_range with a checked !ebpf.elem<iN> block argument; any failure executes out_of_range. : a template ending at an element of a record array (items[] / rows[].items[]) gives in_range a !ebpf.borrowed<!ebpf.record<"S", N>> of that element instead (S and N match the @records element). The program explicitly defines out-of-range behavior: no implicit zero / clamp / mask result.
 
-**Constraints**: Operand is a record borrow, with at least one index. in_range has one elem argument; out_of_range has none. Only elem.load / elem.store inside in_range may use it; no yield / block-argument transport. ebpf-verify-records checks template, [] / index count, and width against @records. Subprogram-argument borrows are excluded. Integer result widths are i1 / 8 / 16 / 32 / 64 only (other widths rejected; older behavior allowed i1–i128). i1 is differentially tested on three targets with kernel/cmd/i1check.
+**Constraints**: Operand is a record borrow, with at least one index. in_range has one elem argument; out_of_range has none. Only elem.load / elem.store inside in_range may use it; no yield / block-argument transport. A borrowed record element is used by the ref ops and calls inside in_range only, never by yield or a terminator; passing it to a function requires an element alignment of 8 (offset and every stride a multiple of 8 — a function assumes an 8-byte aligned borrow), a nested element is never passed. Writes through an element of a .rodata global are rejected like any .rodata write (ebpf-verify-schema). ebpf-verify-records checks template, [] / index count, and width against @records. Subprogram-argument borrows are excluded. Integer result widths are i1 / 8 / 16 / 32 / 64 only (other widths rejected; older behavior allowed i1–i128). i1 is differentially tested on three targets with kernel/cmd/i1check.
 
 **Lowering**: Stage ② zero-extends each index once, then emits per-dimension elem.in_range cf.cond_br checks and true-edge elem.at. Stage ③ uses icmp ult and base + field offset + index × stride with the same compared / addressed value. **A loop IV may cause codegen to form the address using a different induction variable**; inspect ELF.
 
@@ -3346,7 +5470,7 @@ operation ::= `ebpf.return` $value attr-dict `:` type($value)
 
 **Meaning**: Returns one integer from ebpf.func. Also terminates ebpf.program by returning a raw i32 for unnamed-verdict kinds: socket_filter retains that many bytes (0 drops, ≥ len retains all); syscall exposes BPF_PROG_TEST_RUN retval; fmod_ret calls the original function only for 0, otherwise substitutes the returned value; ext returns from the replacement function.
 
-**Constraints**: ParentOneOf accepts ebpf.func or ebpf.program, not a tail-call fallback. In a function, operand type must match the result type. In a program, kind must have VERDICTS `|int` (including socket_filter / syscall / fmod_ret, whose verifier does not impose a return range). Operand is i32, or i32 / i64 for ext as checked against schema ret. struct_ops members with schema ret void cannot contain ebpf.return. Out-of-range **constants** for `|int:<range>` are rejected: u32 means all 32 bits; lo..hi is signed. Nonconstant values are not range-checked here.
+**Constraints**: ParentOneOf accepts ebpf.func or ebpf.program, not a tail-call fallback. In a function, operand type must match the result type. In a program, kind must have VERDICTS `|int` (including socket_filter / syscall / fmod_ret, whose verifier does not impose a return range). Operand is i32, or i32 / i64 for ext and struct_ops as checked against schema ret (struct_ops i64 is for 64-bit members such as tcp_congestion_ops.get_info size_t; ③ then returns i64 and BTF gives the program the schema ret type, and a path ending in ebpf.verdict is rejected there). struct_ops members with schema ret void cannot contain ebpf.return. Out-of-range **constants** for `|int:<range>` are rejected: u32 means all 32 bits; lo..hi is signed. Nonconstant values are not range-checked here.
 
 **Lowering**: Unchanged in ②; stage ③ emits llvm.return, not a UAPI verdict. For kinds with negative range lower bounds (currently lsm), constant arms of a defining arith.select, recursively through arm selects, pass through an instruction-free inline-asm barrier (`"=r,0"`). This prevents the BPF backend folding `select c, -1, 0` to sign extension / BPF_NEG (`r = -r`), whose range the 6.12 verifier cannot track. The select becomes branches with constant R0 on each path.
 
@@ -3727,6 +5851,780 @@ operation ::= `ebpf.ringbuf.submit_dynptr` $dynptr attr-dict `:` type($dynptr)
 
 
 
+### `ebpf.scx.const` (ebpf::ScxConstOp)
+
+_A sched_ext enum constant checked against the target BTF at load time_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.const` $name attr-dict `:` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: The i64 bit pattern of a sched_ext enum constant (SCX_DSQ_LOCAL, SCX_SLICE_DFL) from the UAPI table scxenum rows, which abigen takes from the canonical vmlinux BTF.
+
+**Constraints**: The name is a scxenum row; the result is i64. Placement and program rules are those of scx.dsq_insert, but any member may use it. Also in a timer.callback whose owners are sched_ext_ops programs.
+
+**Lowering**: As ebpf.core.enum_value: Stage ③ bpfabi.core_enum_value, ④ marker `__ebpf_core_enum.<enum>.<name>`, which ObjectEmitter turns into a CO-RE enum value relocation (clang's `bpf_core_enum_value` — `ld_imm64`, `.BTF.ext` kind 11 enumval_value) on a local ENUM64 with one enumerator. The loader writes the target's value; an absent constant is poisoned by the loader. The requirements row `coreenum <prog> <enum> <name>` (format 26) makes the loader check that the constant exists (coreenum / coreenum_unknown block the load). earlier the value was an immediate checked by `enumval <prog> <enum> <name> <value>` (format 20) — the reader still checks that row in old ELFs.
+
+**Evidence**: Out of scope — kernel evidence: is compile and requirements only; resolves the relocation offline (cilium v0.22 CORERelocate) against four kernels' BTF; the VM load is measured separately.
+
+**Unsupported**: Constants of other enums.
+
+Traits: `AlwaysSpeculatableImplTrait`
+
+Interfaces: `ConditionallySpeculatable`, `NoMemoryEffect (MemoryEffectOpInterface)`
+
+Effects: `MemoryEffects::Effect{}`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `value` | any non-token type |
+
+
+
+### `ebpf.scx.cpu_curr` (ebpf::ScxCpuCurrOp)
+
+_The task running on a CPU, RCU-protected (scx_bpf_cpu_curr)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.cpu_curr` $cpu attr-dict `:` type($cpu) `->` type($task)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_cpu_curr(cpu) and returns !ebpf.rcu_ptr_or_null<"task_struct"> (KF_RET_NULL | KF_RCU_PROTECTED).
+
+**Constraints**: As scx.dsq_peek (non-sleepable members or inside ebpf.rcu.region; rejected in a timer callback context also inside ebpf.rcu.region; checked with kptr.check). cpu is i32.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_cpu_curr -> pointer, then the kfunc path. The 7.1.8 BTF keeps the bpf_prog_aux argument (no decl tag); the UAPI row is normalized (rule).
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: As scx.dsq_peek.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `cpu` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `task` | a nullable RCU-protected kernel struct pointer returned by a KF_RCU_PROTECTED kfunc |
+
+
+
+### `ebpf.scx.cpuperf_cap` (ebpf::ScxCpuperfCapOp)
+
+_A CPU's relative performance capacity (scx_bpf_cpuperf_cap)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.cpuperf_cap` $cpu attr-dict `:` type($cpu) `->` type($cap)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_cpuperf_cap(cpu) and returns the u32 capacity as i32.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and a timer.callback whose owners are sched_ext_ops programs. cpu is i32, the result i32.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_cpuperf_cap, then the kfunc path.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: None beyond the shared placement rules.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `cpu` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `cap` | any non-token type |
+
+
+
+### `ebpf.scx.cpuperf_set` (ebpf::ScxCpuperfSetOp)
+
+_Set a CPU's performance target (scx_bpf_cpuperf_set)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.cpuperf_set` $cpu `,` $perf attr-dict `:` type($cpu) `,` type($perf)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_cpuperf_set(cpu, perf). The kfunc returns nothing.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and a timer.callback whose owners are sched_ext_ops programs. cpu is i32, perf i32 (the u32 parameter).
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_cpuperf_set, then the kfunc path. The 7.1.8 BTF row is normalized as for scx.cpu_curr.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: None beyond the shared placement rules.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `cpu` | any non-token type |
+| `perf` | any non-token type |
+
+
+
+### `ebpf.scx.create_dsq` (ebpf::ScxCreateDsqOp)
+
+_Create a user dispatch queue (scx_bpf_create_dsq)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.create_dsq` $dsq `,` $node attr-dict `:` type($dsq) `,` type($node) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_create_dsq(dsq_id, node) and returns its raw i32 status (0 or negative errno).
+
+**Constraints**: As scx.dsq_insert, but the member must allow UNLOCKED kfuncs (init_task, dump, sub_attach, sub_detach, cpu_online, cpu_offline, init, exit) and the program must be sleepable (schema program key "sleepable": true — KF_SLEEPABLE). Rejected in a timer callback context — the callback body and every function it reaches, directly or through calls (the callback is not sleepable; the owner's sleepable flag does not flow into it) — and in a function reached through a call inside ebpf.rcu.region, also past a global function. dsq is i64, node i32, result i32.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_create_dsq; the program section is struct_ops.s (cilium loads it with BPF_F_SLEEPABLE).
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet.
+
+**Unsupported**: Destroying DSQs.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dsq` | any non-token type |
+| `node` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | any non-token type |
+
+
+
+### `ebpf.scx.dsq_insert` (ebpf::ScxDsqInsertOp)
+
+_Insert a task into a dispatch queue (scx_bpf_dsq_insert)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.dsq_insert` $task `,` $dsq `,` $slice `,` $flags attr-dict `:` type($task) `,` type($dsq) `,` type($slice) `,` type($flags)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_dsq_insert(p, dsq_id, slice, enq_flags), queueing the task on the DSQ with the time slice in ns. The kfunc returns nothing; the kernel reports misuse with scx_error and aborts the scheduler, not with a status.
+
+**Constraints**: The module declares `ebpf.scx_kfuncs = "insert"`. The program is a struct_ops program implementing a member of a schema struct_ops map of type sched_ext_ops whose member may call ENQUEUE kfuncs (select_cpu, enqueue, dispatch — ScxContract.def, the kernel's scx_kf_allow_flags without its #ifdef rows). The task is a checked !ebpf.kptr<"task_struct">; dsq, slice and flags are i64 (no implicit extension). Only in the program body and ebpf.if / ref.check / kptr.check regions (no loop, callback, map.for_each or spin.region). (the placement every sched_ext op shares) Also in an ebpf.func body and the same regions inside it, when every context that reaches the function allows the op as its owner's body would: a sched_ext struct_ops owner (ebpf-verify-call-contexts — kind and kfunc program type), the owner's sched_ext_ops member in the member table, KF_SLEEPABLE only in a sleepable context (a sleepable member with no ebpf.rcu.region on the call path), the RCU-section ops only outside a sleepable context, dump only in the dump members (ebpf-verify-schema); no ebpf.loop / scf.if around a call on the path; not through a helper callback; through a sched_ext_ops owner's ebpf.timer.callback only the ops of kScxTimerCallbackOps — the compiler's conservative subset, not the kernel's filter — and nothing KF_SLEEPABLE (as in the callback body). The failing context is named (owner, kind, member, entry, call path, sleepable).
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_dsq_insert; ④ and ObjectEmitter use the kfunc path (.ksyms extern, BTF FUNC_PROTO from the UAPI kfunc row, format-13 kfunc requirement row). The UAPI row is the BPF-visible prototype: KF_IMPLICIT_ARGS drops the trailing bpf_prog_aux.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: Other DSQ kfuncs and member allow rows under kernel config #ifdef (cgroup_*).
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | any non-token type |
+| `dsq` | any non-token type |
+| `slice` | any non-token type |
+| `flags` | any non-token type |
+
+
+
+### `ebpf.scx.dsq_insert_vtime` (ebpf::ScxDsqInsertVtimeOp)
+
+_Insert a task into a dispatch queue in virtual-time order (scx_bpf_dsq_insert_vtime)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.dsq_insert_vtime` $task `,` $dsq `,` $slice `,` $vtime `,` $flags attr-dict `:` type($task) `,` type($dsq) `,` type($slice) `,` type($vtime) `,` type($flags)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_dsq_insert_vtime(p, dsq_id, slice, vtime, enq_flags), queueing the task on a user DSQ ordered by vtime.
+
+**Constraints**: As scx.dsq_insert (ENQUEUE members); all scalars are i64.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_dsq_insert_vtime, then the kfunc path.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet.
+
+**Unsupported**: As scx.dsq_insert.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | any non-token type |
+| `dsq` | any non-token type |
+| `slice` | any non-token type |
+| `vtime` | any non-token type |
+| `flags` | any non-token type |
+
+
+
+### `ebpf.scx.dsq_move_to_local` (ebpf::ScxDsqMoveToLocalOp)
+
+_Move the first task of a DSQ to the local DSQ (scx_bpf_dsq_move_to_local)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.dsq_move_to_local` $dsq attr-dict `:` type($dsq) `->` type($moved)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_dsq_move_to_local(dsq_id) and returns i1 true if a task was moved (the kfunc's bool).
+
+**Constraints**: As scx.dsq_insert, but the member must allow DISPATCH kfuncs (dispatch). dsq is i64, the result i1.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_dsq_move_to_local -> i8 compared != 0.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet.
+
+**Unsupported**: Other DSQ move kfuncs.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dsq` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `moved` | any non-token type |
+
+
+
+### `ebpf.scx.dsq_nr_queued` (ebpf::ScxDsqNrQueuedOp)
+
+_The number of tasks in a DSQ (scx_bpf_dsq_nr_queued)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.dsq_nr_queued` $dsq attr-dict `:` type($dsq) `->` type($count)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_dsq_nr_queued(dsq_id) and returns its raw i32 (the count, or a negative errno for a missing DSQ).
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and a timer.callback whose owners are sched_ext_ops programs. dsq is i64, the result i32.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_dsq_nr_queued, then the kfunc path.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: None beyond the shared placement rules.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dsq` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `count` | any non-token type |
+
+
+
+### `ebpf.scx.dsq_peek` (ebpf::ScxDsqPeekOp)
+
+_The first task of a DSQ, RCU-protected (scx_bpf_dsq_peek)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.dsq_peek` $dsq attr-dict `:` type($dsq) `->` type($task)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_dsq_peek(dsq_id) and returns the first task as !ebpf.rcu_ptr_or_null<"task_struct"> (KF_RCU_PROTECTED | KF_RET_NULL — the verifier marks it MEM_RCU | PTR_MAYBE_NULL, not trusted).
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and only in a member program that is not sleepable (the RCU read section — ebpf-verify-schema; ScxContract.h scxNeedsRcuSection) or inside ebpf.rcu.region (a caller's region counts only through static calls). In a timer callback context (a sched_ext_ops owner's ebpf.timer.callback and the functions it reaches) it is rejected also inside ebpf.rcu.region: it is outside kScxTimerCallbackOps, the compiler's conservative subset (not the kernel's filter). dsq is i64. The result must be checked with ebpf.kptr.check; its present !ebpf.rcu_ptr reaches only scx.task_cpu and kfield.load.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_dsq_peek -> pointer, then the kfunc path (BTF *task_struct of the local @kernel type).
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: Sleepable members (no explicit RCU lock — B2), and passing the task to trusted-argument kfuncs.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dsq` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `task` | a nullable RCU-protected kernel struct pointer returned by a KF_RCU_PROTECTED kfunc |
+
+
+
+### `ebpf.scx.dsq_reenq` (ebpf::ScxDsqReenqOp)
+
+_Re-enqueue the tasks of a DSQ (scx_bpf_dsq_reenq)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.dsq_reenq` $dsq `,` $flags attr-dict `:` type($dsq) `,` type($flags)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_dsq_reenq(dsq_id, reenq_flags) with reenq_flags 0. The kfunc returns nothing.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and a timer.callback whose owners are sched_ext_ops programs. dsq is i64; flags is i64 and must be an arith.constant 0 (the SCX_REENQ_* flags are outside B1).
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_dsq_reenq, then the kfunc path.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: Non-zero reenq flags.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dsq` | any non-token type |
+| `flags` | any non-token type |
+
+
+
+### `ebpf.scx.dump` (ebpf::ScxDumpOp)
+
+_Write a formatted line to the sched_ext debug dump (scx_bpf_dump_bstr)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.dump` $format `(` $args `)` attr-dict (`:` type($args)^)?
+```
+
+   **Stage**: ① Input
+
+   **Meaning**: Calls scx_bpf_dump_bstr(fmt, data, data__sz), appending to the dump the kernel collects when the scheduler exits with a dump.
+
+   **Constraints**: As scx.error, but only in the dump, dump_cpu and dump_task members (ebpf-verify-schema; ScxContract.h scxDumpMember). The kernel puts the kfunc in the any set and reports misuse outside ops.dump* with scx_error at run time; the compiler is the stricter side.
+An argument may be a `!ebpf.str_buf<N>` at a `%s`. The format is checked strictly when it has a str_buf argument, a `%s`, or an ambiguous `%` (the whole format is classified first, so an unsupported conversion before or after a `%s` cannot return it to the i64-only path): plain text without ASCII control bytes other than whitespace, `%%`, and conversions of `[0 +-]` flags, a width, then `s` (before NUL, whitespace or punctuation) or `[l[l]]{i,d,u,x,X}` — a closed subset of the kernel's bpf_bprintf_prepare (7.3.1 helpers.c:846-1049); every parse error is a rejection. Exactly one argument per conversion; `%s` takes a str_buf and the others an i64. The bin_args bound: Σ N over the `%s` + Σ (3 + 4 | 8) over the integers ≤ MAX_BPRINTF_BIN_ARGS 512 (else the kernel fails the dump with -ENOSPC — a compile error). A str_buf argument must come from the same program body (the nearest enclosing boundary skipping ebpf.if / kptr.check / kref.check / ref.check).
+
+   **Lowering**: As scx.error, calling scx_bpf_dump_bstr. A `%s` argument's data entry is the buffer's stack address (ptrtoint of its alloca); the kernel copies it with copy_from_kernel_nofault_str.
+
+   **Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+   **Unsupported**: The `%p` family, `%c`, a precision and other kernel conversions in a strict format; `%s` of anything other than a `!ebpf.str_buf` (a kernel char pointer or a .rodata string); string buffers longer than 64 bytes.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>format</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `args` | variadic of any non-token type |
+
+
+
+### `ebpf.scx.error` (ebpf::ScxErrorOp)
+
+_Abort the scheduler with a formatted message (scx_bpf_error_bstr)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.error` $format `(` $args `)` attr-dict (`:` type($args)^)?
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_error_bstr(fmt, data, data__sz): the kernel formats the message with bstr_printf and disables the scheduler.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and a timer.callback whose owners are sched_ext_ops programs. The format is a non-empty literal without NUL; 0 to 12 i64 arguments (MAX_BPRINTF_VARARGS). A format with only i64 arguments, no `%s` and no ambiguous `%` (a `%` right after flags / width, or at the end) is not parsed further (unchanged earlier); otherwise it is strict — see scx.dump — and scx.error / scx.exit reject it: `%s` and `!ebpf.str_buf` are for scx.dump only.
+
+**Lowering**: Stage ③ places the format (with one NUL) in a compiler-owned static of writable .data (`__ebpf_scx_fmt_<sha256>` — as C's scx_bpf_bstr_preamble, not .rodata: the kfunc's char *fmt is a fixed-size memory argument the verifier checks for read and write, which a BPF_F_RDONLY_PROG .rodata map value fails), stores the arguments to a stack u64 array in order and passes data__sz = 8 × count; with no arguments a zeroed one-element stack u64 array and data__sz = 8 (as C's ___param[narg ?: 1] = {} — the data pointer is not a nullable kfunc argument, and 7.3.1 rejects NULL; earlier NULL and 0 was a design error).
+
+**Evidence**: Out of scope — kernel evidence: compile only. : the 7.3.1 verifier rejected the earlier .rodata format (write into map forbidden in simple_init); moves it to .data, and loaded simple / cpu0 / b1cover on 7.3.1 but rejected the zero-argument call's NULL data (Possibly NULL pointer passed to trusted R2 — scx-insert); the zeroed one-element array's 7.3.1 load is pending.
+
+**Unsupported**: Format checking of the i64-only formats, `%s` (scx.dump only) and non-i64 integer arguments (adds scx.exit and scx.dump with the same shape).
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>format</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `args` | variadic of any non-token type |
+
+
+
+### `ebpf.scx.exit` (ebpf::ScxExitOp)
+
+_Exit the scheduler with a code and formatted message (scx_bpf_exit_bstr)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.exit` $code `,` $format `(` $args `)` attr-dict `:` type($code) (`,` type($args)^)?
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_exit_bstr(exit_code, fmt, data, data__sz): the kernel formats the message with bstr_printf and disables the scheduler with SCX_EXIT_UNREG_BPF.
+
+**Constraints**: As scx.error (any member; non-empty literal without NUL; 0 to 12 i64 arguments), with a leading i64 exit code. Also in a timer.callback whose owners are sched_ext_ops programs.
+
+**Lowering**: As scx.error: the format in a compiler-owned static of writable .data, the arguments in a stack u64 array, data__sz = 8 × count, and a zeroed one-element array with data__sz = 8 for none.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it); the zero-argument form's data follows scx.error.
+
+**Unsupported**: As scx.error — `%s` and string buffers are for scx.dump only.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>format</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `code` | any non-token type |
+| `args` | variadic of any non-token type |
+
+
+
+### `ebpf.scx.exit_info` (ebpf::ScxExitInfoOp)
+
+_Record a sched_ext exit (the UEI_RECORD of tools/sched_ext) into a .data record global_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.exit_info` $info `,` $uei attr-dict `:` type($info)
+```
+
+**Stage**: ① Input
+
+**Meaning**: In the order of UEI_RECORD (7.3.1 user_exit_info.bpf.h): probe_read_kernel_str(&uei.reason, 128, ei->reason); probe_read_kernel_str(&uei.msg, 1024, ei->msg); uei.exit_code = ei->exit_code; uei.exit_cpu = −1; then a 32-bit compare-and-exchange of uei.kind from its value just read to ei->kind (the publish — a memory clobber also stops compiler reordering). Helper statuses are discarded, as in C.
+
+**Constraints**: Placement and program rules are those of scx.dsq_insert (the family declaration, a sched_ext struct_ops program body and its if / ref.check / kptr.check regions — or an ebpf.func body every reaching context of which is such a program body), but any member may use it — it calls no kfunc. ei is !ebpf.kptr<"scx_exit_info">; core.kernel_types declares scx_exit_info with kind {"kind": "enum", "bits": 32}, exit_code i64, reason and msg strptr (ebpf-verify-kptr). @uei is a core.globals entry with "section": "data" whose record is exactly {kind i32 @0, exit_cpu i32 @4, exit_code i64 @8, reason [128]i8 @16, msg [1024]i8 @144} of 1168 bytes — the C struct user_exit_info (ebpf-verify-schema).
+
+**Lowering**: Stage ③ reads the four kernel fields with bpfabi.core_field_load (requirements kfield rows `scx_exit_info kind enum:32`, `exit_code i64`, `reason strptr`, `msg strptr`), calls helper probe_read_kernel_str twice into the global at offsets 16 and 144, stores exit_code at 8 and −1 at 4, volatile-loads kind and swaps it with inline asm `w0 = cmpxchg32_32(r + 0, w0, w2)` (ObjectEmitter's CPU v1 has no 32-bit cmpxchg in LLVM; the instruction encodes at any CPU version).
+
+**Evidence**: Out of scope — kernel evidence: is compile and offline precheck only, no sched_ext load.
+
+**Unsupported**: The dump buffer (uei_dump), the exit_cpu field of 7.3.1 (always −1; reading it would block 6.12 / 7.1.8), and other exit records.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>uei</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `info` | a pointer to an internal kernel struct obtained from tracing arguments |
+
+
+
+### `ebpf.scx.kick_cpu` (ebpf::ScxKickCpuOp)
+
+_Kick a CPU to reschedule (scx_bpf_kick_cpu)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.kick_cpu` $cpu `,` $flags attr-dict `:` type($cpu) `,` type($flags)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_kick_cpu(cpu, flags). The kfunc returns nothing.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and a timer.callback whose owners are sched_ext_ops programs. cpu is i32, flags i64 (SCX_KICK_IDLE / PREEMPT / WAIT through scx.const).
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_kick_cpu, then the kfunc path.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: None beyond the shared placement rules.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `cpu` | any non-token type |
+| `flags` | any non-token type |
+
+
+
+### `ebpf.scx.now` (ebpf::ScxNowOp)
+
+_The sched_ext clock in ns (scx_bpf_now)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.now` attr-dict `:` type($ns)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_now() and returns the u64 clock as i64.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it, and a timer.callback whose owners are sched_ext_ops programs. Also a syscall program (the kind's OPS tag scx.now — scx_kfunc_context_filter allows the in_any kfuncs for BPF_PROG_TYPE_SYSCALL in 7.3.1 / 7.1.8), directly and through ebpf.func (every reaching context checked by ebpf-verify-call-contexts). The result is i64. Not Pure: each occurrence is one call.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_now, then the kfunc path.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it). the syscall case is compile only (lit); 6.12.111 has no scx_bpf_now, so its kfunc row stops the load before it (observes it).
+
+**Unsupported**: Other sched_ext kfunc ops in syscall programs (the kernel's filter also allows the unlocked / select_cpu / idle sets — not opened). Nothing else beyond the shared placement rules.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `ns` | any non-token type |
+
+
+
+### `ebpf.scx.pick_idle_cpu` (ebpf::ScxPickIdleCpuOp)
+
+_Pick an idle CPU from a task's allowed CPUs (scx_bpf_pick_idle_cpu)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.pick_idle_cpu` $cpus `,` $flags attr-dict `:` type($cpus) `,` type($flags) `->` type($cpu)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_pick_idle_cpu(cpus_allowed, flags) and returns the raw i32 (an idle CPU it claimed, or −EBUSY).
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it (scx_kfunc_ids_idle), and only in a member program that is not sleepable (task->cpus_ptr is MEM_RCU only in the RCU read section). The cpumask is the checked !ebpf.kptr<"cpumask"> of `ebpf.kfield.ptr %t "cpus_ptr"` where %t is a checked !ebpf.kptr<"task_struct"> (the op verifier follows the definitions; schema core.kernel_types declares task_struct.cpus_ptr as {"kind": "kptr", "struct": "cpumask"}). flags is i64 (SCX_PICK_IDLE_CORE through scx.const, or 0). If the struct_ops has an update_idle member, its flags must have SCX_OPS_KEEP_BUILTIN_IDLE (UAPI scxenum row; ebpf-verify-schema).
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_pick_idle_cpu, then the kfunc path (BTF *cpumask of the local @kernel type).
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: Other cpumasks (B3) and sleepable members.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `cpus` | any non-token type |
+| `flags` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `cpu` | any non-token type |
+
+
+
+### `ebpf.scx.select_cpu_dfl` (ebpf::ScxSelectCpuDflOp)
+
+_Run the default CPU selection (scx_bpf_select_cpu_dfl)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.select_cpu_dfl` $task `,` $prev `,` $wake attr-dict `:` type($task) `,` type($prev) `,` type($wake) `->` type($cpu) `,` type($idle)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle) and returns the selected CPU (i32) and whether it was idle (i1 from the bool out parameter).
+
+**Constraints**: As scx.dsq_insert, but the member must allow SELECT_CPU or UNLOCKED kfuncs. prev is i32, wake i64; results i32 and i1.
+
+**Lowering**: Stage ③ allocates a one-byte stack slot, stores 0, passes its address as is_idle, calls the kfunc and loads the byte (!= 0).
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet.
+
+**Unsupported**: scx_bpf_select_cpu_and and cpumask kfuncs.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | any non-token type |
+| `prev` | any non-token type |
+| `wake` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `cpu` | any non-token type |
+| `idle` | any non-token type |
+
+
+
+### `ebpf.scx.task_cpu` (ebpf::ScxTaskCpuOp)
+
+_The CPU a task is on (scx_bpf_task_cpu)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.task_cpu` $task attr-dict `:` type($task) `->` type($cpu)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_task_cpu(p) and returns the i32 CPU.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it. The task is a checked !ebpf.kptr<"task_struct">, a checked !ebpf.rcu_ptr<"task_struct"> or a nonnull owned !ebpf.kref<"task_struct"> (the kfunc is KF_RCU, which takes trusted, referenced and RCU pointers — 7.3.1 verifier.c:13092-13120; the kref is not consumed). The result is i32.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_task_cpu, then the kfunc path.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: Tasks from other origins.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `cpu` | any non-token type |
+
+
+
+### `ebpf.scx.task_set_dsq_vtime` (ebpf::ScxTaskSetDsqVtimeOp)
+
+_Set a task's DSQ virtual time (scx_bpf_task_set_dsq_vtime)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.task_set_dsq_vtime` $task `,` $vtime attr-dict `:` type($task) `,` type($vtime)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_task_set_dsq_vtime(p, vtime). The kfunc's bool result (false for a task it does not own) is dropped.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it (scx_kfunc_ids_any). vtime is i64.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_task_set_dsq_vtime -> i8, result unused.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet.
+
+**Unsupported**: Reading the bool result.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | any non-token type |
+| `vtime` | any non-token type |
+
+
+
+### `ebpf.scx.task_set_slice` (ebpf::ScxTaskSetSliceOp)
+
+_Set a task's time slice (scx_bpf_task_set_slice)_
+
+Syntax:
+
+```
+operation ::= `ebpf.scx.task_set_slice` $task `,` $slice attr-dict `:` type($task) `,` type($slice)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls scx_bpf_task_set_slice(p, slice). The kfunc's bool result is dropped, as in scx.task_set_dsq_vtime.
+
+**Constraints**: As scx.dsq_insert, but any sched_ext_ops member may call it. The task is a checked !ebpf.kptr<"task_struct"> (not an rcu_ptr); slice is i64.
+
+**Lowering**: Stage ③ bpfabi.kfunc_call scx_bpf_task_set_slice -> i8, result unused.
+
+**Evidence**: Out of scope — kernel evidence: compile only, no kernel load or verifier result yet (a separate VM run covers it).
+
+**Unsupported**: Reading the bool result.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | any non-token type |
+| `slice` | any non-token type |
+
+
+
 ### `ebpf.seq.write` (ebpf::SeqWriteOp)
 
 _Bpf_seq_write: write complete record bytes to an iterator seq_file and return status_
@@ -3955,6 +6853,51 @@ Traits: `HasParent<ProgramOp>`, `Terminator`
 
 
 
+### `ebpf.sk.redirect.request` (ebpf::SkRedirectRequestOp)
+
+_Request a socket redirect and continue with raw helper status_
+
+Syntax:
+
+```
+operation ::= `ebpf.sk.redirect.request` $ctx `,` $map `[` $key `]` (`ingress` $ingress^)? `:` type($ctx) `,` type($map) `,` type($key) `->` type($status) attr-dict
+```
+
+**Stage**: ① Input
+
+**Meaning**: Request sk_redirect_map or sk_redirect_hash without terminating. The raw i64 status is SK_PASS on success and SK_DROP on failure. A successful request sets the destination and ingress flag; a failed request preserves an earlier successful destination and flag. The final pass verdict applies the last successful request; drop suppresses delivery. The kernel clears the destination before the next program execution. Status acknowledges a request, not delivery.
+
+**Constraints**: Only the entry context of an sk_skb program, sockmap with i32 key or sockhash with matching key type. Flags are zero or ingress. Multiple requests and bounded/unrolled loop bodies are allowed. Unknown effects preserve calls even when status is unused.
+
+**Lowering**: Stage ② preserves the operation and result through region expansion. Stage ③ calls helper52/72 with a zero-extended sockmap key or stack sockhash key, returning raw i64 without truncation or return.
+
+**Evidence**: F61. On 7.1.8, 20 C/MLIR pairs using own TCP sockets match raw status, post-request state and full payload, including destination/flag overwrite, failed-request preservation, final drop and next-skb clearing. Observations on each of 6.12.111 and 6.6.157 show 20 MLIR modes matching expectations and 16 complete C/MLIR pairs. Four C loop fixtures per older kernel are rejected as infinite loops (the IV address is passed to map update); those modes have no C oracle and are not differential successes.
+
+**Unsupported**: Static functions, helper callbacks, non-sk_skb contexts, arbitrary flags, and when syntax. The existing terminating sk.redirect keeps its own semantics.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>ingress</code></td><td>::mlir::UnitAttr</td><td>unit attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `map` | any non-token type |
+| `key` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.sk.reuseport_cookie` (ebpf::SkReuseportCookieOp)
 
 _Raw get_socket_cookie u64 for sk_reuseport ctx sk or migrating_sk (NULL yields zero)_
@@ -4036,6 +6979,772 @@ operation ::= `ebpf.sk.select_reuseport` $ctx `,` $map `[` $key `]` attr-dict `:
 
 
 
+### `ebpf.skb.adjust_room` (ebpf::SkbAdjustRoomOp)
+
+_Adjust sk_skb headroom with zero mode and flags and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.adjust_room` $ctx `,` $delta (`mode` $room_mode^)? attr-dict `:` type($ctx) `,` type($delta) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Use sk_skb's skb_adjust_room implementation: signed delta removes head bytes when negative and inserts zero bytes when positive. It differs from TC network-header adjustment. Failures are raw helper results, without compiler clamping.
+
+**Constraints**: Own entry sk_skb context, any i32 delta, mode=0 and flags=0. Bounded/unrolled loop bodies allowed. Both success and failure invalidate old packet pointers; the kind still has no direct packet/window capability.
+
+**Lowering**: Sign-extend delta and call helper50(ctx,delta,0,0), returning raw i64.
+
+**Evidence**: F61 stream operations; kernel outcomes and delivery are checked with the handlers.
+
+(sched_cls): `mode "net"` (default) or `mode "mac"` selects the UAPI adjroommode value; flags stay 0. The call is outside loops (sched_cls has packet windows) and invalidates them on success and failure (UAPI pktinval). sk_skb rejects the mode word and keeps its loop acceptance.
+
+**Unsupported**: Nonzero flags, encapsulation flags, sched_cls inside loops, static functions, callbacks, implicit fallback or direct packet access.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>mode</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>flags</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>room_mode</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `delta` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.ancestor_cgroup_id` (ebpf::SkbAncestorCgroupIdOp)
+
+_Raw id of an ancestor cgroup of the skb's socket (skb_ancestor_cgroup_id)_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.ancestor_cgroup_id` $ctx `,` $level attr-dict `:` type($ctx) `,` type($level) `->` type($id)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw u64 bits returned by skb_ancestor_cgroup_id(ctx, level): the id of the ancestor of the socket's cgroup at `level` (0 is the root); 0 without a full socket, for a negative level or for a level deeper than the socket's cgroup (source reading; the values are measured separately).
+**Constraints**: Own cgroup_skb or sched_cls entry context (OPS `skb.ancestor_cgroup_id`), outside loops, static functions and callbacks. `level` is any i32 value and is not range-checked by the compiler.
+**Lowering**: Call helper skb_ancestor_cgroup_id with the context and the sign-extended level.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM on 3 kernels (7.1.8, 6.12.111, 6.6.157) against an independent C oracle.
+**Unsupported**: Other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `level` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `id` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.cgroup_classid` (ebpf::SkbCgroupClassidOp)
+
+_Raw net_cls classid of the current task (get_cgroup_classid)_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.cgroup_classid` $ctx attr-dict `:` type($ctx) `->` type($classid)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of get_cgroup_classid(ctx): the cgroup-v1 net_cls classid of the current task; in softirq context (most ingress) the classid of the skb's full socket, or 0 without one (include/net/cls_cgroup.h `task_get_classid`); 0 without CONFIG_CGROUP_NET_CLASSID.
+**Constraints**: Own sched_cls entry context (OPS `skb.meta`), outside loops, static functions and callbacks.
+**Lowering**: Call helper get_cgroup_classid.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: skb_cgroup_classid (socket owner's classid), other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `classid` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.cgroup_id` (ebpf::SkbCgroupIdOp)
+
+_Raw cgroup id of the skb's socket (skb_cgroup_id)_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.cgroup_id` $ctx attr-dict `:` type($ctx) `->` type($id)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw u64 bits returned by skb_cgroup_id(ctx): the cgroup v2 id of the skb's socket, not of the current task; 0 without a full socket (source reading; the value is measured separately). Distinct from `ebpf.skb.cgroup_classid`.
+**Constraints**: Own cgroup_skb or sched_cls entry context (OPS `skb.cgroup_id`), outside loops, static functions and callbacks.
+**Lowering**: Call helper skb_cgroup_id with the context.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM on 3 kernels (7.1.8, 6.12.111, 6.6.157) against an independent C oracle.
+**Unsupported**: Other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `id` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.change_head` (ebpf::SkbChangeHeadOp)
+
+_Grow skb headroom by len bytes at the MAC header (flags 0) and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.change_head` $ctx `,` $len attr-dict `:` type($ctx) `,` type($len) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of skb_change_head(ctx, len, 0): prepend len bytes in front of the MAC header; the kernel zero-fills the new bytes (`memset(skb->data, 0, head_room)` on 7.1.8 / 6.12.111 / 6.6.157) — write a header with skb.store_bytes.
+**Constraints**: Own sched_cls entry context (OPS `skb.resize`), outside loops, static functions and callbacks. Invalidates all packet windows (UAPI pktinval).
+**Lowering**: Zero-extend len and call helper skb_change_head with flags 0.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Nonzero flags, other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `len` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.change_proto` (ebpf::SkbChangeProtoOp)
+
+_Change the skb protocol (IPv4 / IPv6 translation, flags 0) and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.change_proto` $ctx `,` $proto attr-dict `:` type($ctx) `,` type($proto) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of skb_change_proto(ctx, proto, 0). `proto` is the EtherType in network byte order (e.g. `byteorder.to_be` of 0x86dd); the kernel only accepts IPv4 / IPv6 transitions.
+**Constraints**: Own sched_cls entry context (OPS `skb.resize`), outside loops, static functions and callbacks. i16 proto. Invalidates all packet windows (UAPI pktinval).
+**Lowering**: Zero-extend proto and call helper skb_change_proto with flags 0.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Nonzero flags, other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `proto` | 16-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.change_tail` (ebpf::SkbChangeTailOp)
+
+_Resize the skb to len bytes (flags 0) and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.change_tail` $ctx `,` $len attr-dict `:` type($ctx) `,` type($len) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of skb_change_tail(ctx, len, 0): trim or grow (zero-filled) the packet to len bytes.
+**Constraints**: Own sched_cls entry context (OPS `skb.resize`), outside loops, static functions and callbacks. Invalidates all packet windows (UAPI pktinval).
+**Lowering**: Zero-extend len and call helper skb_change_tail with flags 0.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Nonzero flags, other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `len` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.change_type` (ebpf::SkbChangeTypeOp)
+
+_Set skb->pkt_type and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.change_type` $ctx `,` $pkt_type attr-dict `:` type($ctx) `,` type($pkt_type) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of skb_change_type(ctx, type) (PACKET_HOST etc.). Writes skb metadata; packet pointers remain valid, but the op is outside the packet-neutral whitelist (C1 / W1 do not cross it).
+**Constraints**: Own sched_cls entry context (OPS `skb.meta`), outside loops, static functions and callbacks.
+**Lowering**: Zero-extend type and call helper skb_change_type.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `pkt_type` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.check_mtu` (ebpf::SkbCheckMtuOp)
+
+_Check a non-GSO representative MTU with a fixed in/out u32 slot_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.check_mtu` $ctx `,` $ifindex `,` $mtuIn `,` $lenDiff attr-dict `:` type($ctx) `,` type($ifindex) `,` type($mtuIn) `,` type($lenDiff) `->` type($mtuOut) `,` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Call check_mtu with flags zero. mtu_in zero uses ctx length; otherwise it specifies L3 length. ifindex zero selects ctx's device. Return the raw i64 status and the u32 slot after the call: nonnegative statuses update it to device MTU, early errors preserve the input. Positive FRAG_NEEDED is distinct from zero and negative errno. Kernel flags-zero GSO behavior is preserved but not separately measured here.
+**Constraints**: GPL; own sched_cls TCX ingress/egress entry, outside functions/loops/callbacks. Unsigned ifindex/mtu i32; signed len_diff i32. No netkit.
+**Lowering**: Allocate a four-byte, four-aligned slot; store mtu_in, call with zero-extended ifindex and signed len_diff, then load the slot. No generic pointer escape. Not packet-neutral and not pktinval.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN only, one boot; no delivery measured).
+**Unsupported**: XDP, GSO segment flags, arbitrary mutable memory.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `ifindex` | 32-bit signless integer |
+| `mtuIn` | 32-bit signless integer |
+| `lenDiff` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `mtuOut` | 32-bit signless integer |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.csum_level` (ebpf::SkbCsumLevelOp)
+
+_Query or update skb checksum level metadata_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.csum_level` $ctx `mode` $mode attr-dict `:` type($ctx) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Execute query/inc/dec/reset with a generated UAPI selector. Return raw i64 status; query can return a nonnegative level or -EACCES. Mutating modes affect checksum metadata, not arbitrary packet memory.
+**Constraints**: Own sched_cls TCX ingress/egress entry only; no function/loop/callback/netkit.
+**Lowering**: One helper call; not Pure, packet-neutral or pktinval.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN only, one boot; no delivery measured).
+**Unsupported**: Dynamic or unknown modes, other attachments/kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>mode</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.ecn_set_ce` (ebpf::SkbEcnSetCeOp)
+
+_Set ECN CE on an eligible skb packet_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.ecn_set_ce` $ctx attr-dict `:` type($ctx) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Call skb_ecn_set_ce once, preserving the raw i64 result (including 0 for ineligible packets and 1 for eligible/already-CE packets). IPv4 checksum changes with CE bits.
+**Constraints**: Own sched_cls TCX ingress/egress entry; no function/loop/callback/netkit.
+**Lowering**: One UAPI helper call. Packet write, not Pure/packet-neutral; no packet pointer invalidation.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN only, one boot; no delivery measured).
+**Unsupported**: Other kinds/attachments.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.get_tunnel_key` (ebpf::SkbGetTunnelKeyOp)
+
+_Read the skb tunnel key into a 44-byte struct bpf_tunnel_key view record and return the raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.get_tunnel_key` $ctx `,` $input `flags` $flags attr-dict `:` type($ctx) `,` type($input) `->` type($output) `,` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Calls `skb_get_tunnel_key(ctx, buf, 44, flags)` once on a compiler-owned 44-byte copy of the input record and returns the helper-written copy plus the raw i64 status (0, −EINVAL when the skb has no tunnel info or flags are rejected, −EPROTO when the tunnel family differs from the `tuninfo_ipv6` flag). On every failure the kernel zeroes all 44 bytes. The input record's bytes are only the helper's starting content (a sentinel makes the failure zeroing observable); the input is never modified. Flags is `"none"` or a comma-separated subset of `tuninfo_ipv6` and `tuninfo_flags` (UAPI BPF_F_TUNINFO_IPV6 / BPF_F_TUNINFO_FLAGS; the table names are the UAPI names without BPF_F_, lowercase). `tuninfo_flags` also fills `tunnel_flags` (a `__be16`, raw bytes — no byte-order conversion); otherwise the kernel writes 0 there. **remote and local are swapped relative to `set_tunnel_key`**: set stores remote→dst / local→src, get returns remote←src / local←dst.
+**Constraints**: Own sched_cls TCX ingress/egress entry context (OPS `skb.datapath`; not netkit, not lwt_xmit, not XDP), outside functions, loops and callbacks. The input is an `ebpf.record.make` result and the output record type equals it; the output may only be read with `ebpf.record.field`. The record must be the exact 44-byte struct bpf_tunnel_key view of the flags' family (the UAPI table's `tunnelfield` rows: view `v6` when `tuninfo_ipv6` is set, else `v4`; `ebpf-verify-records` checks names, offsets and widths). Size is always 44 (the kernel's compat sizes are not used). The status is raw: it is not converted to a predicate.
+**Lowering**: Stage ③ allocates a 44-byte stack buffer aligned to 8, copies the input record, calls helper 20 with size 44 and the flag value from the UAPI table, and binds the output to the buffer. The call has no memory attributes and stays when the status is unused. Not packet-neutral and not in the UAPI `pktinval` table (the helper changes no packet data). Requirements: the helper row only.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM on 4 kernels (7.1.8, 7.3.1, 6.12.111, 6.6.157) against an independent C oracle with TEST_RUN only (no tunnel device, no delivery).
+**Unsupported**: lwt_xmit (the kernel allows it; this compiler does not), XDP, netkit, compat key sizes, dynamic flags, the `_opt` helpers.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>flags</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `input` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `output` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.hash_recalc` (ebpf::SkbHashRecalcOp)
+
+_Recompute and store skb->hash, returning the raw value_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.hash_recalc` $ctx attr-dict `:` type($ctx) `->` type($hash)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of get_hash_recalc(ctx). The helper recomputes the flow hash and **writes skb->hash** (side effect), then returns it. Outside the packet-neutral whitelist.
+**Constraints**: Own sched_cls entry context (OPS `skb.meta`), outside loops, static functions and callbacks.
+**Lowering**: Call helper get_hash_recalc.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `hash` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.load_bytes` (ebpf::SkbLoadBytesOp)
+
+_Read fixed skb bytes into a packed integer and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.load_bytes` $ctx `,` $offset `len` $len attr-dict `:` type($ctx) `,` type($offset) `->` type($value) `,` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Call skb_load_bytes once into a compiler-owned buffer. Byte j occupies bits 8j..8j+7 of the i64 value and higher bits are zero. Return raw i64 status. Kernel failures clear the requested bytes; value is read on both status paths. This is a helper read, including non-linear skb data, not a direct packet load.
+
+**Constraints**: Own entry sk_skb context, unsigned offset bits in i32, constant length 1..8. Bounded/unrolled loops allowed. Unknown effects preserve the helper call.
+
+**Lowering**: Initialize eight stack bytes, call helper26 with zero-extended offset and constant length, then pack exactly len bytes. No arbitrary output pointer.
+
+**Evidence**: F61 helper-based stream operations; kernel execution checks belong to the handler experiment.
+
+also sched_cls (OPS `skb.load_bytes`), with the same shape, loop acceptance and lowering.
+
+**Unsupported**: Static functions, callbacks, other program kinds, variable length or arbitrary memory destination.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `offset` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `value` | 64-bit signless integer |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.load_bytes_relative` (ebpf::SkbLoadBytesRelativeOp)
+
+_Read fixed bytes relative to the MAC or network header_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.load_bytes_relative` $ctx `,` $offset `len` $len `start` $start attr-dict `:` type($ctx) `,` type($offset) `->` type($value) `,` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Call skb_load_bytes_relative into compiler-owned memory. Byte j occupies bits 8j..8j+7 of the i64 value; upper bits are zero. Return raw i64 status and read the value on both paths; kernel errors clear the requested bytes.
+**Constraints**: Own sched_cls TCX ingress/egress entry, i32 unsigned offset, len 1..8, start mac/net. Bounded/unrolled loops match skb.load_bytes; no static functions, helper callbacks or netkit.
+**Lowering**: Zero-initialize eight stack bytes, call the UAPI helper with zero-extended offset, constant len and generated header selector, then pack len bytes. Not packet-neutral; does not invalidate packet windows.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN only, one boot; no delivery measured).
+**Unsupported**: Arbitrary output pointers, variable len, other kinds/attachments.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>start</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `offset` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `value` | 64-bit signless integer |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.netns_cookie` (ebpf::SkbNetnsCookieOp)
+
+_Raw network-namespace cookie of the skb's socket (get_netns_cookie)_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.netns_cookie` $ctx attr-dict `:` type($ctx) `->` type($cookie)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of get_netns_cookie(ctx): the cookie of the skb socket's netns (init netns without a socket).
+**Constraints**: Own sched_cls entry context (OPS `skb.meta`), outside loops, static functions and callbacks. Kernel availability for sched_cls is a load-time requirement (the helper is offered to tc programs only by newer kernels — the compiler does not compare versions).
+**Lowering**: Call helper get_netns_cookie with the context.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `cookie` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.pull_data` (ebpf::SkbPullDataOp)
+
+_Pull non-linear skb data into the linear area and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.pull_data` $ctx `,` $len attr-dict `:` type($ctx) `,` type($len) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of skb_pull_data(ctx, len): make the first len bytes linear and writable (len 0 = the current linear head, skb_headlen — not the whole skb; net/core/filter.c `len ? : skb_headlen(skb)` on 7.1.8 / 6.12.111 / 6.6.157). Packet windows must be re-established by a new packet.check.
+**Constraints**: Own sched_cls entry context (OPS `skb.resize`), outside loops, static functions and callbacks. Invalidates all packet windows on success and failure (UAPI pktinval).
+**Lowering**: Zero-extend len and call helper skb_pull_data.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Other kinds, implicit re-check of windows.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `len` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.set_hash` (ebpf::SkbSetHashOp)
+
+_Set the skb software L4 hash_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.set_hash` $ctx `,` $hash attr-dict `:` type($ctx) `,` type($hash) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Set the raw unsigned i32 hash; return raw i64 status. A subsequent hash read uses it until invalidated.
+**Constraints**: Own sched_cls TCX ingress/egress entry; no function/loop/callback/netkit.
+**Lowering**: Zero-extend hash and call set_hash. Preserve the call even with unused status; not packet-neutral or pktinval.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN only, one boot; no delivery measured).
+**Unsupported**: Other attachments/kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `hash` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.set_hash_invalid` (ebpf::SkbSetHashInvalidOp)
+
+_Invalidate the skb hash for lazy recalculation_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.set_hash_invalid` $ctx attr-dict `:` type($ctx)
+```
+
+**Stage**: ① Input
+**Meaning**: Clear hash/sw_hash/l4_hash. This UAPI helper has void return and the operation exposes no result.
+**Constraints**: Own sched_cls TCX ingress/egress entry; no function/loop/callback/netkit.
+**Lowering**: Preserve one set_hash_invalid helper call. Not Pure, packet-neutral or pktinval.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN only, one boot; no delivery measured).
+**Unsupported**: Other attachments/kinds and a numeric return value.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+
+
+### `ebpf.skb.set_tunnel_key` (ebpf::SkbSetTunnelKeyOp)
+
+_Set the skb tunnel key from a 44-byte struct bpf_tunnel_key view record and return the raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.set_tunnel_key` $ctx `,` $key `flags` $flags attr-dict `:` type($ctx) `,` type($key) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Calls `skb_set_tunnel_key(ctx, buf, 44, flags)` once on a compiler-owned copy of the input record and returns the raw i64 status (0 or −EINVAL). On success the kernel replaces the skb's dst with this CPU's shared metadata_dst carrying the key; packet bytes and pointers are unchanged. −EINVAL leaves the skb's dst as it was: `tunnel_flags` (the `__be16` field that is `tunnel_ext` for set) non-zero is rejected for every family, and `tunnel_label` non-zero is rejected for IPv4 only (for IPv6 the kernel keeps `be32(label) & IPV6_FLOWLABEL_MASK`). Both are returned as the kernel's status, not stopped at compile time. Flags is `"none"` or a comma-separated subset of `tuninfo_ipv6`, `zero_csum_tx`, `dont_fragment`, `seq_number`, `no_tunnel_key` (UAPI BPF_F_*, lowercase without the prefix).
+**Constraints**: As `ebpf.skb.get_tunnel_key`: own sched_cls TCX entry context, not in functions, loops or callbacks; the input is an `ebpf.record.make` result that is the exact 44-byte `v4` / `v6` view of the flags' family (all bytes, padding 0).
+**Lowering**: Stage ③ copies the record into a 44-byte, 8-aligned stack buffer and calls helper 21 with size 44 and the flag value. No memory attributes; the call stays when the status is unused. Not packet-neutral, not pktinval. The helper's prototype lookup allocates a per-CPU metadata_dst at load time (kernel side).
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM on 4 kernels (7.1.8, 7.3.1, 6.12.111, 6.6.157) against an independent C oracle with TEST_RUN only (no tunnel device, no delivery).
+**Unsupported**: lwt_xmit, XDP, netkit, compat key sizes, dynamic flags, `skb_set_tunnel_opt`, real tunnel delivery.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>flags</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `key` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.socket_uid` (ebpf::SkbSocketUidOp)
+
+_Raw uid bits of the skb's socket (get_socket_uid)_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.socket_uid` $ctx attr-dict `:` type($ctx) `->` type($uid)
+```
+
+**Stage**: ① Input
+**Meaning**: The u32 bits returned by get_socket_uid(ctx) as an i32: the uid of the skb's full socket mapped through from_kuid_munged, or overflowuid without a full socket (source reading; the value is measured separately). The result is not a status and no i64 result is offered; zero-extend it explicitly when an i64 is needed.
+**Constraints**: Own socket_filter or sched_cls entry context (OPS `skb.socket_uid`), outside loops, static functions and callbacks.
+**Lowering**: Call helper get_socket_uid with the context and truncate the i64 return to i32.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM on 3 kernels (7.1.8, 6.12.111, 6.6.157) against an independent C oracle.
+**Unsupported**: sk_skb (accepted by the kernel but unmeasured), other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `uid` | 32-bit signless integer |
+
+
+
+### `ebpf.skb.store_bytes` (ebpf::SkbStoreBytesOp)
+
+_Write initialized scalar bytes into an skb and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.store_bytes` $ctx `,` $offset `,` $value `len` $len `flags` $flags attr-dict `:` type($ctx) `,` type($offset) `,` type($value) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Write exactly len bytes at an unsigned byte offset. Failure does not terminate the program.
+**Constraints**: Own sched_cls context. Constant len/type pairs are 1/i8, 4/i32, 6/i64 and 8/i64.
+Six bytes use the low 48 bits, in little-endian byte order; the high 16 bits are ignored.
+Flags must be zero. Packet windows are invalidated even on failure; subsequent reads need fresh bounds.
+**Lowering**: Initialize exactly len stack bytes, then call skb_store_bytes with constant length and zero flags.
+**Evidence**: F79. Static contracts; kernel delivery measurements are pending.
+**Unsupported**: Runtime lengths, nonzero flags, arbitrary pointers, record sources and other program kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>flags</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `offset` | 32-bit signless integer |
+| `value` | integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.skb.under_cgroup` (ebpf::SkbUnderCgroupOp)
 
 _Compare skb socket ancestry to a cgroup_array slot (sched_cls; raw status)_
@@ -4074,6 +7783,134 @@ operation ::= `ebpf.skb.under_cgroup` $ctx `,` $map `[` $index `]` attr-dict `:`
 
 
 
+### `ebpf.skb.vlan_pop` (ebpf::SkbVlanPopOp)
+
+_Pop a VLAN tag and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.vlan_pop` $ctx attr-dict `:` type($ctx) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Call skb_vlan_pop once, including hardware tag removal/next-tag promotion. An untagged packet can return zero without losing four bytes.
+**Constraints**: Own sched_cls TCX ingress/egress entry only; no static function, loop, callback or netkit.
+**Lowering**: UAPI helper, raw i64 status. Invalidates packet windows on both paths; not packet-neutral.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN and TCX egress delivery, one boot).
+**Unsupported**: Other kinds/attachments.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.skb.vlan_push` (ebpf::SkbVlanPushOp)
+
+_Push a VLAN tag and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.skb.vlan_push` $ctx `,` $proto `,` $tci attr-dict `:` type($ctx) `,` type($proto) `,` type($tci) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Call skb_vlan_push once with raw BE i16 protocol and host i16 TCI. The kernel defaults unknown protocols to 8021Q. The first tag may be hardware metadata; a subsequent push can move the previous tag into packet bytes.
+**Constraints**: Own sched_cls entry context at TCX ingress/egress only, outside static functions, loops and helper callbacks. Netkit is not supported.
+**Lowering**: Zero-extend both 16-bit operands and call the UAPI helper. Return raw i64 status. Invalidates packet windows on both status paths and is not packet-neutral.
+**Evidence**: F84. Static ABI/effect checks; 7.1.8 VM differential against C (TEST_RUN and TCX egress delivery, one boot).
+**Unsupported**: Other kinds/attachments and generic VLAN memory access.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `proto` | 16-bit signless integer |
+| `tci` | 16-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.sock.lookup_tcp` (ebpf::SockLookupTcpOp)
+
+_Look up a TCP socket by tuple in the current netns, acquiring an owned reference or NULL_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock.lookup_tcp` $ctx `,` $tuple attr-dict `:` type($ctx) `,` type($tuple) `->` type($result)
+```
+
+**Stage**: ① Input
+**Meaning**: Calls sk_lookup_tcp(ctx, tuple, size, BPF_F_CURRENT_NETNS, 0). NULL means the helper did not return a usable full socket; the cause is not distinguishable. Even NULL must pass through sock.ref_check.
+**Constraints**: Own entry context of an xdp or sched_cls program (OPS sock.lookup), in the program body or ebpf.if / sock.ref_check arms; not in packet.check, loops, callbacks or functions. The tuple is an ebpf.record.make result whose record is exactly the ipv4 (12 B: saddr, daddr u32; sport, dport u16) or ipv6 (36 B: saddr[4], daddr[4] u32; sport, dport u16) view from the UAPI socktuple rows, all unsigned; the size selects the family. Only sock.ref_check may use the result; every path checks it once and releases a present reference once.
+**Lowering**: Unchanged in ②; ③ passes the record.make stack slot without a copy, the declared record size, the UAPI sklookupnetns current_netns value and flags 0. Requirements carry the existing helper rows.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM as root with BPF_PROG_TEST_RUN on 4 kernels (7.3.1, 7.1.8, 6.12.111, 6.6.157), matching an independent C oracle on every cell.
+**Unsupported**: skc_lookup_tcp, other netns values, nonzero flags, field reads of the socket, cgroup_skb / sk_skb and other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `tuple` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | an owned nullable socket reference acquired from a socket map or a socket lookup helper |
+
+
+
+### `ebpf.sock.lookup_udp` (ebpf::SockLookupUdpOp)
+
+_Look up a UDP socket by tuple in the current netns, acquiring an owned reference or NULL_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock.lookup_udp` $ctx `,` $tuple attr-dict `:` type($ctx) `,` type($tuple) `->` type($result)
+```
+
+**Stage**: ① Input
+**Meaning**: Calls sk_lookup_udp(ctx, tuple, size, BPF_F_CURRENT_NETNS, 0). NULL means the helper did not return a usable full socket; the cause is not distinguishable. Even NULL must pass through sock.ref_check.
+**Constraints**: The same as ebpf.sock.lookup_tcp: own entry context of an xdp or sched_cls program (OPS sock.lookup), in the program body or ebpf.if / sock.ref_check arms, a record.make tuple that is exactly the UAPI ipv4 or ipv6 view, and the linear check / release ownership.
+**Lowering**: Unchanged in ②; ③ passes the record.make stack slot without a copy, the declared record size, the UAPI sklookupnetns current_netns value and flags 0. Requirements carry the existing helper rows.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM as root with BPF_PROG_TEST_RUN on 4 kernels (7.3.1, 7.1.8, 6.12.111, 6.6.157), matching an independent C oracle on every cell.
+**Unsupported**: Other netns values, nonzero flags, field reads of the socket, cgroup_skb / sk_skb and other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `tuple` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | an owned nullable socket reference acquired from a socket map or a socket lookup helper |
+
+
+
 ### `ebpf.sock.map_lookup` (ebpf::SockMapLookupOp)
 
 _Acquire an owned socket reference from sockmap or sockhash_
@@ -4102,7 +7939,7 @@ operation ::= `ebpf.sock.map_lookup` $map `[` $key `]` attr-dict `:` type($map) 
 
 | Result | Description |
 | :----: | ----------- |
-| `result` | an owned nullable socket reference acquired from a socket map |
+| `result` | an owned nullable socket reference acquired from a socket map or a socket lookup helper |
 
 
 
@@ -4175,7 +8012,7 @@ Traits: `RecursiveMemoryEffects`
 
 | Operand | Description |
 | :-----: | ----------- |
-| `ptr` | an owned nullable socket reference acquired from a socket map |
+| `ptr` | an owned nullable socket reference acquired from a socket map or a socket lookup helper |
 
 #### Results:
 
@@ -4207,6 +8044,82 @@ operation ::= `ebpf.sock.release` $ptr attr-dict `:` type($ptr)
 | Operand | Description |
 | :-----: | ----------- |
 | `ptr` | a checked non-NULL owned socket reference with linear release |
+
+
+
+### `ebpf.sock.skc_lookup_tcp` (ebpf::SockSkcLookupTcpOp)
+
+_Look up a TCP socket (including TIME_WAIT) by tuple in the current netns, acquiring an owned reference or NULL_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock.skc_lookup_tcp` $ctx `,` $tuple attr-dict `:` type($ctx) `,` type($tuple) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls skc_lookup_tcp(ctx, tuple, size, BPF_F_CURRENT_NETNS, 0). The kernel result is PTR_TO_SOCK_COMMON (`RET_PTR_TO_SOCK_COMMON_OR_NULL`), not PTR_TO_SOCKET: unlike sock.lookup_tcp it returns a TCP_TIME_WAIT minisock (sock.lookup_tcp converts through sk_to_full_sk and gets NULL); a TCP_NEW_SYN_RECV request socket is returned as is (sock.lookup_tcp gets its rsk_listener). NULL means no socket was found; the cause is not distinguishable. Even NULL must pass through sock.ref_check.
+
+**Constraints**: The same as ebpf.sock.lookup_tcp: own entry context of an xdp or sched_cls program (OPS sock.lookup), program body or ebpf.if / sock.ref_check arms, a record.make tuple that is exactly the UAPI ipv4 or ipv6 view, the linear check / release ownership. The result type is the shared !ebpf.sock_ref_or_null, so the only use of a present reference is sock.release (bpf_sk_release takes PTR_TO_SOCK_COMMON | OBJ_RELEASE on the four kernels); there are no socket field reads. The result cannot reach sk.assign (sk_lookup kind only, which has no sock.lookup).
+
+**Lowering**: Unchanged in ②; ③ passes the record.make stack slot without a copy, the declared record size, the UAPI sklookupnetns current_netns value and flags 0 to helper skc_lookup_tcp. Requirements carry the existing helper rows.
+
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and it was also run in a VM as root with BPF_PROG_TEST_RUN on 4 kernels (7.3.1, 7.1.8, 6.12.111, 6.6.157): skc_lookup_tcp returns a TIME_WAIT minisock where sk_lookup_tcp returns NULL, the other cells agree, and C and MLIR match on every cell.
+
+**Unsupported**: Field reads of the socket (a future P that adds them must split the type), other netns values, nonzero flags, cgroup_skb / sk_skb / cgroup_sock_addr kinds, and SYN_RECV behaviour is unmeasured.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `tuple` | a schema record identified by symbol and byte size for maps, reservations, perf output and subprogram arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | an owned nullable socket reference acquired from a socket map or a socket lookup helper |
+
+
+
+### `ebpf.sock_addr.getsockopt` (ebpf::SockAddrGetsockoptOp)
+
+_Read an integer socket option from a cgroup_sock_addr connect4 or bind4 program, returning raw bpf_getsockopt status and the value_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock_addr.getsockopt` $ctx $option attr-dict `:` type($ctx) `->` type($status) `,` type($value)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 status of getsockopt(ctx, level, optname, &value, 4) and the i32 value, as `ebpf.sock_ops.getsockopt`.
+**Constraints**: Own cgroup_sock_addr entry context (OPS `sock_addr.sockopt`) of a program with an explicit `attach "connect4"` or `attach "bind4"`, outside loops, static functions and helper callbacks. `option` is one of so_sndbuf, so_rcvbuf, so_mark, ip_tos, tcp_maxseg, tcp_window_clamp; the set-only tcp_bpf_iw and tcp_bpf_sndcwnd_clamp and any other name are rejected.
+**Lowering**: Stage ③ writes 0 to a 4-byte stack slot, calls helper getsockopt once with UAPI level and optname and size 4, then loads the slot. Requirements carry the existing helper row.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root against an independent C oracle over IPv4 loopback TCP on connect4 and bind4: status 0 and values equal to userspace for the 6 options, except `tcp_maxseg` after connect4 (get 1200, userspace 1188; bind4 reads 1200 for both).
+**Unsupported**: other attaches and an omitted attach, partial-copy or buffer options, string options, non-i32 values.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>option</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `value` | 32-bit signless integer |
 
 
 
@@ -4253,6 +8166,194 @@ operation ::= `ebpf.sock_addr.set_sun_path` $ctx $literal attr-dict `:` type($ct
 
 
 
+### `ebpf.sock_addr.setsockopt` (ebpf::SockAddrSetsockoptOp)
+
+_Set an integer socket option from a cgroup_sock_addr connect4 or bind4 program, returning raw bpf_setsockopt status_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock_addr.setsockopt` $ctx $option `,` $value attr-dict `:` type($ctx) `,` type($value) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 status of setsockopt(ctx, level, optname, &value, 4): 0 or a negative errno, as `ebpf.sock_ops.setsockopt`.
+**Constraints**: Own cgroup_sock_addr entry context (OPS `sock_addr.sockopt`) of a program with an explicit `attach "connect4"` or `attach "bind4"`, outside loops, static functions and helper callbacks; the compiler opens only those two measured attaches. `option` is one of so_sndbuf, so_rcvbuf, so_mark, ip_tos, tcp_maxseg, tcp_window_clamp, tcp_bpf_iw, tcp_bpf_sndcwnd_clamp; any other name is rejected. The value is i32.
+**Lowering**: Stage ③ spills value to a 4-byte stack slot and calls helper setsockopt once with UAPI level and optname and size 4. Requirements carry the existing helper row.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root against an independent C oracle over IPv4 loopback TCP on connect4 and bind4: status 0 and the userspace value for the 6 readable options, -EINVAL for invalid `tcp_bpf_iw` / `tcp_bpf_sndcwnd_clamp`, and the call kept when the status is unused. `tcp_bpf_iw` and `tcp_bpf_sndcwnd_clamp` are observed by status only.
+**Unsupported**: other attaches and an omitted attach, TCP_NODELAY, string options, non-i32 values.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>option</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `value` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.sock_ops.cb_flags_set` (ebpf::SockOpsCbFlagsSetOp)
+
+_Replace the socket's sock_ops callback flags (sock_ops_cb_flags_set)_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock_ops.cb_flags_set` $ctx `,` $flags attr-dict `:` type($ctx) `,` type($flags) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 status of sock_ops_cb_flags_set(ctx, flags). The helper replaces the whole callback-flag field of the TCP socket with `flags & 0x7F` (not an OR) and returns the bits it did not accept, `flags & ~0x7F`, so 0 means all were accepted; negative flags yield a negative remainder that is not an errno. -EINVAL without a full socket; -EOPNOTSUPP outside a locked TCP callback on kernels that have that check (source reading; measures status and effect, the two errors are not promised).
+**Constraints**: Own sock_ops entry context (OPS `sock_ops.cb_flags_set`), outside loops, static functions and callbacks. `flags` is any i32 value; the compiler gives its bits no meaning. The call changes later callbacks, so it is kept when the status is unused.
+**Lowering**: Call helper sock_ops_cb_flags_set with the context and the sign-extended flags.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in a VM on 3 kernels (7.1.8, 6.12.111, 6.6.157) against an independent C oracle.
+**Unsupported**: Other kinds, named flag constants.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `flags` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.sock_ops.getsockopt` (ebpf::SockOpsGetsockoptOp)
+
+_Read an integer socket option from a sock_ops program, returning raw bpf_getsockopt status and the value_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock_ops.getsockopt` $ctx $option attr-dict `:` type($ctx) `->` type($status) `,` type($value)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 status of getsockopt(ctx, level, optname, &value, 4) and the i32 value. For the options of the closed table a failing status reads 0: the kernel zeroes the buffer on its ordinary paths and leaves it unwritten at the sock_ops lock gate (7.1.8 and 7.3.1), where the compiler's zero initialization shows (source reading; the gate path is not measured). Read the value only after checking the status.
+**Constraints**: Own sock_ops entry context (OPS `sock_ops.sockopt`), outside loops, static functions and helper callbacks. `option` is one of so_sndbuf, so_rcvbuf, so_mark, ip_tos, tcp_maxseg, tcp_window_clamp; the set-only tcp_bpf_iw and tcp_bpf_sndcwnd_clamp and any other name are rejected.
+**Lowering**: Stage ③ writes 0 to a 4-byte stack slot, calls helper getsockopt once with UAPI level and optname and size 4, then loads the slot. Requirements carry the existing helper row.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root against an independent C oracle over IPv4 loopback TCP: the status and the value after a set of each of the 6 options, and -EINVAL with value 0 for request sockets, all matched. The zero initialization at the sock_ops lock gate is not measured.
+**Unsupported**: TCP_BPF_SYN* and other partial-copy or buffer options, string options, non-i32 values, other kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>option</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `value` | 32-bit signless integer |
+
+
+
+### `ebpf.sock_ops.setsockopt` (ebpf::SockOpsSetsockoptOp)
+
+_Set an integer socket option from a sock_ops program, returning raw bpf_setsockopt status_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock_ops.setsockopt` $ctx $option `,` $value attr-dict `:` type($ctx) `,` type($value) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 status of setsockopt(ctx, level, optname, &value, 4): 0 or a negative errno. `-EINVAL` includes a socket that is not a full socket (a request socket), and a value the kernel refuses (`tcp_bpf_iw` and `tcp_bpf_sndcwnd_clamp` need a positive value). The compiler does not check the value. The option name selects level and optname from the closed table; the numbers come from the UAPI table.
+**Constraints**: Own sock_ops entry context (OPS `sock_ops.sockopt`), outside loops, static functions and helper callbacks. `option` is one of so_sndbuf, so_rcvbuf, so_mark, ip_tos, tcp_maxseg, tcp_window_clamp, tcp_bpf_iw, tcp_bpf_sndcwnd_clamp; any other name is rejected. The call is kept when the status is unused.
+**Lowering**: Stage ③ spills value to a 4-byte stack slot and calls helper setsockopt once with UAPI level and optname and size 4. Requirements carry the existing helper row; which option exists on a kernel is not a requirement (an absent option is a runtime status).
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root against an independent C oracle over IPv4 loopback TCP: the status, the value userspace reads for the 6 readable options, and -EINVAL for request sockets and invalid values all matched. `tcp_bpf_iw` and `tcp_bpf_sndcwnd_clamp` are observed by status only.
+**Unsupported**: TCP_NODELAY (6.6 and 6.12 lack the header-option callback rejection), string options (TCP_CONGESTION, SO_BINDTODEVICE), non-i32 values, other kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>option</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `value` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.sock_ops.setsockopt_name` (ebpf::SockOpsSetsockoptNameOp)
+
+_Set a string socket option to a constant name from a sock_ops program, returning raw bpf_setsockopt status_
+
+Syntax:
+
+```
+operation ::= `ebpf.sock_ops.setsockopt_name` $ctx $option `name` $literal attr-dict `:` type($ctx) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 status of setsockopt(ctx, level, optname, name, length + 1): 0 or a negative errno. The kernel resolves the name: an unregistered name, and `cdg` on every measured source, are negative statuses. A BPF program never loads a module for the name.
+**Constraints**: Own sock_ops entry context (OPS `sock_ops.sockopt`), outside loops, static functions and helper callbacks. `option` is `tcp_congestion`, the only row of the closed table. `literal` is 1..15 bytes with no NUL and no control character (0x01-0x1f, 0x7f). 15 is the compiler's conservative limit, not a kernel contract: TCP_CA_NAME_MAX is not UAPI, and the kernel silently truncates a longer name.
+**Lowering**: Stage ③ writes the name and its NUL to a stack buffer and calls helper setsockopt once with UAPI level and optname and optlen = length + 1. Requirements carry the existing helper row.
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root against an independent C oracle over IPv4 loopback TCP at `ACTIVE_ESTABLISHED_CB`: setting `reno` returned 0 and userspace `getsockopt(TCP_CONGESTION)` read `reno` (control `cubic`), `cdg` returned -524, unregistered 9-byte, 1-byte and 15-byte names returned -2. The 15-byte name is a load-and-call observation only; the length evidence is the ELF.
+**Unsupported**: reading a string option, a name that is not a constant, SO_BINDTODEVICE, other kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>option</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>literal</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.spin.region` (ebpf::SpinRegionOp)
 
 _Acquire a map value's bpf_spin_lock, execute a closed critical region, and release it_
@@ -4267,7 +8368,7 @@ operation ::= `ebpf.spin.region` $ref $lock `:` type($ref) $body attr-dict
 
 **Meaning**: Locks field $lock of a borrowed record map value, executes the region, and unlocks. There is one exit path, so forgetting unlock is structurally impossible. Concurrent updates preserve both fields (a == b == total count).
 
-**Constraints**: Only inside an ebpf.program body, not ebpf.func. %ref is a record borrow. Region has one block ending in valueless ebpf.yield. Only arith and ref.field.load / store on **the same %ref** are accepted. Helpers (including ktime), map ops, loops, nested spin.region, and other borrows are rejected.
+**Constraints**: Only inside an ebpf.program body, not ebpf.func. %ref is a record borrow. Region has one block ending in valueless ebpf.yield. Only arith and ref.field.load / store on **the same %ref** are accepted. Helpers (including ktime), map ops, loops, nested spin.region, calls and other borrows are rejected; a call of a **global** ebpf.func is rejected by name (the kernel rejects a global call while a bpf_spin_lock is held — 6.12.111 / 7.1.8 / 7.3.1, and 6.6.157 rejects every call there; the compiler applies it on every version).
 ebpf-verify-records requires $lock to name a spin_lock field, rejects direct lock-field access (including lock.val), and rejects record.make of lock-bearing records. Kinds are xdp / fentry / fexit / tp_btf; other kinds are compiler unsupported in ebpf-verify-target-legality. A profile fact `map-with-spin-lock kprobe rejected` also adds a target-unsupported note. Schema permits only array values, one lock per record, and 4-byte-aligned lock offsets.
 
 **Lowering**: Stage ② expands to internal ebpf.spin.lock, body, ebpf.spin.unlock. Stage ③ calls spin_lock / spin_unlock on the value pointer plus @records lock-field offset. BTF uses `struct bpf_spin_lock { u32 val }`, sized by UAPI.
@@ -4468,6 +8569,88 @@ Kernel program-type compatibility is not decided by the compiler. In 7.1.8 func_
 
 
 
+### `ebpf.str.snprintf` (ebpf::StrSnprintfOp)
+
+_Format i64 values into a reserved byte field using a frozen readonly literal_
+
+Syntax:
+
+```
+operation ::= `ebpf.str.snprintf` $reservation $field `,` $format `(` $args `)` attr-dict `:` type($reservation) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: snprintf writes a NUL-terminated formatted prefix and returns raw i64 would-have-written length including NUL. Truncation may return a positive length greater than capacity; an empty format returns1. Nonconsuming and effectful.
+
+**Constraints**: Ordinary kprobe, present reservation i8[1..128], literal format up to128 bytes excluding NUL, no embedded NUL, 0..12 i64 arguments. Only %% / %lld / %llu / %llx / %llX. No function, loop, callback or post-consumption use.
+
+**Lowering**: Stage ③ snprintf(field address, capacity, compiler-owned .rodata format, eight-byte argument slots, argc*8). argc0 passes NULL/0. The loader freezes the readonly format map before program load.
+
+**Evidence**: Out of scope — no release F row yet; measured on 3 kernels (7.1.8 / 6.12.111 / 6.6.157) in a VM as root, ordinary kprobe: frozen format map accepted, status 41 / 14 / 1 and the NUL-terminated text matched C; a stack format is refused with the same verifier text.
+
+**Unsupported**: Stack/writable/dynamic format, pointers and strings, width/precision, smaller integer arguments, generic writable buffers and normalization of truncation status.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>format</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `reservation` | a successful ring-buffer reservation, linearly consumed exactly once |
+| `args` | variadic of 64-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.str_buf.literal` (ebpf::StrBufLiteralOp)
+
+_A stack string buffer holding a literal, for a sched_ext dump's %s_
+
+Syntax:
+
+```
+operation ::= `ebpf.str_buf.literal` $literal attr-dict `:` type($buf)
+```
+
+**Stage**: ① Input
+
+**Meaning**: A fresh `!ebpf.str_buf<N>` holding the literal followed by zero bytes up to N. The way to give `%s` a constant string (C passes a .rodata address; the printed text is the same) and the fallback value of a read (LAVD's `"unknown"` when there is no cgroup).
+
+**Constraints**: 1 <= N <= 64; the literal has no NUL and no ASCII control byte other than whitespace (the format's plain-text line — a compiler rule for the value); len + 1 <= N. Only in the body of a sched_ext dump member program (dump / dump_cpu / dump_task — ebpf-verify-schema, as scx.dump). Uses follow `!ebpf.str_buf`.
+
+**Lowering**: Stage ③ a dedicated entry-block `alloca [N x i8]` (align 8, no lifetime markers) and stores of all N bytes (literal + zeros).
+
+**Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+**Unsupported**: Literals longer than 63 bytes.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>literal</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `buf` | a NUL-terminated N-byte stack string snapshot, passed only to a sched_ext dump's %s |
+
+
+
 ### `ebpf.sys.bpf` (ebpf::SysBpfOp)
 
 _Invoke a pointer-free bpf() command from a syscall program (raw fd or negative errno)_
@@ -4635,6 +8818,42 @@ Traits: `HasParent<ProgramOp>`, `NoRegionArguments`, `Terminator`
 
 
 
+### `ebpf.task.ancestor_cgroup_id` (ebpf::TaskAncestorCgroupIdOp)
+
+_Raw bpf_get_current_ancestor_cgroup_id(level) value_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.ancestor_cgroup_id` $level attr-dict `:` type($level) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns the cgroup-v2 ID of the current task's ancestor at the given level (0 is the root) as raw i64. The kernel returns 0 for levels the task's cgroup does not have; that 0 is not an errno.
+
+**Constraints**: Level i32 (the helper takes int), result i64. Same placement as cpu.id. Unknown memory effects; not packet-neutral.
+
+**Lowering**: Stage ③ zero-extends the level to i64 (the same 32-bit move clang emits for an int argument) and calls UAPI get_current_ancestor_cgroup_id.
+
+**Evidence**: F80. Static: lit for ③ helper / zero extension and ELF requirements. Kernel load and level semantics is measured separately.
+
+**Unsupported**: cgroup-v1, kernel measurement.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `level` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
 ### `ebpf.task.cgroup_id` (ebpf::TaskCgroupIdOp)
 
 _Raw bpf_get_current_cgroup_id() value for the current task's cgroup v2_
@@ -4708,6 +8927,178 @@ operation ::= `ebpf.task.comm` $reservation $field attr-dict `:` type($reservati
 
 
 
+### `ebpf.task.current_btf` (ebpf::TaskCurrentBtfOp)
+
+_Typed non-NULL pointer to the current task_struct (bpf_get_current_task_btf)_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.current_btf` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns `!ebpf.kptr<"task_struct">` for the current task (RET_PTR_TO_BTF_ID_TRUSTED, never NULL). Borrowed: no reference is acquired or released, and no lifetime beyond the program invocation is claimed.
+
+**Constraints**: Program bodies only; functions, callbacks and loops are rejected. Result must be kptr<"task_struct">, declared in schema core.kernel_types (ebpf-verify-kptr). The kptr is used by the existing kfield.load / kfield.ptr / kfield.copy / kptr.addr rules (kptr.addr stays tracing-kind only). No compile-time kind restriction; requirements helper rows check availability at load. GPL-only helper: non-GPL ELF emission is rejected through UAPI helpergpl rows. Unknown memory effects.
+
+**Lowering**: Stage ③ calls UAPI get_current_task_btf and uses the returned pointer directly, without a NULL branch.
+
+**Evidence**: F80. Static: lit for ③ helper / no NULL check, placement and declaration negatives, GPL rejection and ELF requirements. Kernel load and BTF use is measured separately.
+
+**Unsupported**: Storing the pointer, passing it to functions, loop carry, reference ownership, other tasks. Kernel measurement earlier.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | a pointer to an internal kernel struct obtained from tracing arguments |
+
+
+
+### `ebpf.task.current_raw` (ebpf::TaskCurrentRawOp)
+
+_Raw bpf_get_current_task() value as an integer_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.current_raw` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns the current task_struct address as an ordinary i64 (RET_INTEGER). It is not a pointer: no operation turns it into a kptr, and it grants no dereference.
+
+**Constraints**: Result i64 only. Same placement as cpu.id. GPL-only helper: ELF emission with a non-GPL license is rejected through the UAPI helpergpl rows. Unknown memory effects; not packet-neutral.
+
+**Lowering**: Stage ③ calls UAPI get_current_task and keeps its i64 return (no inttoptr).
+
+**Evidence**: F80. Static: lit for ③ helper, absence of pointer conversion, GPL rejection and ELF requirements. Kernel load is measured separately.
+
+**Unsupported**: Integer-to-pointer conversion; typed access uses task.current_btf. Kernel measurement earlier.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.task.find_vma` (ebpf::TaskFindVmaOp)
+
+_Run a callback on the vma containing an address (bpf_find_vma; raw status and carried results)_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.find_vma` $task `[` $addr `]` `(` $inits `)` attr-dict `:` type($task) `,` functional-type($inits, results) $body
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls bpf_find_vma(task, addr, callback, ctx, 0). The kernel looks up the vma of the task's mm with `find_vma(mm, addr)` and runs the body **at most once**, only when `vm_start <= addr < vm_end` holds for it (the lookup may return the *next* vma — a vma starting after addr does not run the body). Block arguments are the task `!ebpf.kptr<"task_struct">`, the vma `!ebpf.kptr<"vm_area_struct">` and the carried values. Results are the helper's **raw i64 status** (0 = the body ran; −ENOENT = no vma contains addr, no task or no mm; −EBUSY = the mmap lock was not available or the irq work was busy) followed by the final carried values: the body's yield when the status is 0, the inits otherwise. flags are 0 (no −EINVAL).
+
+**Constraints**: The task operand comes directly from ebpf.task.current_btf. addr is i64 (a plain number, never read by the helper). Program kind fentry only (OPS `task.find_vma`; other kinds are a compiler-unsupported by ebpf-verify-target-legality). Carried values are i8 / i16 / i32 / i64. The body takes (task, vma, carried…) and ends with ebpf.task.find_vma.yield of the carried types. The task and vma arguments reach **only ebpf.kfield.load** (no yield, select, store, call, kfunc argument or capture escape); the body is a closed set — arith ops, ebpf.kfield.load and the yield. Captured values are integers only. Not allowed in loop bodies, callbacks, funcs or another find_vma; the body has no loops, calls, nested regions or helpers.
+
+**Lowering**: Stage ② moves the body into a module-level ebpf.loop_callback with the find_vma attribute (entry task / vma / carried / captures; the terminator is callback.return 0), replacing the op by ebpf.find_vma_call. Stage ③ emits a static `(ptr task, ptr vma, ptr ctx) -> i64` callback that returns constant 0, and helper find_vma (180) with flags 0; carried values and captures travel through eight-byte stack slots as in bpf_loop. Requirements gain the helper row `find_vma` and the callback is a reachability edge.
+
+**Evidence**: Out of scope — no release F row yet; static (lit, opcheck -static, elf-snapshot of the existing inputs unchanged). Kernel behaviour: measured separately.
+
+**Unsupported**: A task other than the current one, kinds other than fentry, a stop condition (the kernel ignores the return), maps and records in the body, vma fields other than ones declared in core.kernel_types, flags other than 0. Not measured: any kernel load.
+
+Traits: `RecursiveMemoryEffects`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | a pointer to an internal kernel struct obtained from tracing arguments |
+| `addr` | 64-bit signless integer |
+| `inits` | variadic of signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `results` | variadic of signless integer |
+
+
+
+### `ebpf.task.find_vma.yield` (ebpf::TaskFindVmaYieldOp)
+
+_End a task.find_vma body with its carried values_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.find_vma.yield` $values attr-dict (`:` type($values)^)?
+```
+
+**Stage**: ① Input
+
+**Meaning**: Ends the ebpf.task.find_vma body; the values are the carried results when the body ran.
+
+**Constraints**: Parent is ebpf.task.find_vma only. Types and count match the parent's carried values, checked by the parent verifier.
+
+**Lowering**: Stage ② writes carried values to context and emits callback.return 0. Absent at ③.
+
+**Evidence**: Out of scope — no release F row yet; static.
+
+**Unsupported**: A stop condition (the kernel ignores the callback's return value in bpf_find_vma).
+
+Traits: `HasParent<TaskFindVmaOp>`, `Terminator`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `values` | variadic of signless integer |
+
+
+
+### `ebpf.task.ns_pid_tgid` (ebpf::TaskNsPidTgidOp)
+
+_Read namespace-relative current pid and tgid with status_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.ns_pid_tgid` $dev `,` $ino attr-dict `:` type($dev) `,` type($ino) `->` type($status) `,` type($pid) `,` type($tgid)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls get_ns_current_pid_tgid with u64 device/inode identity. Returns raw status and u32 pid/tgid; both values are zero on error.
+
+**Constraints**: Program body, static function or B/U loop, outside direct helper callbacks. Target helper availability is checked at load.
+
+**Lowering**: Stage ③ uses an internal entry stack bpf_pidns_info, clears it every call, passes its ABI extent, loads its generated fields and selects zero on failure.
+
+**Evidence**: Out of scope — kernel values are reserved for a later measurement. Static contract only.
+
+**Unsupported**: Public output buffer or pointer, direct helper callback. Static tests do not prove target namespace identity or availability.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dev` | 64-bit signless integer |
+| `ino` | 64-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `pid` | 32-bit signless integer |
+| `tgid` | 32-bit signless integer |
+
+
+
 ### `ebpf.task.pid_tgid` (ebpf::TaskPidTgidOp)
 
 _Raw bpf_get_current_pid_tgid() value (tgid << 32 | pid)_
@@ -4729,6 +9120,144 @@ operation ::= `ebpf.task.pid_tgid` attr-dict `:` type($result)
 **Evidence**: F21. C oracle; per-tgid count agreement; three-target / non-root; ring events.
 
 **Unsupported**: Separate PID / TGID operations (caller shifts / truncates). Timer callbacks permit only ktime.ns among ordinary helpers.
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.task.pt_regs` (ebpf::TaskPtRegsOp)
+
+_Pointer to a task's saved user registers (bpf_task_pt_regs)_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.pt_regs` $task attr-dict `:` type($task) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `bpf_task_pt_regs(task)` (helper 175) returns the task's `struct pt_regs` as `!ebpf.kptr<"pt_regs">` (RET_PTR_TO_BTF_ID — never NULL, without PTR_TRUSTED). The values are the registers saved on the task's entry to the kernel; for a kernel thread they have no defined meaning.
+
+**Constraints**: The operand is `!ebpf.kptr<"task_struct">` and the result `!ebpf.kptr<"pt_regs">`, both declared in schema core.kernel_types (ebpf-verify-kptr). Program bodies only; functions, callbacks and loops are rejected. The result's only use is the pointer of `ebpf.kfield.load` — not `kfield.ptr`, `kfield.copy`, `kptr.addr`, a kfunc argument or a yield, because the pointer is not trusted. No compile-time kind restriction (requirements helper rows check availability at load), except that a sleepable fentry body rejects it by its closed whitelist. GPL-only.
+
+**Lowering**: Stage ③ calls UAPI task_pt_regs and converts the integer return of the UAPI signature to a pointer, without a NULL branch.
+
+**Evidence**: Out of scope — not yet in release_scope (no F id until it is measured): static; real kernels.
+
+**Unsupported**: Sleepable fentry bodies; acquired references as the operand; register names of architectures other than x86_64 are unmeasured.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | a pointer to an internal kernel struct obtained from tracing arguments |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | a pointer to an internal kernel struct obtained from tracing arguments |
+
+
+
+### `ebpf.task.send_signal` (ebpf::TaskSendSignalOp)
+
+_Send a signal to the current thread group_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.send_signal` $signal attr-dict `:` type($signal) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls send_signal with unsigned i32 signal number and returns raw i64 status. Delivery targets the current TGID, not just the current thread. The helper can fail and successful status does not count delivered acknowledgements.
+
+**Constraints**: Program body, static function or B/U loop, outside direct helper callbacks. Target helper availability is checked at load. All calls have effects, including repeated calls with unused status.
+
+**Lowering**: Stage ③ zero-extends the signal number and calls UAPI send_signal.
+
+**Evidence**: Out of scope — BPF signal delivery is unmeasured; uses a dedicated masked single-thread receiver. static contract.
+
+**Unsupported**: Direct helper callback; no send_signal_thread operation or implicit signal masking.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `signal` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.task.send_signal_thread` (ebpf::TaskSendSignalThreadOp)
+
+_Send a signal to the current thread only_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.send_signal_thread` $signal attr-dict `:` type($signal) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls send_signal_thread with unsigned i32 signal number and returns raw i64 status. Unlike task.send_signal (the whole thread group of the current TGID) the target is the current thread (TID) only. The helper can fail and successful status does not count delivered acknowledgements.
+
+**Constraints**: The same as task.send_signal: program body, static function or B/U loop, outside direct helper callbacks. Target helper availability is checked at load. All calls have effects, including repeated calls with unused status.
+
+**Lowering**: Stage ③ zero-extends the signal number and calls UAPI send_signal_thread.
+
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and it was also run in a VM as root on 4 kernels (7.3.1, 7.1.8, 6.12.111, 6.6.157) with a two-thread worker: the signal stays in the calling thread's private pending set and the sibling thread never acknowledges it, while task.send_signal reaches the sibling; C and MLIR agree on every cell.
+
+**Unsupported**: Direct helper callback; no implicit signal masking.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `signal` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
+
+
+
+### `ebpf.task.uid_gid` (ebpf::TaskUidGidOp)
+
+_Raw bpf_get_current_uid_gid() value (gid << 32 | uid)_
+
+Syntax:
+
+```
+operation ::= `ebpf.task.uid_gid` attr-dict `:` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Returns raw i64 helper value: high32 GID, low32 UID of the current task (in the initial user namespace, as the kernel helper defines).
+
+**Constraints**: Result i64 only. Same placement as cpu.id. Unknown memory effects; not packet-neutral.
+
+**Lowering**: Stage ③ calls UAPI get_current_uid_gid and keeps its i64 return.
+
+**Evidence**: F80. Static: lit for ③ helper and ELF requirements. Kernel load and pack order is measured separately.
+
+**Unsupported**: Separate UID / GID operations (caller shifts / truncates). Kernel measurement earlier.
 
 #### Results:
 
@@ -4789,14 +9318,14 @@ operation ::= `ebpf.timer.callback` $sym_name `map` $map `:` $record attr-dict-w
 
 **Meaning**: A timer-specific callback symbol at module top level, separate from a bpf_loop callback. `map @m : !ebpf.record<…>` declares its map and record. Its single block argument borrows the value; the kernel calls it when the timer fires. Terminates with ebpf.timer.done.
 
-**Constraints**: One block, exactly one !ebpf.borrowed<record> argument, and timer.done terminator. Only arith, ref.field.load / store on that argument, ebpf.ktime.ns, **ebpf.timer.start on that argument's own timer**, and wrapping ebpf.if are accepted; nested regions use the same allowed set. Other helpers, timer.init / set_callback, map operations, and loops are rejected. timer.start explicitly rejects a ref other than the callback block argument. ebpf-verify-records rejects direct timer / spin_lock field accesses. Stage ③ rejects callbacks unused by any program's set_callback. This is a permitted top-level ebpf-compile input.
+**Constraints**: One block, exactly one !ebpf.borrowed<record> argument, and timer.done terminator. Only arith, ref.field.load / store on that argument, ebpf.ktime.ns, **ebpf.timer.start on that argument's own timer**, and wrapping ebpf.if are accepted; nested regions use the same allowed set. Other helpers, timer.init / set_callback, map operations, and loops are rejected. timer.start explicitly rejects a ref other than the callback block argument. When every owner (a program whose set_callback names it) is struct_ops — sleepable sched_ext_ops members — the callback also accepts ebpf.call and the closed set of ScxAny ops in ScxContract.h kScxTimerCallbackOps; struct_ops owners mixed with other kinds are rejected. ** For sched_ext_ops owners the body also takes the ebpf.func body op set**: kfunc.call and kref.check, iter.num, iter.scx_dsq and rcu.region (closed inside the callback), the kptr ops (kptr.xchg / kptr.load_rcu on its map value, global.kptr_xchg / global.kptr_load_rcu, kptr.check, kfield.load / kfield.ptr), the global ops (global.load / store / ref / atomic_add / cmpxchg / atomic_or) and field ops on any borrowed record (a global record borrow too); nested regions use the same set. Map ops stay out (no `maps` — a function the callback calls may use them). **The callback context** (the callback body and every function it reaches, also through 2 or more calls) is **not sleepable and assumes no RCU** — 7.3.1 / 7.1.8 never run a timer callback sleepable, while 6.12.111 runs a sleepable owner's callback sleepable (outside RCU), so the compiler takes the side every version accepts: may-sleep ops and KF_SLEEPABLE kfuncs (scx.create_dsq, ...) are rejected, and the RCU-dependent ops (iter.scx_dsq, kptr.load_rcu, global.kptr_load_rcu, task_struct.cpus_ptr) need an explicit ebpf.rcu.region held at the op (the callback's own, or a caller's when every call on the way to the op is static — a global function does not inherit its caller's section). A sched_ext op is accepted only when it is in kScxTimerCallbackOps **and**, if RCU-dependent, inside a held rcu.region; **kScxTimerCallbackOps is a conservative subset of the compiler, not the kernel's filter** (7.3.1 / 7.1.8's scx kfunc filter looks at the program only and applies the owner member's table to the callback too) — scx.cpu_curr / scx.dsq_peek stay outside it also inside rcu.region, and scx.dump, the task-argument ops and the member-only ops stay out. The owner's context (member table, sleepable flag) never flows into the callback. trace.printk stays rejected (also through calls). The program-body placement / ownership rules (call sites inside if_reserved / packet.check / ebpf.loop / scf.if / iterator bodies, live references across a call to an iterator — only ebpf.iter.scx_dsq for a reference, ebpf.iter.num being accepted) hold with the same text in the callback body and in the functions it reaches: the op verifiers, ebpf-verify-ownership, ebpf-verify-call-contexts and ebpf-verify-schema walk the callback body as a top, one context per owner. A non-sched_ext owner's callback keeps the base set. ebpf-verify-records rejects direct timer / spin_lock field accesses. Stage ③ rejects callbacks unused by any program's set_callback. This is a permitted top-level ebpf-compile input.
 
-**Lowering**: Stage ③ emits an internal/static .text llvm.func `(ptr map, ptr key, ptr value) -> i32`; the body uses the third argument. BTF is static FUNC `cb(void *map, <key type> *key, struct <R> *value) -> int`, matching C rather than the bpf_loop callback shape.
+**Lowering**: Stage ③ emits an internal/static .text llvm.func `(ptr map, ptr key, ptr value) -> i32`; the body uses the third argument. BTF is static FUNC `cb(void *map, <key type> *key, struct <R> *value) -> int`, matching C rather than the bpf_loop callback shape. The callback is a root of stage ②'s reachability (a function a program calls only inside an N = 0 loop body and the callback calls is kept) and of ebpf-verify-structured's frame check; the kfunc / helper rows of the callback and the functions it reaches go to every owner program's requirements rows.
 On 7.1.8 fentry / fexit / tp_btf, callback count1 and fired_ns within the MONOTONIC range match C. Helper set is not broadened; actual 6.x operations are unmeasured.
 
-**Evidence**: F18. Callback ELF / BTF shape and return-type correction; three-target tests; C callback ktime oracle; ktime.ns permission and requirement reachability; own-timer start and ebpf.if.
+**Evidence**: F18. Callback ELF / BTF shape and return-type correction; three-target tests; C callback ktime oracle; ktime.ns permission and requirement reachability; own-timer start and ebpf.if. lit only (compile, the requirements rows of two owners); no kernel load of the widened body.
 
-**Unsupported**: Map and key arguments cannot be used. Helpers other than ktime (and the explicitly allowed own timer restart) are rejected. Callbacks of programs outside xdp / fentry / fexit / tp_btf are compiler unsupported.
+**Unsupported**: Map and key arguments cannot be used. Helpers other than ktime (and the explicitly allowed own timer restart) are rejected in a non-sched_ext owner's callback. Callbacks of programs outside xdp / fentry / fexit / tp_btf / struct_ops (sleepable sched_ext_ops members) are compiler unsupported; for struct_ops owners the callback calls run on (is compile only). ebpf.loop, ring buffer ops, trace.printk and the sched_ext ops outside kScxTimerCallbackOps in the callback body.
 
 Traits: `IsolatedFromAbove`
 
@@ -4810,6 +9339,49 @@ Interfaces: `Symbol`
 <tr><td><code>map</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
 <tr><td><code>record</code></td><td>::mlir::TypeAttr</td><td>any type attribute</td></tr>
 </table>
+
+
+
+### `ebpf.timer.cancel` (ebpf::TimerCancelOp)
+
+_Raw bpf_timer_cancel(&value->field) status (also drops the timer's callback)_
+
+Syntax:
+
+```
+operation ::= `ebpf.timer.cancel` $ref $field attr-dict `:` type($ref) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls timer_cancel(&value->field) on a borrowed record's timer and returns the **raw** i64 result: 0 = the timer was not pending (never started, or already fired), 1 = it was pending and is now cancelled, negative errno otherwise (-EINVAL for a timer never initialized; -EOPNOTSUPP in NMI / deferred contexts; -EDEADLK for cancelling from a callback, outside this op's scope). **Cancel is not "stop and keep the callback"**: the kernel drops the timer's callback and program reference, so a later timer.start returns -EINVAL until ebpf.timer.set_callback succeeds again (ebpf.timer.init is not needed again).
+
+**Constraints**: Same borrow, map, field, loop and program-kind rules as timer.start. Allowed only in a program body: inside ebpf.timer.callback it is rejected. The call is never removed even if the result is unused (it changes timer state). timer_cancel is a GPL-only helper like the other timer helpers.
+
+**Lowering**: Stage ③ calls timer_cancel(value pointer + timer offset). The helper number is the UAPI table's. Requirements record the helper through the existing helper rows (no new row kind).
+
+**Evidence**: F18 (timer family). No measurement of cancel yet: plans a C differential on four kernels.
+
+**Unsupported**: Cancel inside ebpf.timer.callback, cancelling another timer, waiting for a running callback, and any claim after the last map userspace reference is closed (the timer is reclaimed then; link detach alone does not cancel it).
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ref` | a checked borrowed reference without ownership |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | 64-bit signless integer |
 
 
 
@@ -4853,14 +9425,14 @@ operation ::= `ebpf.timer.init` $ref $field `,` $map `clock` $clock attr-dict `:
 
 **Meaning**: Initializes a borrowed record map value's timer field with `bpf_timer_init(&value->field, map, clock)`, returning **raw** i64 status (0 / negative errno). A second init returns −EBUSY and leaves the timer initialized. The caller must check init == 0 before set_callback / start; ignoring status rearms the timer (C and ebpf mutations demonstrate this).
 
-**Constraints**: Only in ebpf.program bodies, not ebpf.func. %ref is a record borrow directly from map.lookup → ref.check present; $map is that same lookup map value. Clock is monotonic only. ebpf-verify-records checks the timer field. No loop bodies. Kinds are xdp / fentry / fexit / tp_btf; other kinds are compiler unsupported in target legality. Target-profile fact `map-with-timer <type> rejected` adds a target-unsupported note. Schema permits array values only, one timer per record, 8-byte-aligned offset, and no lock in the same record.
+**Constraints**: Only in ebpf.program bodies, not ebpf.func. %ref is a record borrow directly from map.lookup → ref.check present; $map is that same lookup map value. Clock is a clockid row of the UAPI table (monotonic, boottime). ebpf-verify-records checks the timer field. No loop bodies. Kinds are xdp / fentry / fexit / tp_btf and struct_ops in a sleepable sched_ext_ops member only (VerifySchema names the others); other kinds are compiler unsupported in target legality. Target-profile fact `map-with-timer <type> rejected` adds a target-unsupported note. Schema permits array values only, one timer per record, 8-byte-aligned offset, and no lock in the same record.
 
-**Lowering**: Stage ③ calls timer_init(value pointer + @records timer offset, &map, clock), with UAPI clockid monotonic.
+**Lowering**: Stage ③ calls timer_init(value pointer + @records timer offset, &map, clock), with the clock from the UAPI clockid row (monotonic 1, boottime 7).
 On 7.1.8 fentry / fexit / tp_btf in own child cgroup / netns filtered to own tgid, first init / callback / start status is 0, second init is −EBUSY, and C/ebpf agree. Actual 6.x ops are unmeasured.
 
 **Evidence**: F18, F31. C oracle for −EBUSY, unstarted / no-callback / invalid-clock statuses; ELF shape and host observations; three-target root / non-root; kprobe timer maps rejected on 6.x but accepted on 7.1.8; target-legality and load gates.
 
-**Unsupported**: Other clocks, non-array maps, other program kinds, and direct measurement of callback contents after last uref close (own IDs disappear within five seconds). Go bindgen exposes timer fields as inaccessible holes; userspace updates stop running timers.
+**Unsupported**: Clocks outside the UAPI table, non-array maps, other program kinds (struct_ops outside sleepable sched_ext_ops members), and direct measurement of callback contents after last uref close (own IDs disappear within five seconds). Go bindgen exposes timer fields as inaccessible holes; userspace updates stop running timers.
 
 #### Attributes:
 
@@ -4951,7 +9523,7 @@ On 7.1.8 fentry / fexit / tp_btf, one-shot count1 / armed1 stays stable for 200 
 
 **Evidence**: F18, F31. C one-shot persistence and unstarted / no-callback status; host C agreement; three-target root / non-root; callback timestamp inequalities; own-timer callback restart with bounded N and an unbounded mutation stopped by last uref close, measured on XDP on three kernels.
 
-**Unsupported**: Flags other than 0 (no ABS / CPU_PIN), and timer_cancel. A second program-side start (rearm) is a negative control. Periodic own-timer restart has three-kernel evidence only for XDP. Other than xdp / fentry / fexit / tp_btf, kinds are compiler unsupported.
+**Unsupported**: Flags other than 0 (no ABS / CPU_PIN); cancel is ebpf.timer.cancel. A second program-side start (rearm) is a negative control. Periodic own-timer restart has three-kernel evidence only for XDP. Other than xdp / fentry / fexit / tp_btf, kinds are compiler unsupported.
 
 #### Attributes:
 
@@ -5151,6 +9723,50 @@ operation ::= `ebpf.tp.field.copy` $dst $path `,` $ctx $field `[` $offset `]` at
 
 
 
+### `ebpf.trace.printk` (ebpf::TracePrintkOp)
+
+_Print a limited literal format with up to three integer or literal-string arguments_
+
+Syntax:
+
+```
+operation ::= `ebpf.trace.printk` $format (`strs` $strs^)? `(` $args `)` attr-dict `:` functional-type($args, $status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Call trace_printk with a read-only literal plus one terminal NUL and its size. The raw i64 result is not the decorated trace line length or a delivery count. Compile-time format checks are a limited language contract; kernel format errors are runtime helper results. `strs ["…", …]` gives the literal strings of the format's %s conversions, in order; a runtime pointer cannot be written (`$args` are integers, the strings are attributes only).
+
+**Constraints**: sk_skb, sched_cls or struct_ops program; a struct_ops program must implement a sched_ext_ops member (ebpf-verify-schema — the other struct_ops types' get_func_proto is not read). No embedded NUL in the format. Accept %d/%u/%x with i32, %ld/%lu/%lx/%llx with i64 and %s; %% consumes no argument and no literal. The number of %s equals the number of strs elements and the number of integer conversions equals the number of `$args`; %s and integers together are at most three (the helper's slots). Every strs element is a string attribute without an embedded NUL. %s takes no flag, width or precision, and the character after %s is the end of the format, a space or an ASCII punctuation character (C isspace / ispunct — the kernel returns -EINVAL otherwise). The compiler's conservative bin_args bound: sum over strs of (length + 1 + 7) plus 8 × (number of integers) ≤ 512 (MAX_BPRINTF_BIN_ARGS); e.g. one %s alone takes a literal of at most 504 bytes. No other printf flags, width, precision or pointers. Unknown memory effects retain unused calls. ELF emission requires an exact kernel GPL-compatible license. In an ebpf.func body the op verifier checks the format only; ebpf-verify-call-contexts requires every program kind that reaches the function to allow trace.printk, and ebpf-verify-schema requires a reaching struct_ops owner to implement a sched_ext_ops member (a context reached through a timer or helper callback is rejected).
+
+**Lowering**: Deterministic compiler-owned .rodata format, then helper6 with fmt/size/three slots in the format's conversion order. Unused slots are zero. Signed %d is sign-extended and unsigned i32 formats zero-extended; i64 bits are preserved. Each %s literal is a compiler-owned .rodata string `__ebpf_trace_str_<sha256>` (one symbol per content, with a BTF VAR like the format) whose address (llvm.mlir.addressof, ptrtoint to i64) fills its slot.
+
+**Evidence**: F61 stream helpers; format/license/trace runtime checks are deferred to the handler experiment. compile only (lit) for the ebpf.func case. compile only (lit and ELF) for struct_ops and %s; no kernel load (the trace line is unobserved).
+
+**Unsupported**: General printf compatibility, runtime string pointers in %s (e.g. a task's comm) and strings chosen at run time, four or more arguments (bpf_trace_vprintk), struct_ops types other than sched_ext_ops, helper callbacks (also through a function they call), other program kinds. CAP_PERFMON (a loader without it has no trace_printk) is a loader permission and is not checked. Trace payload/pid attribution is a separate observation.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>format</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+<tr><td><code>strs</code></td><td>::mlir::ArrayAttr</td><td>array attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `args` | variadic of signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.uprobe.arg` (ebpf::UprobeArgOp)
 
 _Read a user-function argument register from uprobe pt_regs (integer or typed user string)_
@@ -5244,6 +9860,131 @@ Status is 0 for successful const / reg / deref, **raw probe_read_user negative e
 | Result | Description |
 | :----: | ----------- |
 | `value` | 8-bit signless integer or 16-bit signless integer or 32-bit signless integer or 64-bit signless integer |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.user.addr` (ebpf::UserAddrOp)
+
+_Reinterpret an i64 as a user address for ebpf.user.copy_
+
+Syntax:
+
+```
+operation ::= `ebpf.user.addr` $value attr-dict `:` type($value) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reinterprets any i64 as `!ebpf.user_addr`. This is an explicit, unchecked assertion by the author — it does not prove the value is a valid user pointer; a bad address makes `ebpf.user.copy` return −EFAULT.
+
+**Constraints**: Only in a `fentry` program written `sleepable` (the attach table row with FLAGS `sleepable`), directly in the program body (not in an `ebpf.func`, callback or loop). The result may be used only as the address operand of `ebpf.user.copy` or `ebpf.user.copy_task` — no store, return, yield, region or block-argument transport, call argument or integer operation. The usual source is an `ebpf.global.load`.
+
+**Lowering**: Stage ③ binds the i64 itself; no helper is called.
+
+**Evidence**: Out of scope — not yet in release_scope (no F id until it is measured): static verifier and lit; the real-kernel behavior of the address is measured separately.
+
+**Unsupported**: Any kind other than a sleepable fentry; a user address that outlives the program's own thread (the address must belong to the mm the helper reads — see `ebpf.user.copy`).
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `value` | 64-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | an explicitly reinterpreted user address, read only by ebpf.user.copy and ebpf.user.copy_task |
+
+
+
+### `ebpf.user.copy` (ebpf::UserCopyOp)
+
+_Copy user memory into a reservation byte array with bpf_copy_from_user, returning the raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.user.copy` $reservation $field `,` $addr attr-dict `:` type($reservation) `,` type($addr) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `bpf_copy_from_user(dst, size, user_ptr)` (helper 148) copies `size` bytes — the destination field's length — from the user address into a byte-array field of a checked ring buffer reservation and returns the **raw** i64 status: 0 on success, −EFAULT (−14) when the user memory cannot be read, in which case the helper zeroes the destination. The helper may sleep, so it exists only on a sleepable program; it is not GPL-only.
+
+**Constraints**: Only in a `fentry` program written `sleepable`, directly in the program body. The destination is a nonempty field of a record reservation: a one-dimensional array of 8-bit integers with at least one element; the reservation must still be live (no use after submit / discard) and, like `ebpf.task.comm`, must first be fully initialized with `record.make` → `store_record`. The address operand must be an `ebpf.user.addr` result. The helper reads the memory of the mm that is current when the program fires; the program must not assume that the address belongs to the task that triggered the attach — callers that need that exclude other tasks' firings themselves (states the boundary it measured).
+
+**Lowering**: Stage ③ `copy_from_user(reservation + field offset, field length, address)`. requirements record the helper; the program's `sleepable` row makes a loader load it as `fentry.s/<function>`.
+
+**Evidence**: Out of scope — not yet in release_scope (no F id until it is measured): static (verifier, lowering shape, C oracle ELF); real kernels (success, −EFAULT, non-sleepable rejection).
+
+**Unsupported**: Non-sleepable programs, other kinds and `fexit.s` / `fmod_ret.s` / `iter.s` / `uprobe.s` / LSM / syscall sleepable forms; runtime-length copies; a status normalized by the compiler. `copy_from_user_task` is `ebpf.user.copy_task`.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `reservation` | a successful ring-buffer reservation, linearly consumed exactly once |
+| `addr` | an explicitly reinterpreted user address, read only by ebpf.user.copy and ebpf.user.copy_task |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.user.copy_task` (ebpf::UserCopyTaskOp)
+
+_Copy another task's user memory into a reservation byte array with bpf_copy_from_user_task, returning the raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.user.copy_task` $reservation $field `,` $addr `,` $task attr-dict `:` type($reservation) `,` type($addr) `,` type($task) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: `bpf_copy_from_user_task(dst, size, user_ptr, task, 0)` (helper 191) copies `size` bytes — the destination field's length — from the user address **in the address space of `task`** into a byte-array field of a checked ring buffer reservation and returns the **raw** i64 status: 0 on success; on failure the helper zeroes the destination and returns the negative `access_process_vm` result, or −EFAULT for a partial read. The flags argument is always 0 and is not exposed (the helper defines no flag). The helper may sleep; it is GPL-only.
+
+**Constraints**: Only in a `fentry` program written `sleepable`, in the program body — directly, or inside the present region of `ebpf.kref.check` or `ebpf.ringbuf.if_reserved`; not in an `ebpf.func`, callback or loop. The destination is a nonempty one-dimensional array of 8-bit integers in a live record reservation. Initializing the whole reservation first (`record.make` → `store_record`) is the writer's precondition: the fixtures meet it, but the compiler does not check the initialization order. A `!ebpf.kref` task together with the reservation destination gives the helper two arguments that carry a reference: 7.3.1 loads it, while 6.6.157, 6.12.111 and 7.1.8 refuse the load (`more than one arg with ref_obj_id`; the C equivalent is refused the same way). The compiler does not know the kernel version, so it accepts the program and the load refuses it. A `!ebpf.kptr` task (the current task) loads on all four kernels. The address must be an `ebpf.user.addr` result. The task is either the `!ebpf.kptr<"task_struct">` result of `ebpf.task.current_btf` or the `!ebpf.kref<"task_struct">` present block argument of `ebpf.kref.check` (from `bpf_task_from_pid`); other kptrs, `rcu_ptr`, and kptrs from a context argument or field are rejected. The operation does not consume the reference: the writer still releases it, and a use after release is rejected by ownership checking.
+
+**Lowering**: Stage ③ `copy_from_user_task(reservation + field offset, field length, address, task, 0)`. requirements record the helper and the program's `sleepable` row.
+
+**Evidence**: Out of scope — not yet in release_scope (no F id until it is measured): static (verifier, lowering shape, C oracle ELF); real kernels.
+
+**Unsupported**: Non-sleepable programs, other kinds and other sleepable entries; task pointers other than the two above; runtime-length copies; nonzero flags; a status normalized by the compiler. An exited task (no mm) is not measured.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>field</code></td><td>::mlir::StringAttr</td><td>string attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `reservation` | a successful ring-buffer reservation, linearly consumed exactly once |
+| `addr` | an explicitly reinterpreted user address, read only by ebpf.user.copy and ebpf.user.copy_task |
+| `task` | any non-token type |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
 | `status` | 64-bit signless integer |
 
 
@@ -5498,7 +10239,7 @@ operation ::= `ebpf.verdict` $action attr-dict
 **Meaning**: A terminator returning a kind-specific verdict. xdp accepts `aborted` / `drop` / `pass` / `tx` / `redirect`; sched_cls accepts `pass` / `drop`; tp_btf / fentry / fexit / kprobe / uprobe accept only `done` (return value 0, not a verdict).
 For sock_ops in the `cgroup` verdict family (deny 0 / allow 1), deny does not block a connection: kernel tcp_call_bpf discards the reply and returns -1, and callers of callbacks such as ESTABLISHED ignore that return value.
 
-**Constraints**: ParentOneOf permits only `ebpf.program` or a `ebpf.tail_call` fallback region. The func verifier rejects it inside `ebpf.func`, which terminates with ebpf.return. The op verifier rejects verdicts absent from the kind table, such as sched_cls `redirect` or kprobe `pass`.
+**Constraints**: ParentOneOf permits ebpf.program or a tail_call or redirect fallback region. The func verifier rejects it inside `ebpf.func`, which terminates with ebpf.return. The op verifier rejects verdicts absent from the kind table, such as sched_cls `redirect` or kprobe `pass`.
 
 **Lowering**: Unchanged in ②. Stage ③ creates `bpfabi.return` using UAPI `verdict` rows (xdp_action / tcx_action_base), or KernelABI.h's 0 for `done`. bpfabi-verify checks the table at the ③ exit; ④ emits a constant `llvm.return`.
 
@@ -5506,7 +10247,7 @@ For sock_ops in the `cgroup` verdict family (deny 0 / allow 1), deny does not bl
 
 **Unsupported**: Use `ebpf.verdict.if` to select by value. sched_cls `redirect` / `next` are not accepted; use `ebpf.redirect`. xdp `redirect` only returns a constant and does not call a helper; use `ebpf.redirect_map` for forwarding.
 
-Traits: `HasParent<ProgramOp, TailCallOp>`, `Terminator`
+Traits: `HasParent<ProgramOp, TailCallOp, RedirectOp>`, `Terminator`
 
 #### Attributes:
 
@@ -5539,7 +10280,7 @@ operation ::= `ebpf.verdict.if` $cond $then_action `else` $else_action attr-dict
 
 **Unsupported**: Exactly two verdicts, with no multi-way selection.
 
-Traits: `HasParent<ProgramOp, TailCallOp>`, `Terminator`
+Traits: `HasParent<ProgramOp, TailCallOp, RedirectOp>`, `Terminator`
 
 #### Attributes:
 
@@ -5598,6 +10339,47 @@ The compiler treats packet pointers as invalidated on both success and failure (
 
 
 
+### `ebpf.xdp.adjust_meta` (ebpf::XdpAdjustMetaOp)
+
+_Bpf_xdp_adjust_meta: move the packet metadata start by delta bytes and return status (XDP only; invalidates packet pointers)_
+
+Syntax:
+
+```
+operation ::= `ebpf.xdp.adjust_meta` $ctx `,` $delta attr-dict `:` type($ctx) `->` type($status)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Calls `xdp_adjust_meta(ctx, delta)` to move `data_meta` by delta bytes and returns raw status (0 or negative errno) as i64. Negative delta extends the metadata area toward the head. The kernel checks `data_meta` against `data_hard_start + sizeof(struct xdp_frame)` and `data`, and requires the resulting `data - data_meta` to be a multiple of 4 and at most 255 bytes. Only the pointer moves: no byte is written or zeroed.
+The compiler treats packet pointers as invalidated on both success and failure (UAPI table `pktinval`).
+
+**Constraints**: The op verifier requires an XDP context inside an XDP program. Delta is any i32 value; the compiler checks nothing about it (the kernel decides).
+- Not allowed in `ebpf.loop` bodies.
+- The stage-② may-invalidate check rejects `packet.store` / `packet.window_load` if any path from window definition to use contains this op. Re-read with a new `packet.check` or `packet.load`.
+- It is absent from `isPacketNeutral`, so packet-neutral C1 / W1 / packet-check rewrites cannot cross it.
+
+**Lowering**: Stage ③ sign-extends delta to i64, calls helper `xdp_adjust_meta`, and returns its status. No MLIR memory effects are declared (unknown effects).
+
+**Evidence**: Out of scope — no release F row yet. Static contracts (effect table, may-invalidate, C1 / W1 negative controls); also measured in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root against an independent C oracle with XDP BPF_PROG_TEST_RUN (ctx_in data_end 64, every load strict-aligned): status 0 for a 4-byte-multiple delta within the limit, -13 for a misaligned delta, -22 for a positive delta from no meta and for a delta beyond the headroom, data_out = meta + the original frame; a 216-byte meta is accepted on 7.x and 6.12 and refused with -13 on 6.6.157 (the limit there is below 216 and at least 32, not measured exactly). XDP TEST_RUN only: no real attach, tc-side read, chain, AF_XDP or multi-buffer.
+
+**Unsupported**: Non-XDP programs and loop bodies (compile-time rejection). Reading or writing the metadata area (the meta window is a separate stage). Physical NIC headroom is unmeasured.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `delta` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
 ### `ebpf.xdp.adjust_tail` (ebpf::XdpAdjustTailOp)
 
 _Bpf_xdp_adjust_tail: move the packet end by delta bytes and return status (XDP only; invalidates packet pointers)_
@@ -5627,6 +10409,237 @@ Even delta 0 calls the helper and participates in may-invalidate checking. It is
 | :-----: | ----------- |
 | `ctx` | an eBPF program context carrying its attach kind |
 | `delta` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.xdp.buff_len` (ebpf::XdpBuffLenOp)
+
+_Raw total XDP buffer length including fragments (xdp_get_buff_len)_
+
+Syntax:
+
+```
+operation ::= `ebpf.xdp.buff_len` $ctx attr-dict `:` type($ctx) `->` type($len)
+```
+
+**Stage**: ① Input
+**Meaning**: Raw i64 result of xdp_get_buff_len(ctx): linear plus fragment bytes.
+**Constraints**: Own xdp entry context (OPS `xdp.bytes`), outside loops, static functions and callbacks.
+**Lowering**: Call helper xdp_get_buff_len.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Other kinds.
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `len` | 64-bit signless integer |
+
+
+
+### `ebpf.xdp.load_bytes` (ebpf::XdpLoadBytesOp)
+
+_Read fixed XDP buffer bytes into a packed integer and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.xdp.load_bytes` $ctx `,` $offset `len` $len attr-dict `:` type($ctx) `,` type($offset) `->` type($value) `,` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Like `skb.load_bytes` for xdp: call xdp_load_bytes once into a compiler-owned buffer (including fragments). Byte j occupies bits 8j..8j+7 of the i64 value; higher bits are zero. Raw i64 status; the value is read on both status paths.
+**Constraints**: Own xdp entry context (OPS `xdp.bytes`), unsigned i32 offset, constant length 1..8, outside loops, static functions and callbacks.
+**Lowering**: Initialize eight stack bytes, call helper xdp_load_bytes with zero-extended offset and constant length, then pack exactly len bytes.
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Variable length, arbitrary destinations, other kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `offset` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `value` | 64-bit signless integer |
+| `status` | 64-bit signless integer |
+
+
+
+### `ebpf.xdp.meta_check` (ebpf::MetaCheckOp)
+
+_Check that len bytes of XDP metadata exist before data and introduce a scoped meta window (XDP only)_
+
+Syntax:
+
+```
+operation ::= `ebpf.xdp.meta_check` $ctx `len` $len attr-dict `:` type($ctx) `in_range` $inRange `out_of_range` $outOfRange
+```
+
+**Stage**: ① Input
+
+**Meaning**: Checks `data_meta + len <= data` (both read from the XDP context). Success executes in_range with its sole block argument !ebpf.meta_window<len>; failure executes the explicit out_of_range region. Neither arm yields values. `data_end` is not consulted.
+
+**Constraints**: The context is the entry context of an XDP program (not a static function's argument). len is 1..255. in_range takes exactly one !ebpf.meta_window<len> argument and out_of_range none. The window may only be used by ebpf.xdp.meta_store / ebpf.xdp.meta_load inside this in_range region — block-argument transport, yield, results, call arguments, select, record / map storage and loop / callback forwarding are rejected. Not allowed in ebpf.loop. Stage ② requires every window use to be free of packet-pointer invalidators (adjust_head / adjust_tail / adjust_meta / tail_call / seg6 …) on every path from the check; check again after one.
+
+**Lowering**: Stage ② ebpf-expand-regions emits meta.check_br with ^in(%w) / ^out blocks. Stage ③ reads `data_meta` and `data` (4-byte context fields), computes `data_meta + len` and branches on `ule data`.
+
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root with byte-wise meta accesses against an independent C oracle (XDP BPF_PROG_TEST_RUN, strict-aligned loads): the stored bytes appear at the start of data_out, the out_of_range arm is taken when the meta is shorter than the window, and a re-check after adjust_meta reads the stored value back from a real load. XDP TEST_RUN only.
+
+**Unsupported**: Non-XDP programs, windows across regions, loops, calls and callbacks, variable indices, a tc-side read (a separate plan), and any claim about what the metadata bytes contain.
+
+Traits: `RecursiveMemoryEffects`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+
+
+### `ebpf.xdp.meta_load` (ebpf::MetaLoadOp)
+
+_Load an integer from a checked XDP meta window_
+
+Syntax:
+
+```
+operation ::= `ebpf.xdp.meta_load` $window `[` $index `]` attr-dict `:` type($window) `->` type($result)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Reads a little-endian integer at a constant index of a checked meta window, without another range check. The bytes read are whatever the metadata area holds: adjust_meta does not zero them, so reading a byte nobody wrote returns unspecified data.
+
+**Constraints**: Result is i8 / i16 / i32 / i64. [index, index + width) must fit the window, checked by subtraction (index > len or width > len − index is rejected, so a huge index cannot wrap). The window is the in_range argument of an xdp.meta_check and the use is inside that region.
+
+**Lowering**: Stage ③ always reads byte by byte (width loads of align 1) and assembles the value. The first stage never uses a wide access: the strict alignment of PTR_TO_PACKET_META is `NET_IP_ALIGN`-relative and a 4-multiple `data - data_meta` does not imply an aligned start.
+
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root with byte-wise meta accesses against an independent C oracle (XDP BPF_PROG_TEST_RUN, strict-aligned loads): the stored bytes appear at the start of data_out, the out_of_range arm is taken when the meta is shorter than the window, and a re-check after adjust_meta reads the stored value back from a real load. XDP TEST_RUN only.
+
+**Unsupported**: Variable indices, sign-extending loads, wide accesses, reads after an invalidating operation.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>index</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `window` | a range-checked XDP metadata window of len bytes |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `result` | signless integer |
+
+
+
+### `ebpf.xdp.meta_store` (ebpf::MetaStoreOp)
+
+_Store an integer to a checked XDP meta window_
+
+Syntax:
+
+```
+operation ::= `ebpf.xdp.meta_store` $window `[` $index `]` `,` $value attr-dict `:` type($window) `,` type($value)
+```
+
+**Stage**: ① Input
+
+**Meaning**: Writes a little-endian integer at a constant index of a checked meta window. Only the written bytes change; the compiler never zero-fills the metadata area, so the caller writes every byte it wants a reader to see.
+
+**Constraints**: Value is i8 / i16 / i32 / i64. [index, index + width) must fit the window, checked by subtraction. The window is the in_range argument of an xdp.meta_check and the use is inside that region.
+
+**Lowering**: Stage ③ stores byte by byte (align 1, little-endian) and never as a wide access.
+
+**Evidence**: Out of scope — no release F row yet; static checks cover it, and a separate run covers it in VMs on 7.3.1, 7.1.8, 6.12.111 and 6.6.157 as root with byte-wise meta accesses against an independent C oracle (XDP BPF_PROG_TEST_RUN, strict-aligned loads): the stored bytes appear at the start of data_out, the out_of_range arm is taken when the meta is shorter than the window, and a re-check after adjust_meta reads the stored value back from a real load. XDP TEST_RUN only.
+
+**Unsupported**: Variable indices, wide accesses, stores after an invalidating operation, atomics.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>index</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `window` | a range-checked XDP metadata window of len bytes |
+| `value` | signless integer |
+
+
+
+### `ebpf.xdp.store_bytes` (ebpf::XdpStoreBytesOp)
+
+_Write fixed bytes into the XDP buffer and return raw status_
+
+Syntax:
+
+```
+operation ::= `ebpf.xdp.store_bytes` $ctx `,` $offset `,` $value `len` $len attr-dict `:` type($ctx) `,` type($offset) `,` type($value) `->` type($status)
+```
+
+**Stage**: ① Input
+**Meaning**: Like `skb.store_bytes` for xdp: write exactly len bytes of the value (little-endian byte order of the integer) at an unsigned offset via xdp_store_bytes (including fragments). Packet pointers stay valid, but the op writes packet bytes and is outside the packet-neutral whitelist (C1 / W1 do not cross it).
+**Constraints**: Own xdp entry context (OPS `xdp.bytes`), outside loops, static functions and callbacks. Constant len/type pairs 1/i8, 4/i32, 6/i64, 8/i64.
+**Lowering**: Store len bytes into a stack slot (all bytes written before the call), then call helper xdp_store_bytes(ctx, zext offset, slot, len).
+**Evidence**: F81. Static contracts; kernel execution is a separate measurement.
+**Unsupported**: Runtime lengths, record sources, other kinds.
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+| `offset` | 32-bit signless integer |
+| `value` | integer |
 
 #### Results:
 
@@ -5682,7 +10695,7 @@ operation ::= `ebpf.yield` ($results^ `:` type($results))? attr-dict
 
 **Meaning**: Terminates checked regions: ref.check / ringbuf.if_reserved / ref.index / packet.check / spin.region, returning values if the parent has results. kptr.check and kref.check are also supported parents.
 
-**Constraints**: ParentOneOf restricts parents to these operations. ref.check forbids borrowed escape and requires result-type agreement. ref.index forbids elem / borrowed escape. packet.check forbids pkt_window escape. ringbuf.if_reserved forbids reservation escape and requires matching results. spin.region returns no values. kptr.check / kref.check forbid kptr / kref escape and require matching results. Within loops, ref.check arms may also end with break / continue.
+**Constraints**: ParentOneOf restricts parents to these operations. ref.check forbids borrowed escape and requires result-type agreement. ref.index forbids elem / borrowed escape. packet.check forbids pkt_window escape. arena.check forbids arena_window escape and requires matching results. ringbuf.if_reserved forbids reservation escape and requires matching results. spin.region returns no values. kptr.check / kref.check forbid kptr / kref escape and require matching results. Within loops, ref.check arms may also end with break / continue.
 
 **Lowering**: Stage ② branches to the merge block with result block arguments. In spin.region it disappears into lock / body / unlock. Absent at ③; ebpf-verify-structured rejects leftovers as stage-① ops.
 
@@ -5690,7 +10703,7 @@ operation ::= `ebpf.yield` ($results^ `:` type($results))? attr-dict
 
 **Unsupported**: Borrow / reservation / window / element escape. ebpf.if uses if.yield; ebpf.loop uses loop.yield.
 
-Traits: `HasParent<RefCheckOp, RingbufIfReservedOp, RefIndexOp, PacketCheckOp, SpinRegionOp, KPtrCheckOp, KRefCheckOp, SockRefCheckOp>`, `Terminator`
+Traits: `HasParent<RefCheckOp, RingbufIfReservedOp, RefIndexOp, PacketCheckOp, MetaCheckOp, ArenaCheckOp, ArenaAllocOp, SpinRegionOp, KPtrCheckOp, KRefCheckOp, SockRefCheckOp, RcuRegionOp, KsymPerCpuLoadOp>`, `Terminator`
 
 #### Operands:
 
@@ -5701,6 +10714,122 @@ Traits: `HasParent<RefCheckOp, RingbufIfReservedOp, RefIndexOp, PacketCheckOp, S
 
 
 ## ② Internal operations
+
+### `ebpf.arena.alloc_br` (ebpf::ArenaAllocBrOp)
+
+_Internal branch on the exact address returned by arena allocation_
+
+**Stage**: ② Internal
+**Meaning**: Allocates the original fixed page range and chooses success or failure.
+**Constraints**: Generated from a checked arena.alloc; successors have no arguments.
+**Lowering**: Named kfunc plus non-NULL/full-address/low32 comparisons.
+**Evidence**: Internal — generated from the checked arena.alloc.
+**Unsupported**: Direct input.
+
+Traits: `Terminator`
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>page_offset</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>page_count</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `map` | a BPF map handle with kind, key type and value type |
+
+#### Successors:
+
+| Successor | Description |
+| :-------: | ----------- |
+| `allocated` | any successor |
+| `failed` | any successor |
+
+
+
+### `ebpf.arena.check_br` (ebpf::ArenaCheckBrOp)
+
+_Branch on arena bounds, passing a window to the true successor (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.arena.check_br` $base `[` $offset `]` `len` $len `,` $inRange `,` $outOfRange attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Terminates with a branch testing [offset, offset + len) against the arena size. The in-range successor ^in has a sole !ebpf.arena_window<len> argument.
+
+**Constraints**: Op verifier checks successor count / arguments. Offset is one zero-extended i64 value. ebpf-verify-structured requires the ^in block to be entered only from this branch.
+
+**Lowering**: Stage ③ compares `off64 ule size − len` (size from the schema pages, recorded by ebpf-build-btf-types) and branches without an address; the window becomes `bpfabi.arena_addr` created at the entry of the in-range block.
+
+**Evidence**: Internal — expanded from arena.check; source input is rejected to prevent bypassing stage-① restrictions. arena.check owns feature evidence.
+
+**Unsupported**: Not writable in input; use arena.check.
+
+Traits: `Terminator`
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `base` | the user-space start address of the module's arena |
+| `offset` | 64-bit signless integer |
+
+#### Successors:
+
+| Successor | Description |
+| :-------: | ----------- |
+| `inRange` | any successor |
+| `outOfRange` | any successor |
+
+
+
+### `ebpf.arena.free_pages` (ebpf::ArenaFreePagesOp)
+
+_Internal release of a checked fixed allocation range_
+
+**Stage**: ② Internal
+**Meaning**: Carries the original allocation map and full constant range.
+**Constraints**: Only generated from a checked lexical arena.free.
+**Lowering**: Named void kfunc with map, canonical address, count.
+**Evidence**: Internal — generated from the checked arena.free.
+**Unsupported**: Direct input.
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>page_offset</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+<tr><td><code>page_count</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `map` | a BPF map handle with kind, key type and value type |
+
+
 
 ### `ebpf.assume_present` (ebpf::AssumePresentOp)
 
@@ -5842,9 +10971,9 @@ operation ::= `ebpf.elem.at` $ref $field `[` $indices `]` attr-dict `:` type($re
 
 **Stage**: ② Internal
 
-**Meaning**: Refers to a record array element as !ebpf.elem<iN> after range-check true edges.
+**Meaning**: Refers to a record array element as !ebpf.elem<iN> after range-check true edges, or to an element of a record array as a borrowed record (!ebpf.borrowed<!ebpf.record<…>>).
 
-**Constraints**: Stage-② exit verification (ebpf-verify-structured 1b) walks backward from the last dimension. Each block must have exactly one incoming true edge from cf.cond_br whose elem.in_range condition has the same ref / field / dimension index / dim (CheckedEdge defines the checked-edge condition). Elem uses are limited to elem.load / elem.store.
+**Constraints**: Stage-② exit verification (ebpf-verify-structured 1b) walks backward from the last dimension. Each block must have exactly one incoming true edge from cf.cond_br whose elem.in_range condition has the same ref / field / dimension index / dim (CheckedEdge defines the checked-edge condition). Elem uses are limited to elem.load / elem.store; a borrowed element may be used by any non-terminator (the ref ops and calls — never a branch operand).
 
 **Lowering**: Stage ③ forms record field offset (@records) + index × stride. Loop-IV indexing can cause codegen to form the address with another induction variable; inspect ELF.
 
@@ -5872,7 +11001,7 @@ Interfaces: `EBPF_Stage2InternalOpInterface`
 
 | Result | Description |
 | :----: | ----------- |
-| `result` | a bounds-checked array-element reference |
+| `result` | a bounds-checked array-element reference or a checked borrowed reference without ownership |
 
 
 
@@ -5970,6 +11099,57 @@ Interfaces: `EBPF_Stage2InternalOpInterface`
 
 
 
+### `ebpf.find_vma_call` (ebpf::FindVmaCallOp)
+
+_Bpf_find_vma(task, addr, callback, &context, 0), returning the raw status and reloaded carried values_
+
+Syntax:
+
+```
+operation ::= `ebpf.find_vma_call` $callback `task` `(` $task `)` `addr` `(` $addr `)` `(` $inits `)` `captures` `(` $captures `)` attr-dict `:` functional-type(operands, results)
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Calls an ebpf.loop_callback with the find_vma attribute at most once (when the helper finds a vma containing addr). Passes initial carried values and captures, returning the helper's status and the carried values read back from the context (the inits when the callback did not run).
+
+**Constraints**: Callback names an ebpf.loop_callback with find_vma; its task / vma entry arguments are the kptrs of the operand's struct and `vm_area_struct`.
+
+**Lowering**: Stage ③ calls find_vma(task, addr, callback address, ctx, flags = 0). Requirements and HelperCalls follow function-address reachability edges, as with bpf_loop.
+
+**Evidence**: Internal — ebpf-expand-regions creates it from stage-① ebpf.task.find_vma; ebpf-compile rejects it in input.
+
+**Unsupported**: Not writable in input; use ebpf.task.find_vma.
+
+Traits: `AttrSizedOperandSegments`
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>callback</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `task` | a pointer to an internal kernel struct obtained from tracing arguments |
+| `addr` | 64-bit signless integer |
+| `inits` | variadic of signless integer |
+| `captures` | variadic of signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `status` | 64-bit signless integer |
+| `results` | variadic of signless integer |
+
+
+
 ### `ebpf.for_each_map_elem` (ebpf::ForEachMapElemOp)
 
 _Bpf_for_each_map_elem(map, callback, &context, 0), returning invocation count and reloaded carried values_
@@ -6062,6 +11242,277 @@ Effects: `MemoryEffects::Effect{}`
 
 
 
+### `ebpf.iter_num.begin` (ebpf::IterNumBeginOp)
+
+_Take an iterator stack slot and call bpf_iter_num_new(slot, lo, hi) (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter_num.begin` $lo `,` $hi attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Starts the number iterator of one expanded ebpf.iter.num. The status of bpf_iter_num_new is discarded: a failed iterator's next returns NULL (kernel/bpf/bpf_iter.c), so the body runs zero times and the done block's destroy still runs.
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it). Its slot is used by exactly one next_br and one end.
+
+**Lowering**: Stage ③ emits a dedicated 8-byte entry-block alloca (align 8, no lifetime markers) and bpfabi.kfunc_call bpf_iter_num_new(slot, lo, hi).
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `lo` | 32-bit signless integer |
+| `hi` | 32-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `slot` | the stack slot of one open-coded number iterator (stage ② internal) |
+
+
+
+### `ebpf.iter_num.end` (ebpf::IterNumEndOp)
+
+_Call bpf_iter_num_destroy(slot) (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter_num.end` $slot attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Ends the iterator in the single done block of an expanded ebpf.iter.num, reached by next's NULL and by break.
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it).
+
+**Lowering**: Stage ③ emits bpfabi.kfunc_call bpf_iter_num_destroy(slot).
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `slot` | the stack slot of one open-coded number iterator (stage ② internal) |
+
+
+
+### `ebpf.iter_num.next_br` (ebpf::IterNumNextBrOp)
+
+_Call bpf_iter_num_next and branch to the body with the index, or to the exit on NULL (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter_num.next_br` $slot `,` $body `,` $exit attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Iterator header terminator. A non-NULL next result enters $body with the loaded i32 index as its only block argument; NULL goes to $exit.
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it). $body takes exactly one i32 argument; $exit takes none.
+
+**Lowering**: Stage ③ calls bpf_iter_num_next(slot) (ret_null), compares the pointer with NULL, and on the present edge loads the i32 index before branching to the body.
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Traits: `Terminator`
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `slot` | the stack slot of one open-coded number iterator (stage ② internal) |
+
+#### Successors:
+
+| Successor | Description |
+| :-------: | ----------- |
+| `body` | any successor |
+| `exit` | any successor |
+
+
+
+### `ebpf.iter_scx_dsq.begin` (ebpf::IterScxDsqBeginOp)
+
+_Take a DSQ iterator stack slot and call bpf_iter_scx_dsq_new(slot, dsq_id, 0) (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter_scx_dsq.begin` $dsqId attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Starts the DSQ iterator of one expanded ebpf.iter.scx_dsq. The status of bpf_iter_scx_dsq_new is discarded: on failure the kernel leaves the iterator's dsq NULL, so the first next returns NULL and destroy does nothing (7.3.1 ext.c:9910-9931, :9943-9944, :9961-9962).
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it). Its slot is used by exactly one next_br and one end.
+
+**Lowering**: Stage ③ emits a dedicated entry-block alloca of struct bpf_iter_scx_dsq's UAPI-table size (align 8, no lifetime markers) and bpfabi.kfunc_call bpf_iter_scx_dsq_new(slot, dsq_id, 0).
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `dsqId` | 64-bit signless integer |
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+| `slot` | the stack slot of one open-coded sched_ext DSQ iterator (stage ② internal) |
+
+
+
+### `ebpf.iter_scx_dsq.end` (ebpf::IterScxDsqEndOp)
+
+_Call bpf_iter_scx_dsq_destroy(slot) (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter_scx_dsq.end` $slot attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Ends the iterator in the single done block of an expanded ebpf.iter.scx_dsq, reached by next's NULL and by break.
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it).
+
+**Lowering**: Stage ③ emits bpfabi.kfunc_call bpf_iter_scx_dsq_destroy(slot).
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `slot` | the stack slot of one open-coded sched_ext DSQ iterator (stage ② internal) |
+
+
+
+### `ebpf.iter_scx_dsq.next_br` (ebpf::IterScxDsqNextBrOp)
+
+_Call bpf_iter_scx_dsq_next and branch to the body with the task, or to the exit on NULL (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.iter_scx_dsq.next_br` $slot `,` $body `,` $exit attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Iterator header terminator. A non-NULL next result enters $body with the task as its only block argument (!ebpf.rcu_ptr<"task_struct"> — the verifier marks it PTR_TO_BTF_ID | MEM_RCU, 7.3.1 verifier.c:14117-14133); NULL goes to $exit.
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it). $body takes exactly one !ebpf.rcu_ptr<"task_struct"> argument; $exit takes none.
+
+**Lowering**: Stage ③ calls bpf_iter_scx_dsq_next(slot) (ret_null), compares the pointer with NULL and passes it to the body on the present edge.
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Traits: `Terminator`
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `slot` | the stack slot of one open-coded sched_ext DSQ iterator (stage ② internal) |
+
+#### Successors:
+
+| Successor | Description |
+| :-------: | ----------- |
+| `body` | any successor |
+| `exit` | any successor |
+
+
+
+### `ebpf.ksym.per_cpu_br` (ebpf::KsymPerCpuBrOp)
+
+_Branch on bpf_per_cpu_ptr, passing the loaded slot to the present successor (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.ksym.per_cpu_br` $name `[` $cpu `]` `,` $present `,` $absent attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: The expanded ksym.per_cpu_load. It goes to present with the slot value when bpf_per_cpu_ptr(&v, cpu) is non-NULL, and to absent otherwise.
+
+**Constraints**: present takes exactly one argument (the slot value — iN or kaddr); absent takes none.
+
+**Lowering**: Stage ③ calls helper per_cpu_ptr, compares with NULL, loads the slot in a block on the true edge and branches to present with it.
+
+**Evidence**: Internal — generated from ksym.per_cpu_load by ebpf-expand-regions. Source input is rejected to prevent bypassing the stage-① guard checks.
+
+**Unsupported**: Not writable in input.
+
+Traits: `Terminator`
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>name</code></td><td>::mlir::FlatSymbolRefAttr</td><td>flat symbol reference attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `cpu` | 32-bit signless integer |
+
+#### Successors:
+
+| Successor | Description |
+| :-------: | ----------- |
+| `present` | any successor |
+| `absent` | any successor |
+
+
+
 ### `ebpf.loop.spill` (ebpf::LoopSpillOp)
 
 _Volatile IV store to a dedicated stack slot per bounded-loop iteration (stage ② internal speculative-path barrier)_
@@ -6106,11 +11557,11 @@ operation ::= `ebpf.loop_callback` $sym_name attr-dict-with-keyword $body
 
 **Stage**: ② Internal
 
-**Meaning**: Module-level callback symbol for ebpf.bpf_loop. Block arguments are IV, carried values, captured integers, and maps. Context is a sequence of eight-byte caller-stack slots: num_carried values, then num_captured integers. With for_each attribute, it is a for_each_map_elem callback and replaces IV with key value and borrowed value arguments.
+**Meaning**: Module-level callback symbol for ebpf.bpf_loop. Block arguments are IV, carried values, captured integers, and maps. Context is a sequence of eight-byte caller-stack slots: num_carried values, then num_captured integers. With for_each attribute, it is a for_each_map_elem callback and replaces IV with key value and borrowed value arguments. With the find_vma attribute (exclusive with for_each), it is a bpf_find_vma callback and replaces IV with the task and vma kernel pointers (`!ebpf.kptr<"task_struct">`, `!ebpf.kptr<"vm_area_struct">`).
 
-**Constraints**: IsolatedFromAbove. IV is i32; for_each has integer key and !ebpf.borrowed value. Attributes record carried / captured counts and map_symbols.
+**Constraints**: IsolatedFromAbove. IV is i32; for_each has integer key and !ebpf.borrowed value; find_vma has the two kptr arguments (in that order), no map arguments, and returns constant 0. Attributes record carried / captured counts and map_symbols.
 
-**Lowering**: Stage ③ emits a static llvm.func: `(u64 index, ptr ctx)` for bpf_loop, `(ptr map, ptr key, ptr value, ptr ctx)` for for_each. Key is loaded through its pointer; value preserves its pointer. Map arguments follow map_symbols order and become symbol addressof, not stack captures.
+**Lowering**: Stage ③ emits a static llvm.func: `(u64 index, ptr ctx)` for bpf_loop, `(ptr map, ptr key, ptr value, ptr ctx)` for for_each, `(ptr task, ptr vma, ptr ctx)` for find_vma (the kernel's R1 / R2 / R3, the context in the third argument). Key is loaded through its pointer; value preserves its pointer; task and vma stay pointers. Map arguments follow map_symbols order and become symbol addressof, not stack captures.
 
 **Evidence**: Internal — ebpf-expand-regions creates it from stage-① ebpf.loop N callback / ebpf.map.for_each. ebpf-compile rejects it in input to prevent bypassing stage-① restrictions. Feature-path evidence belongs to those input ops, including callback calls / nesting and for_each.
 
@@ -6129,7 +11580,56 @@ Interfaces: `EBPF_Stage2InternalOpInterface`, `Symbol`
 <tr><td><code>num_captured</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
 <tr><td><code>map_symbols</code></td><td>::mlir::ArrayAttr</td><td>array attribute</td></tr>
 <tr><td><code>for_each</code></td><td>::mlir::UnitAttr</td><td>unit attribute</td></tr>
+<tr><td><code>find_vma</code></td><td>::mlir::UnitAttr</td><td>unit attribute</td></tr>
 </table>
+
+
+
+### `ebpf.meta.check_br` (ebpf::MetaCheckBrOp)
+
+_Branch on the XDP metadata bound, passing a window to the true successor (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.meta.check_br` $ctx `len` $len `,` $inRange `,` $outOfRange attr-dict `:` type($ctx)
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Terminates with a branch testing `data_meta + len <= data`. The in-range successor ^in has a sole !ebpf.meta_window<len> argument.
+
+**Constraints**: Op verifier checks successor count / arguments and that the context is an XDP context. ebpf-verify-structured requires ^in to be entered only from this branch and walks invalidators before window uses.
+
+**Lowering**: Stage ③ reads the two context fields with bpfabi.ctx_meta and compares the advanced meta pointer against data (ule).
+
+**Evidence**: Internal — expanded from xdp.meta_check; source input is rejected to prevent bypassing stage-① restrictions. xdp.meta_check owns feature evidence.
+
+**Unsupported**: Not writable in input; use xdp.meta_check.
+
+Traits: `Terminator`
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+#### Attributes:
+
+<table>
+<tr><th>Attribute</th><th>MLIR Type</th><th>Description</th></tr>
+<tr><td><code>len</code></td><td>::mlir::IntegerAttr</td><td>64-bit signless integer attribute</td></tr>
+</table>
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `ctx` | an eBPF program context carrying its attach kind |
+
+#### Successors:
+
+| Successor | Description |
+| :-------: | ----------- |
+| `inRange` | any successor |
+| `outOfRange` | any successor |
 
 
 
@@ -6179,6 +11679,58 @@ Interfaces: `EBPF_Stage2InternalOpInterface`
 | :-------: | ----------- |
 | `inRange` | any successor |
 | `outOfRange` | any successor |
+
+
+
+### `ebpf.rcu.lock` (ebpf::RcuLockOp)
+
+_Bpf_rcu_read_lock at the start of an expanded rcu.region (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.rcu.lock` attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Opens the RCU read section of one expanded ebpf.rcu.region.
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it).
+
+**Lowering**: Stage ③ emits bpfabi.kfunc_call bpf_rcu_read_lock().
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
+
+
+
+### `ebpf.rcu.unlock` (ebpf::RcuUnlockOp)
+
+_Bpf_rcu_read_unlock at the single exit of an expanded rcu.region (stage ② internal)_
+
+Syntax:
+
+```
+operation ::= `ebpf.rcu.unlock` attr-dict
+```
+
+**Stage**: ② Internal
+
+**Meaning**: Closes the RCU read section of one expanded ebpf.rcu.region, before its only exit.
+
+**Constraints**: Not writable in input (Stage2InternalOp; ebpf-compile explicitly rejects it).
+
+**Lowering**: Stage ③ emits bpfabi.kfunc_call bpf_rcu_read_unlock().
+
+**Evidence**: Out of scope — kernel evidence: compile only.
+
+**Unsupported**: Use outside ebpf-expand-regions output.
+
+Interfaces: `EBPF_Stage2InternalOpInterface`
 
 
 

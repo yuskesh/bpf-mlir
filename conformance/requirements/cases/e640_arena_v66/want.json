@@ -1,0 +1,33 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "kfield",
+      "program": "",
+      "name": "",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kfield",
+      "program": "",
+      "name": "",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "arena_loader",
+      "program": "",
+      "name": "ar",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "map_type",
+      "program": "ar",
+      "name": "arena",
+      "id": 33,
+      "blocks_load": true
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+ebpf-requirements 25
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	s	tracing	26
+kfield	s	cpufreq_policy	governor_data	ptr:void
+btf	int
+btf	ptr

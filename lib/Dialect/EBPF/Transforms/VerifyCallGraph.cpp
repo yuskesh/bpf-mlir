@@ -3,12 +3,13 @@
 // After ownership verification, check acyclicity, reachability of every func
 // from a program, and maximum entry-inclusive call depth. Calls inside loops
 // must not reach ring-buffer operations. Count nested loop depth/product across
-// calls from each program entry (depth <= 2, product <= 64).
+// calls from each program entry using strategy-specific conservative budgets.
 // Call verifiers already own target existence, non-program targets and types.
 //===----------------------------------------------------------------------===//
 #include "bpf-mlir/Dialect/EBPF/Transforms/Passes.h"
 
 #include "bpf-mlir/Dialect/EBPF/IR/EBPFDialect.h"
+#include "bpf-mlir/Support/LoopBudget.h"
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringExtras.h"
@@ -113,6 +114,11 @@ struct EBPFVerifyCallGraphPass
     for (auto prog : module.getOps<ProgramOp>())
       for (auto [call, callee] : calleesOf(prog))
         visit(callee, 2, call);
+    // a timer.callback (sched_ext_ops owners — the op verifier) is its
+    // own entry frame; its requirements reach the owners through set_callback.
+    for (auto cb : module.getOps<TimerCallbackOp>())
+      for (auto [call, callee] : calleesOf(cb))
+        visit(callee, 2, call);
     for (auto fn : module.getOps<SubprogramOp>())
       if (!reached.lookup(fn.getSymName())) {
         bad = true;
@@ -129,7 +135,7 @@ struct EBPFVerifyCallGraphPass
       Operation *found = nullptr;
       fn.walk([&](Operation *op) {
         auto kc = dyn_cast<KFieldCopyOp>(op); // Reservation-targeted kfield.copy counts like task.comm; borrowed targets are allowed.
-        if (isa<RingbufReserveOp, RingbufIfReservedOp, RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, UserReadStrOp, UserReadOp, KernelReadStrOp,
+        if (isa<RingbufReserveOp, RingbufIfReservedOp, RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, CtxStackOp, KernelDPathOp, StrSnprintfOp, UserReadStrOp, UserCopyOp, UserCopyTaskOp, UserReadOp, KernelReadStrOp,
                 RingbufSubmitOp, // Include kernel.read_str.
                 RingbufDiscardOp, RingbufReserveDynptrOp, RingbufSubmitDynptrOp, RingbufDiscardDynptrOp>(op) || // Include dynptr reservations.
             (kc && kc.writesReservation())) {
@@ -155,7 +161,7 @@ struct EBPFVerifyCallGraphPass
           return false;
         };
     module.walk([&](CallOp call) {
-      if (!call->getParentOfType<LoopOp>())
+      if (!call->getParentOfType<LoopOp>() && !call->getParentOfType<IterNumOp>() && !call->getParentOfType<IterScxDsqOp>()) // an iterator body too (the DSQ iterator)
         return;
       auto it = funcs.find(call.getCallee());
       if (it == funcs.end())
@@ -174,43 +180,77 @@ struct EBPFVerifyCallGraphPass
     // Start at (depth,product)=(0,1). Entering a loop adds one depth and multiplies
     // by max(N,1); calls pass that context to callees. Return restores the
     // caller context, so sibling loops do not multiply. Skip a context only if
-    // previously visited with both depth and product at least as large. These
+    // previously visited in the same strategy category with both depth and
+    // product at least as large. These
     // conservative compiler limits prove neither kernel limits nor workload.
-    constexpr int64_t kMaxDepth = 2, kMaxProduct = 64;
-    llvm::StringMap<SmallVector<std::pair<int64_t, int64_t>>> visited;
-    std::function<void(Region &, int64_t, int64_t, SmallVector<std::string> &)> scan;
-    auto enterFunc = [&](SubprogramOp fn, int64_t d, int64_t p, SmallVector<std::string> &path) {
+    llvm::StringMap<SmallVector<LoopBudget>> visited;
+    std::function<void(Region &, LoopBudget, SmallVector<std::string> &)> scan;
+    auto enterFunc = [&](SubprogramOp fn, LoopBudget budget, SmallVector<std::string> &path) {
       auto &seen = visited[fn.getSymName()];
-      for (auto [sd, sp] : seen)
-        if (sd >= d && sp >= p)
+      for (const auto &prior : seen)
+        if (prior.dominates(budget))
           return;
-      seen.push_back({d, p});
+      seen.push_back(budget);
       path.push_back("@" + fn.getSymName().str());
-      scan(fn.getBody(), d, p, path);
+      scan(fn.getBody(), budget, path);
       path.pop_back();
     };
-    scan = [&](Region &r, int64_t d, int64_t p, SmallVector<std::string> &path) {
+    scan = [&](Region &r, LoopBudget budget, SmallVector<std::string> &path) {
       for (Block &blk : r)
         for (Operation &op : blk) {
           if (bad)
             return;
           if (auto loop = dyn_cast<LoopOp>(op)) {
-            int64_t nd = d + 1, np = p * std::max<int64_t>(loop.getCount(), 1); // p <= 64 and N <= 64 prevent overflow.
+            auto next = budget.enter(loop.getCount(), loop.getUnroll(), loop.getCallback());
             path.push_back("loop " + std::to_string(loop.getCount()));
             std::string along = llvm::join(path, " -> ");
-            if (nd > kMaxDepth) {
+            if (next.depth > LoopBudget::maxDepth) {
               bad = true;
-              loop.emitOpError() << "is nested " << nd << " deep along " << along
+              loop.emitOpError() << "is nested " << next.depth << " deep along " << along
                                  << " (loops reached through calls count the loops of every caller "
                                     "on the path); this compiler supports "
-                                 << kMaxDepth;
-            } else if (np > kMaxProduct) {
+                                 << LoopBudget::maxDepth;
+            } else if (next.product > next.productLimit()) {
               bad = true;
-              loop.emitOpError() << "the counts along " << along << " multiply to " << np
-                                 << ", over the limit of " << kMaxProduct
+              loop.emitOpError() << "the counts along " << along << " multiply to " << next.product
+                                 << ", over the limit of " << next.productLimit()
                                  << " this compiler supports (a count of 0 is taken as 1)";
             } else {
-              scan(loop.getBody(), nd, np, path);
+              scan(loop.getBody(), next, path);
+            }
+            path.pop_back();
+            continue;
+          }
+          // an iterator adds one depth and no count factor (LoopBudget::enterIter).
+          if (auto it = dyn_cast<IterNumOp>(op)) {
+            auto next = budget.enterIter();
+            path.push_back("iter.num");
+            std::string along = llvm::join(path, " -> ");
+            if (next.depth > LoopBudget::maxDepth) {
+              bad = true;
+              it.emitOpError() << "is nested " << next.depth << " deep along " << along
+                               << " (loops and iterators reached through calls count those of every caller on the path); "
+                                  "this compiler supports "
+                               << LoopBudget::maxDepth;
+            } else {
+              scan(it.getBody(), next, path);
+            }
+            path.pop_back();
+            continue;
+          }
+          // the DSQ iterator counts like ebpf.iter.num (one depth, no count factor).
+          if (auto it = dyn_cast<IterScxDsqOp>(op)) {
+            auto next = budget.enterIter();
+            path.push_back("iter.scx_dsq");
+            std::string along = llvm::join(path, " -> ");
+            if (next.depth > LoopBudget::maxDepth) {
+              bad = true;
+              it.emitOpError() << "is nested " << next.depth << " deep along " << along
+                               << " (loops and iterators reached through calls count those of every caller on the path); "
+                                  "this compiler supports "
+                               << LoopBudget::maxDepth;
+            } else {
+              scan(it.getBody(), next, path);
             }
             path.pop_back();
             continue;
@@ -218,16 +258,20 @@ struct EBPFVerifyCallGraphPass
           if (auto call = dyn_cast<CallOp>(op)) {
             auto it = funcs.find(call.getCallee());
             if (it != funcs.end())
-              enterFunc(it->second, d, p, path);
+              enterFunc(it->second, budget, path);
             continue;
           }
           for (Region &inner : op.getRegions())
-            scan(inner, d, p, path);
+            scan(inner, budget, path);
         }
     };
     for (auto prog : module.getOps<ProgramOp>()) {
       SmallVector<std::string> path{"@" + prog.getSymName().str()};
-      scan(prog.getBody(), 0, 1, path);
+      scan(prog.getBody(), LoopBudget{}, path);
+    }
+    for (auto cb : module.getOps<TimerCallbackOp>()) { // callees of a callback.
+      SmallVector<std::string> path{"@" + cb.getSymName().str()};
+      scan(cb.getBody(), LoopBudget{}, path);
     }
     if (bad)
       signalPassFailure();

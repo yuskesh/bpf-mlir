@@ -33,6 +33,14 @@ LogicalResult verifyType(Attribute type, Operation *from, llvm::StringRef what);
 // ObjectEmitter replaces it with an unnamed pointer annotated btf_type_tag.
 inline constexpr llvm::StringLiteral kTypeTagMarkerPrefix = "__ebpf_btf_type_tag.";
 
+// MLIR DI has no enumerators. Lower #btf.ulong<v> as an empty named
+// DW_TAG_enumeration_type "<prefix><v decimal>"; after LLVM translation,
+// ObjectEmitter replaces it with an anonymous unsigned 64-bit enumeration with
+// the one enumerator kULongEnumeratorName = v (BTF ENUM64, vlen 1) and
+// explicitly rejects any marker left after the bridge.
+inline constexpr llvm::StringLiteral kULongMarkerPrefix = "__ebpf_btf_ulong.";
+inline constexpr llvm::StringLiteral kULongEnumeratorName = "__ebpf_map_extra";
+
 } // namespace btf
 } // namespace mlir
 

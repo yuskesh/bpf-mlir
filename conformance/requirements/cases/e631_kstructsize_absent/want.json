@@ -1,0 +1,19 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "kstructsize",
+      "program": "",
+      "name": "bpf_cpumask/16",
+      "id": 0,
+      "blocks_load": true
+    },
+    {
+      "kind": "kstructsize",
+      "program": "",
+      "name": "bpf_cpumask/1032",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

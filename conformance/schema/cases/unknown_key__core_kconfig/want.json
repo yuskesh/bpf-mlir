@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.kconfig: unknown key \"zz_unknown\" (known: name, type, weak, note)"
+}

@@ -130,6 +130,26 @@ bool mlir::ebpf::recordHasKptr(btf::ScopeOp records, btf::StructOp st) {
   return false;
 }
 
+bool mlir::ebpf::recordHasCpumask(btf::ScopeOp records, btf::StructOp st) {
+  llvm::DenseSet<Operation *> seen;
+  SmallVector<btf::StructOp> pending{st};
+  while (!pending.empty()) {
+    btf::StructOp cur = pending.pop_back_val();
+    if (!cur || !seen.insert(cur.getOperation()).second)
+      continue;
+    if (isCpumaskRecordName(cur.getSymName()))
+      return true;
+    for (Attribute a : cur.getMembers()) {
+      Attribute t = cast<btf::MemberAttr>(a).getType();
+      while (auto arr = dyn_cast<btf::ArrayOfAttr>(t))
+        t = arr.getElement();
+      if (auto ref = dyn_cast<btf::RefAttr>(t))
+        pending.push_back(refTarget(records, ref));
+    }
+  }
+  return false;
+}
+
 FailureOr<KptrLeaf> mlir::ebpf::resolveKptrPath(btf::ScopeOp records, btf::StructOp st,
                                              StringRef path, std::string &err) {
   SmallVector<StringRef> comps;
@@ -180,7 +200,7 @@ FailureOr<KptrLeaf> mlir::ebpf::resolveKptrPath(btf::ScopeOp records, btf::Struc
 }
 
 FailureOr<RecordTemplate> mlir::ebpf::resolveRecordTemplate(btf::ScopeOp records, btf::StructOp st, StringRef path,
-                                                            std::string &err) {
+                                                            std::string &err, bool recordLeaf, bool cpumaskLeaf) {
   SmallVector<StringRef> comps;
   path.split(comps, '.');
   if (comps.size() > kMaxRecordDepth) {
@@ -271,6 +291,25 @@ FailureOr<RecordTemplate> mlir::ebpf::resolveRecordTemplate(btf::ScopeOp records
     if (!inner) {
       err = ("field \"" + here + "\" has a type this compiler does not support in a record");
       return failure();
+    }
+    // a cpumask is opaque — only ebpf.ref.field.addr names it, and no path
+    // goes into it.
+    if (isCpumaskRecordName(inner.getSymName())) {
+      if (last && cpumaskLeaf && comp.size() == name.size()) {
+        out.cpumaskBytes = static_cast<int64_t>(inner.getSizeBits() / 8);
+        out.type = ref;
+        return out;
+      }
+      err = ("field \"" + here + "\" is a cpumask; it cannot be read or written directly (only ebpf.ref.field.addr "
+             "takes it, as a kfunc argument)");
+      return failure();
+    }
+    // an element of a record array, borrowed by ref.index.
+    if (last && recordLeaf && comp.size() > name.size()) {
+      out.elemRecord = inner.getSymName().str();
+      out.elemBytes = static_cast<int64_t>(inner.getSizeBits() / 8);
+      out.type = ref;
+      return out;
     }
     if (last) {
       err = ("field \"" + here + "\" is a record \"" + inner.getSymName() + "\"; give a field of it (\"" + here +

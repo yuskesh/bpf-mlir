@@ -15,14 +15,17 @@
 #include "bpf-mlir/Dialect/BPFABI/IR/BPFABIDialect.h"
 #include "bpf-mlir/Dialect/BPFABI/KernelABI.h"
 #include "bpf-mlir/Support/CheckResult.h"
+#include "bpf-mlir/Support/DPathTargets.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/ADT/STLExtras.h"
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/Format.h"
 
 #include <functional>
+#include <map>
 #include <set>
 
 namespace mlir {
@@ -131,6 +134,37 @@ struct BPFABIRequirementsPass
           b.getNamedAttr("prog_type", progType),
           b.getNamedAttr("helpers", b.getArrayAttr(names)),
       };
+      std::set<std::string> helperTargets;
+      bool targetBad = false;
+      for (const auto &e : seen)
+        subprograms[e.getKey()].walk([&](HelperCallOp call) {
+          if (call.getCallee() == "d_path") {
+            fn.emitOpError("transitive d_path has no exact target-specific dependency");
+            targetBad = true;
+          }
+        });
+      fn.walk([&](HelperCallOp call) {
+        auto target = call->getAttrOfType<StringAttr>("bpfabi.helper_target");
+        if (!target && call.getCallee() != "d_path")
+          return;
+        auto h = lookupHelper(call.getCallee());
+        if (!target || call.getCallee() != "d_path" || !h || progType.getValue() != "tracing" ||
+            !ebpf::isDPathHelperTarget(target.getValue())) {
+          call.emitOpError("d_path needs the exact typed helper_target dependency of a permitted fentry target");
+          targetBad = true;
+          return;
+        }
+        helperTargets.insert(h->name.str() + "\t" + std::to_string(h->id) + "\t" + target.getValue().str());
+      });
+      if (targetBad) {
+        tally.add(CheckVerdict::Rejected);
+        return;
+      }
+      if (!helperTargets.empty()) {
+        SmallVector<StringRef> refs(helperTargets.begin(), helperTargets.end());
+        req.push_back(b.getNamedAttr("helper_targets", b.getStrArrayAttr(refs)));
+        tally.add(CheckVerdict::Conditional);
+      }
       if (needsNonnull) {
         // Require semantic interpretation of generic mem argument tags, not just BTF kind acceptance.
         req.push_back(b.getNamedAttr("arg_tags", b.getStrArrayAttr({"arg:nonnull mem"})));
@@ -177,6 +211,63 @@ struct BPFABIRequirementsPass
         req.push_back(b.getNamedAttr("kfuncs", b.getStrArrayAttr(v)));
         for (size_t i = 0; i < kfuncs.size(); ++i)
           tally.add(CheckVerdict::Conditional); // Target presence of this kfunc with the required signature.
+      }
+      // fib_lookup flag masks, unique and sorted by mask, as
+      // "<name> <mask>". The op is own-entry only (program bodies), so only the
+      // program function is walked; whether the target's helper accepts the
+      // mask for this program type is a live fact queried before load.
+      std::map<int64_t, std::string> fibFlags;
+      bool fibBad = false;
+      fn.walk([&](HelperCallOp call) {
+        auto name = call->getAttrOfType<StringAttr>("bpfabi.fib_flags");
+        if (!name)
+          return;
+        std::optional<int64_t> mask = lookupFibFlag(name.getValue());
+        if (!mask) {
+          call.emitOpError() << "fib flag \"" << name.getValue() << "\" is not in the UAPI table";
+          fibBad = true;
+          return;
+        }
+        fibFlags.emplace(*mask, name.getValue().str());
+      });
+      if (fibBad) {
+        tally.add(CheckVerdict::Rejected);
+        return;
+      }
+      if (!fibFlags.empty()) {
+        SmallVector<std::string> v;
+        for (const auto &[mask, name] : fibFlags)
+          v.push_back(name + " " + std::to_string(mask));
+        SmallVector<StringRef> refs(v.begin(), v.end());
+        req.push_back(b.getNamedAttr("fib_flags", b.getStrArrayAttr(refs)));
+        for (size_t i = 0; i < fibFlags.size(); ++i)
+          tally.add(CheckVerdict::Conditional); // Target fib_lookup acceptance of this mask.
+      }
+      // CO-RE enum constants the program or a
+      // reached subprogram / callback reads, "<enum> <name>", sorted; the
+      // loader checks that the target BTF has each (coreenum) — the value is
+      // the target's, written by the loader's relocation.
+      std::set<std::string> enums;
+      auto addEnum = [&](CoreEnumValueOp ec) { enums.insert((ec.getEnumName() + " " + ec.getName()).str()); };
+      fn.walk(addEnum);
+      for (const auto &e : seen)
+        subprograms[e.getKey()].walk(addEnum);
+      if (!enums.empty()) {
+        SmallVector<StringRef> v(enums.begin(), enums.end());
+        req.push_back(b.getNamedAttr("core_enums", b.getStrArrayAttr(v)));
+        for (size_t i = 0; i < enums.size(); ++i)
+          tally.add(CheckVerdict::Conditional); // Target BTF has this enum constant.
+      }
+      // the reached subprograms / callbacks, sorted. Not a
+      // requirement itself (no tally): ObjectEmitter attributes the kfield rows
+      // its CO-RE expansion finds in a subprogram to every program reaching it —
+      // the same reach as the helper / kfunc / coreenum rows above.
+      if (!seen.empty()) {
+        std::set<std::string> subs;
+        for (const auto &e : seen)
+          subs.insert(e.getKey().str());
+        SmallVector<StringRef> v(subs.begin(), subs.end());
+        req.push_back(b.getNamedAttr("subprograms", b.getStrArrayAttr(v)));
       }
       fn->setAttr("bpfabi.requires", b.getDictionaryAttr(req));
     });

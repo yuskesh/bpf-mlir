@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"e492ops\": struct_ops \"priv\" is not writable (a kernel pointer member — the kernel rejects a non-zero value); leave it out"
+}

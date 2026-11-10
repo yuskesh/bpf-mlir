@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"e492ops\" struct_ops: unknown key \"cid_shard_size\" (known: type, name, ops, dispatch_max_batch, flags, timeout_ms, exit_dump_len, hotplug_seq, sub_cgroup_id)"
+}

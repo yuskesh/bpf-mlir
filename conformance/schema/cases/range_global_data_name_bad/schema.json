@@ -1,0 +1,114 @@
+{
+  "core": {
+    "globals": [
+      {
+        "name": "turbo",
+        "section": "data:gk-ptr",
+        "type": {
+          "kind": "kptr",
+          "struct": "bpf_cpumask"
+        }
+      },
+      {
+        "name": "big",
+        "section": "data:gkptr",
+        "type": {
+          "kind": "kptr",
+          "struct": "bpf_cpumask"
+        }
+      },
+      {
+        "name": "little",
+        "section": "data:gkptr",
+        "type": {
+          "kind": "kptr",
+          "struct": "bpf_cpumask"
+        }
+      }
+    ],
+    "kernel_types": [
+      {
+        "fields": [
+          {
+            "name": "usage",
+            "type": {
+              "alignment": 4,
+              "bits": 32,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "name": "bpf_cpumask",
+        "note": ""
+      },
+      {
+        "fields": [
+          {
+            "name": "bits",
+            "type": {
+              "alignment": 8,
+              "bits": 64,
+              "endianness": "little",
+              "kind": "int",
+              "signed": false
+            }
+          }
+        ],
+        "name": "cpumask",
+        "note": ""
+      }
+    ],
+    "maps": [
+      {
+        "flags": 0,
+        "key": {
+          "alignment": 4,
+          "bits": 32,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        },
+        "kind": "array",
+        "max_entries": 8,
+        "note": "",
+        "record": "",
+        "symbol": "out",
+        "value": {
+          "alignment": 8,
+          "bits": 64,
+          "endianness": "little",
+          "kind": "int",
+          "signed": false
+        }
+      }
+    ],
+    "programs": [
+      {
+        "attach_target": "",
+        "kind": "syscall",
+        "maps": [
+          "out"
+        ],
+        "name": "gkptr",
+        "note": ""
+      }
+    ],
+    "records": []
+  },
+  "coverage": {
+    "maps": "complete",
+    "programs": "complete",
+    "records": "complete",
+    "telemetry": "complete"
+  },
+  "extensions": {},
+  "telemetry": {
+    "bounds_sets": [],
+    "clocks": [],
+    "signals": [],
+    "value_maps": []
+  },
+  "version": 1
+}

@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kconfig \"CONFIG_NO_HZ_IDLE\": missing or non-string \"type\""
+}

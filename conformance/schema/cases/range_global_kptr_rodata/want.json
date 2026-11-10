@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "global \"turbo\": a kptr global goes in a \"data:\u003cname\u003e\" section, not rodata (rodata / bss maps are mmapped, which the kernel refuses for a map with a kptr)"
+}

@@ -109,7 +109,7 @@ struct EBPFVerifyTargetLegalityPass
     const Feature features[] = {
         {kFactMapWithTimer, "bpf_timer", "a bpf_timer", "timers",
          "the callback's helper set, a C oracle and runs on the targets are missing", timerLegality,
-         [](Operation *op) { return isa<TimerInitOp, TimerSetCallbackOp, TimerStartOp>(op); }},
+         [](Operation *op) { return isa<TimerInitOp, TimerSetCallbackOp, TimerStartOp, TimerCancelOp>(op); }},
         {kFactMapWithSpinLock, "bpf_spin_lock", "a bpf_spin_lock", "spin regions",
          "a C oracle and runs on the targets are missing", spinLegality,
          [](Operation *op) { return isa<SpinRegionOp>(op); }},

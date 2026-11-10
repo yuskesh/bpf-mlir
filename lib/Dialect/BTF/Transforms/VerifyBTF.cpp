@@ -2,31 +2,33 @@
 //
 // Kernel rules follow kernel/bpf/btf.c (7.1.8; corresponding checks also in
 // 6.12.111/6.6.157). Rule IDs remain stable for diagnostics.
-// K1: named structs, members, FUNC/VAR/argument names match
+// named structs, members, FUNC/VAR/argument names match
 //     [A-Za-z_.][A-Za-z0-9_.]*, at most 512 characters
 //     (btf_name_valid_identifier).
-// K2: FUNC arguments require names, static or global (btf_func_check).
-// K3: struct member bit offsets cannot decrease (btf_struct_check_meta).
-// K4: offset+member size must fit the struct (btf_struct_check_meta/resolve).
-// K5: VAR linkage is static/global_allocated (btf_var_check_meta); compiler
+// FUNC arguments require names, static or global (btf_func_check).
+// struct member bit offsets cannot decrease (btf_struct_check_meta).
+// offset+member size must fit the struct (btf_struct_check_meta/resolve).
+// VAR linkage is static/global_allocated (btf_var_check_meta); compiler
 //     emits only global_allocated.
-// K6: global generic integer/struct pointer args cannot use arg:nullable.
-// K7: supported arg tags are ctx/trusted/untrusted/nonnull/nullable/arena.
-// K8: pointer tags require pointer arguments. K6..K8 follow btf_prepare_func_args;
+// global generic integer/struct pointer args cannot use arg:nullable.
+// supported arg tags are ctx/trusted/untrusted/nonnull/nullable/arena.
+// pointer tags require pointer arguments. K6..K8 follow btf_prepare_func_args;
 //     6.6.157 ignores arg: semantics.
-// K9: map-definition array byte sizes must fit U32_MAX (btf_array_resolve).
+// map-definition array byte sizes must fit U32_MAX (btf_array_resolve).
 //     For int (*max_entries)[N], N <= 1073741823; this also rejects 2^30-byte
 //     ring buffers. Restrict this rule to map-definition members.
 //
 // Loader contracts: L1 fills zero DATASEC sizes/VAR offsets from ELF; kernel
 // rejects size zero. L2 requires anonymous .maps structs with pointer members
-// type/max_entries and optional key/value. L3 requires FUNC/func_info for each
+// type/max_entries and optional key/value (arena's map_extra is a
+// #btf.ulong ENUM64 member, not a pointer). L3 requires FUNC/func_info for each
 // program definition.
 //
 // Compiler rules: C1 allows 8/16/32/64-bit integers; C2 requires nonempty unique
 // member names (kernel accepts unnamed/duplicate members); C3 requires nonempty
 // arrays; C4 permits void only as pointee; C5 rejects ignored static argument
-// tags; C6 emits only global pointer arg:nonnull. Dialect verification already
+// tags; C6 emits only global pointer arg:nonnull; C7 requires __ebpf_cpumask_<N>
+// to be { u8 __opaque[N] } of N bytes and members of it N bytes at 8-byte offsets. Dialect verification already
 // handles C1/C3/C4, part of K4 and nonempty pointer-only struct TYPE_TAG shape.
 //===----------------------------------------------------------------------===//
 #include "bpf-mlir/Dialect/BTF/Transforms/Passes.h"
@@ -95,14 +97,50 @@ struct Checker {
       last = m.getOffsetBits();
       verdict(st, m.getOffsetBits() + m.getSizeBits() <= (uint64_t)st.getSizeBits(), "K4",
               "member \"" + m.getName() + "\" ends past the struct");
+      // a member of an embedded cpumask type is exactly N bytes at an 8-byte offset.
+      if (auto ref = dyn_cast<RefAttr>(m.getType())) {
+        StringRef target = ref.getTarget().getLeafReference().getValue();
+        if (std::optional<uint64_t> n = cpumaskBytes(target))
+          verdict(st, m.getSizeBits() == *n * 8 && m.getOffsetBits() % 64 == 0, "C7",
+                  "member \"" + m.getName() + "\" of " + target + " is " + Twine(m.getSizeBits()) + " bits at bit " +
+                      Twine(m.getOffsetBits()) + "; an embedded cpumask member is " + Twine(*n * 8) +
+                      " bits at a multiple of 64 (the kfuncs write that many bytes in place)");
+      }
     }
+    // __ebpf_cpumask_<N> is { u8 __opaque[N] } of N bytes — the size the
+    // kstructsize row names and the loader compares with the target's struct bpf_cpumask.
+    if (st.getSymName().starts_with(kCpumaskPrefix)) {
+      std::optional<uint64_t> n = cpumaskBytes(st.getSymName());
+      bool ok = n && (uint64_t)st.getSizeBits() == *n * 8 && st.getMembers().size() == 1;
+      if (ok) {
+        auto m = cast<MemberAttr>(st.getMembers()[0]);
+        auto arr = dyn_cast<ArrayOfAttr>(m.getType());
+        auto el = arr ? dyn_cast<IntAttr>(arr.getElement()) : IntAttr();
+        ok = m.getName() == "__opaque" && m.getOffsetBits() == 0 && m.getSizeBits() == *n * 8 && arr &&
+             arr.getCount() == *n && el && el.getBits() == 8 && el.getEncoding() == "unsigned";
+      }
+      verdict(st, ok, "C7",
+              "struct \"" + st.getSymName() + "\" is not { u8 __opaque[N] } of N bytes with N = the name's size (a positive multiple "
+                                              "of 8); the kstructsize row and the kfunc writes assume that shape");
+    }
+  }
+
+  static constexpr StringLiteral kCpumaskPrefix = "__ebpf_cpumask_";
+  // The N of __ebpf_cpumask_<N> (decimal, positive, a multiple of 8, no leading zero).
+  static std::optional<uint64_t> cpumaskBytes(StringRef name) {
+    if (!name.consume_front(kCpumaskPrefix))
+      return std::nullopt;
+    uint64_t n = 0;
+    if (name.empty() || name[0] == '0' || name.getAsInteger(10, n) || n % 8 != 0)
+      return 0; // A malformed name is still a cpumask type: 0 fails every shape check.
+    return n;
   }
 
   void varOp(VarOp v) {
     name(v, v.getSymName(), "K1", "variable");
-    // K5: emitted globals use global_allocated linkage.
+    // emitted globals use global_allocated linkage.
     tally.add(CheckVerdict::Verified);
-    // L1: loader fills DATASEC sizes/offsets from ELF.
+    // loader fills DATASEC sizes/offsets from ELF.
     tally.add(CheckVerdict::Conditional);
     if (v.getSection() == ".maps") {
       auto s = dyn_cast<AnonStructAttr>(v.getType());
@@ -119,6 +157,12 @@ struct Checker {
             ok &= i + 1 == s.getMembers().size() && arr && arr.getCount() == 0 && p && isa<AnonStructAttr>(p.getPointee());
             continue;
           }
+          // arena map_extra is libbpf __ulong — a one-enumerator ENUM64
+          // member (#btf.ulong), not a pointer, so K9's array path never sees it.
+          if (m.getName() == "map_extra") {
+            ok &= isa<ULongAttr>(m.getType());
+            continue;
+          }
           ok &= isa<PtrAttr>(m.getType()) &&
                 (m.getName() == "type" || m.getName() == "max_entries" ||
                  m.getName() == "key" || m.getName() == "value" ||
@@ -127,7 +171,7 @@ struct Checker {
         }
       verdict(v, ok, "L2",
               "a map definition must be an anonymous struct of pointer members type / max_entries "
-              "(and key / value / map_flags / key_size / value_size, and a last values member for map-in-map) — the libbpf / cilium map definition convention");
+              "(and key / value / map_flags / key_size / value_size, a #btf.ulong map_extra for arena, and a last values member for map-in-map) — the libbpf / cilium map definition convention");
       if (s)
         for (MemberAttr m : s.getMembers()) {
           auto p = dyn_cast<PtrAttr>(m.getType());
@@ -197,7 +241,7 @@ struct BTFVerifyPass : public mlir::btf::impl::BTFVerifyBase<BTFVerifyPass> {
       else if (auto f = dyn_cast<FuncOp>(op))
         c.funcOp(f, module);
     });
-    // L3: every defined program llvm.func needs a BTF FUNC.
+    // every defined program llvm.func needs a BTF FUNC.
     for (auto fn : module.getOps<LLVM::LLVMFuncOp>()) {
       if (fn.isExternal())
         continue;

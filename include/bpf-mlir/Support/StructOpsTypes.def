@@ -18,9 +18,15 @@
 // EBPF_STRUCT_OPS_DATA(TYPE, MEMBER, SCHEMAKEY, BYTES, KIND, RULE, EVIDENCE)
 // Written data follows function pointers in local structs in table order.
 // Unlisted data remains zero; cilium permits absent target members when zero.
-// SCHEMAKEY is currently name; additions must update SchemaKeys.inc too.
-// BYTES must match ABI structopsmember bits/8. KIND str is a char array;
-// RULE objname follows bpf_obj_name_cpy: 1..BYTES-1 alphanumeric, '_' or '.'.
+// SCHEMAKEY is name for str rows and the member name for integer rows; new keys
+// must update SchemaKeys.inc too. BYTES must match ABI structopsmember bits/8.
+// KIND str is a char array, required whenever the row exists; RULE objname
+// follows bpf_obj_name_cpy: 1..BYTES-1 alphanumeric, '_' or '.'. KIND u32 / u64
+// is an optional unsigned integer, emitted only when the schema key is present
+// (absent equals the kernel's zero). RULE any accepts the width, max:<N> rejects
+// values above N, clear:<hex> rejects values with those bits set. Rules hold on
+// every supported kernel; version-dependent values are left to the kernel's
+// init_member.
 //
 // EBPF_STRUCT_OPS_PROMOTION(TYPE, BTF, PROMOTED, EVIDENCE)
 // Verifier treats struct BTF pointers as PROMOTED for this ops type. Schema args
@@ -55,6 +61,23 @@ EBPF_STRUCT_OPS("bpf_dummy_ops", "none",
 // dispatch; actual registration was measured only with a C donor in a VM.
 EBPF_STRUCT_OPS("sched_ext_ops", "link",
                 "kernel/sched/ext.c bpf_scx_reg / bpf_scx_unreg call scx_ops_enable / scx_ops_disable (6.12.111:5761 / 5766); link close observed in a VM")
+// Integer DATA follows kernel member order. bpf_scx_init_member checks the same
+// rules on 6.12.111 / 7.1.8 / 7.3.1 (ext.c:5689 / ext.c:7568 / ext/ext.c:8171);
+// the accepted flags bits below bit 56 differ by kernel and stay a load-time
+// EINVAL. priv is not writable (non-zero non-function members are EINVAL in
+// bpf_struct_ops.c, 7.1.8:775-789) and is rejected by name in the schema.
+EBPF_STRUCT_OPS_DATA("sched_ext_ops", "dispatch_max_batch", "dispatch_max_batch", 4, "u32", "max:2147483647",
+                     "kernel/sched/ext.c bpf_scx_init_member: > INT_MAX is -E2BIG (7.1.8:7579, 6.12.111:5700; 7.3.1 ext/ext.c:8182)")
+EBPF_STRUCT_OPS_DATA("sched_ext_ops", "flags", "flags", 8, "u64", "clear:0xff00000000000000",
+                     "kernel/sched/ext.c bpf_scx_init_member: bits outside SCX_OPS_ALL_FLAGS are -EINVAL (7.1.8:7584); __SCX_OPS_INTERNAL_MASK 0xff << 56 is outside it on every kernel (7.1.8 ext_internal.h:202)")
+EBPF_STRUCT_OPS_DATA("sched_ext_ops", "timeout_ms", "timeout_ms", 4, "u32", "max:30000",
+                     "kernel/sched/ext.c bpf_scx_init_member: msecs_to_jiffies(v) > SCX_WATCHDOG_MAX_TIMEOUT (30 * HZ) is -E2BIG (7.1.8:7597); rounding up makes 30000 ms the bound for HZ 250 and 1000 (include/linux/jiffies.h:493)")
+EBPF_STRUCT_OPS_DATA("sched_ext_ops", "exit_dump_len", "exit_dump_len", 4, "u32", "any",
+                     "kernel/sched/ext.c bpf_scx_init_member: copied, 0 becomes SCX_EXIT_DUMP_DFL_LEN (7.1.8:7603)")
+EBPF_STRUCT_OPS_DATA("sched_ext_ops", "hotplug_seq", "hotplug_seq", 8, "u64", "any",
+                     "kernel/sched/ext.c bpf_scx_init_member: copied without a check (7.1.8:7607)")
+EBPF_STRUCT_OPS_DATA("sched_ext_ops", "sub_cgroup_id", "sub_cgroup_id", 8, "u64", "any",
+                     "kernel/sched/ext.c bpf_scx_init_member: copied under CONFIG_EXT_SUB_SCHED (7.1.8:7610); absent on 6.12.111, where cilium rejects a non-zero value (collection.go:655)")
 EBPF_STRUCT_OPS_DATA("sched_ext_ops", "name", "name", 128, "str", "objname",
                      "kernel/sched/ext.c bpf_scx_init_member name bpf_obj_name_cpy (6.12.111:5710); sched_ext_ops.name uses SCX_OPS_NAME_LEN 128")
 // Callback compilation only. Numeric ring_fd DATA is unavailable; explicit

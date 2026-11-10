@@ -80,6 +80,34 @@ inline llvm::StringRef structOpsArgBTFName(llvm::StringRef type, llvm::StringRef
   return name;
 }
 
+// Integer DATA rows (KIND u32 / u64) are optional schema keys; str rows are required.
+inline bool isStructOpsIntData(const StructOpsDataInfo &d) { return d.kind == "u32" || d.kind == "u64"; }
+
+// True when some type has an integer DATA row with this schema key.
+inline bool isStructOpsIntDataKey(llvm::StringRef key) {
+  for (const StructOpsDataInfo &d : kStructOpsData)
+    if (isStructOpsIntData(d) && d.schemaKey == key)
+      return true;
+  return false;
+}
+
+// Empty when v fits the row's width and RULE (any / max:<N> / clear:<hex>);
+// otherwise the reason, such as "> 30000" or "sets bits 0xff00000000000000".
+inline std::string checkStructOpsDataValue(const StructOpsDataInfo &d, uint64_t v) {
+  if (d.kind == "u32" && v > 0xffffffffull)
+    return "does not fit u32 (> 4294967295)";
+  llvm::StringRef rule = d.rule;
+  if (rule == "any")
+    return "";
+  uint64_t n = 0;
+  if (rule.consume_front("max:") && !rule.getAsInteger(10, n))
+    return v > n ? "> " + std::to_string(n) : "";
+  rule = d.rule;
+  if (rule.consume_front("clear:0x") && !rule.getAsInteger(16, n))
+    return (v & n) ? "sets bits " + d.rule.substr(6).str() : "";
+  return "has an unknown RULE " + d.rule.str() + " in StructOpsTypes.def";
+}
+
 } // namespace bpfmlir
 
 #endif

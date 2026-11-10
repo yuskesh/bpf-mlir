@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "map \"e492ops\": struct_ops \"exit_dump_len\" 4294967296 does not fit u32 (\u003e 4294967295) (sched_ext_ops.exit_dump_len — kernel/sched/ext.c bpf_scx_init_member: copied, 0 becomes SCX_EXIT_DUMP_DFL_LEN (7.1.8:7603))"
+}

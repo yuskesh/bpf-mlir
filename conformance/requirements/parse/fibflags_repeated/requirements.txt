@@ -1,0 +1,7 @@
+ebpf-requirements 21
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	fwd	xdp	6
+helper	fwd	fib_lookup	69
+btf	int
+fibflags	fwd	none	0
+fibflags	fwd	none	0

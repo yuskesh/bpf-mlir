@@ -24,6 +24,13 @@ struct ReservationResource : public SideEffects::Resource::Base<ReservationResou
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ReservationResource)
   llvm::StringRef getName() const final { return "ebpf.reservation"; }
 };
+// arena window reads/writes (arena.load / arena.store) — kept apart from
+// the packet resource so packet optimizations (C1 / W1) never treat an arena
+// access as a packet access or the other way round.
+struct ArenaResource : public SideEffects::Resource::Base<ArenaResource> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ArenaResource)
+  llvm::StringRef getName() const final { return "ebpf.arena"; }
+};
 } // namespace ebpf
 } // namespace mlir
 
@@ -58,8 +65,15 @@ inline FlatSymbolRefAttr callbackOf(Operation *op) {
     return bl.getCallbackAttr();
   if (auto fe = llvm::dyn_cast<ForEachMapElemOp>(op))
     return fe.getCallbackAttr();
+  if (auto fv = llvm::dyn_cast<FindVmaCallOp>(op)) // 
+    return fv.getCallbackAttr();
   return {};
 }
+
+// whether op lowers to a helper / kfunc that may sleep (SleepableOps.def
+// rows). ebpf.rcu.region rejects these inside it; stage ③ refuses to emit a
+// sleeping callee for an op outside the table.
+bool opMightSleep(Operation *op);
 
 } // namespace ebpf
 } // namespace mlir

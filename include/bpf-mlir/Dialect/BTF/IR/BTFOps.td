@@ -38,6 +38,27 @@ def BTF_IntAttr : BTF_Attr<"Int", "int"> {
   let genVerifyDecl = 1;
 }
 
+// an anonymous enum of 8/16/32/64 bits with no enumerators. Only a
+// kernel_types field uses it (the CO-RE local type of a kernel ENUM field —
+// cilium matches an anonymous local enum with any target enum of that name).
+def BTF_EnumAttr : BTF_Attr<"Enum", "enum"> {
+  let summary = "an anonymous enum of a bit width, without enumerators";
+  let parameters = (ins "uint64_t":$bits);
+  let assemblyFormat = "`<` $bits `>`";
+  let genVerifyDecl = 1;
+}
+
+// libbpf __ulong(name, value) — an anonymous unsigned ENUM64 (8 bytes)
+// with one enumerator whose value is the 64-bit integer. Only the arena map
+// definition member map_extra uses it: the __uint form int (*)[N] cannot carry
+// a value above U32_MAX bytes (btf-verify K9). libbpf get_map_field_long and
+// cilium uintFromBTF read Values[0]; the enumerator name is not read.
+def BTF_ULongAttr : BTF_Attr<"ULong", "ulong"> {
+  let summary = "a 64-bit unsigned value as a one-enumerator anonymous ENUM64 (libbpf __ulong)";
+  let parameters = (ins "uint64_t":$value);
+  let assemblyFormat = "`<` $value `>`";
+}
+
 def BTF_PtrAttr : BTF_Attr<"Ptr", "ptr"> {
   let summary = "a 64-bit pointer";
   let parameters = (ins "::mlir::Attribute":$pointee);

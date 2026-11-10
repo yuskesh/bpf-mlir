@@ -4,10 +4,13 @@
 // require matching integer member widths. checkRecordShape validates map values
 // and subprogram argument records with nesting and one-dimensional integer arrays.
 // Schema owns offsets; the compiler does not recompute layout. MLIR integers
-// are signless, so this pass does not check signedness.
+// are signless, so this pass does not check signedness. a global
+// function's borrowed record argument must not have a kptr / spin_lock / timer
+// member directly in the record.
 //===----------------------------------------------------------------------===//
 #include "bpf-mlir/Dialect/EBPF/Transforms/Passes.h"
 
+#include "bpf-mlir/Dialect/BPFABI/KernelABI.h"
 #include "bpf-mlir/Dialect/BTF/IR/BTFDialect.h"
 #include "bpf-mlir/Dialect/EBPF/IR/EBPFDialect.h"
 
@@ -42,6 +45,27 @@ RecordType recordIn(Type t) {
   if (auto r = dyn_cast<MaybeReservationType>(t))
     return recordIn(r.getRecordType());
   return nullptr;
+}
+
+// The @records type a member names (#btf.ref<@records::@T> — lock, timer,
+// cpumask or a nested record), or empty.
+StringRef refTypeName(Attribute t) {
+  auto r = dyn_cast<btf::RefAttr>(t);
+  return r ? r.getTarget().getLeafReference().getValue() : StringRef();
+}
+
+// the kernel special-field kind (kptr / spin_lock / timer) of a member
+// type that sits directly in a record, not in an array; empty otherwise. A
+// cpumask (__ebpf_cpumask_<N>) is not a kernel special field.
+StringRef directSpecialFieldKind(Attribute t) {
+  if (!kptrStructOf(t).empty())
+    return "kptr";
+  StringRef n = refTypeName(t);
+  if (n == "bpf_spin_lock")
+    return "spin_lock";
+  if (n == "bpf_timer")
+    return "timer";
+  return {};
 }
 
 struct EBPFVerifyRecordsPass
@@ -126,6 +150,233 @@ struct EBPFVerifyRecordsPass
           for (BlockArgument a : b.getArguments())
             checkType(op, a.getType());
 
+      // Global-function rule: a global function's borrowed (arg:nonnull)
+      // record argument must not have a kptr / spin_lock / timer member directly
+      // in the record (not in an array). The kernel verifies a global function on
+      // its own and checks the caller's pointer argument as helper memory access
+      // over the record; every kernel (7.3.1 / 7.1.8 / 6.12.111 / 6.6.157)
+      // rejects such a direct special field at the call. maybe_ref arguments,
+      // nested records, array elements, cpumask fields and static functions are
+      // left as they are (not proven rejected on every kernel).
+      if (auto sp = dyn_cast<SubprogramOp>(op); sp && sp.getLinkage() == "global") {
+        for (auto [i, t] : llvm::enumerate(sp.getFunctionType().getInputs())) {
+          auto bt = dyn_cast<BorrowedType>(t);
+          auto rt = bt ? dyn_cast<RecordType>(bt.getPointee()) : RecordType();
+          btf::StructOp st = rt ? resolve(op, rt) : btf::StructOp();
+          if (!st)
+            continue;
+          for (Attribute a : st.getMembers()) {
+            auto m = cast<btf::MemberAttr>(a);
+            StringRef kind = directSpecialFieldKind(m.getType());
+            if (kind.empty())
+              continue;
+            bad = true;
+            op->emitOpError() << "global function @" << sp.getSymName() << " argument #" << i
+                              << " borrows record \"" << st.getSymName() << "\" whose field \"" << m.getName()
+                              << "\" is a " << kind
+                              << "; the kernel verifier checks a global function's pointer argument as helper "
+                                 "memory access and rejects a special field directly in the record on every kernel "
+                                 "(\"Caller passes invalid args\") — use a static ebpf.func or pass a record without it";
+          }
+        }
+      }
+      // A record passed to a helper as a UAPI struct: its leaves are exactly the
+      // UAPI view (same paths, order, offsets and widths, all unsigned — every
+      // member of these structs is __u8 / __u16 / __be16 / __u32 / __be32).
+      auto checkExactView = [&](btf::StructOp st, ArrayRef<RecordLeaf> want, StringRef view) {
+        SmallVector<RecordLeaf> leaves;
+        std::string err;
+        if (failed(recordLeaves(records, st, leaves, err))) {
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName() << "\": " << err;
+          return;
+        }
+        auto layout = [](ArrayRef<RecordLeaf> ls) {
+          std::string s;
+          for (const RecordLeaf &l : ls)
+            s += " " + l.path + "@" + std::to_string(l.offsetBytes) + ":u" + std::to_string(l.bits);
+          return s;
+        };
+        auto isUnsigned = [](const RecordLeaf &l) {
+          auto it = dyn_cast_or_null<btf::IntAttr>(l.type);
+          return it && it.getEncoding() == "unsigned";
+        };
+        for (size_t i = 0; i < std::max(leaves.size(), want.size()); ++i) {
+          const RecordLeaf *g = i < leaves.size() ? &leaves[i] : nullptr;
+          const RecordLeaf *w = i < want.size() ? &want[i] : nullptr;
+          if (g && w && g->path == w->path && g->offsetBytes == w->offsetBytes && g->bits == w->bits && isUnsigned(*g))
+            continue;
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName() << "\" is not the " << view << " view: "
+                            << (g ? "\"" + g->path + "\" at byte " + std::to_string(g->offsetBytes) + " (" +
+                                        (isUnsigned(*g) ? "u" : "i") + std::to_string(g->bits) + ")"
+                                  : std::string("nothing"))
+                            << " where the UAPI view has "
+                            << (w ? "\"" + w->path + "\" at byte " + std::to_string(w->offsetBytes) + " (u" + std::to_string(w->bits) + ")"
+                                  : std::string("nothing"))
+                            << "; want leaves" << layout(want);
+          return;
+        }
+      };
+      // the sk_lookup_tcp / _udp tuple is exactly the ipv4 (12-byte) or
+      // ipv6 (36-byte) member of struct bpf_sock_tuple (UAPI socktuple rows). The
+      // record size selects the family.
+      if (isa<SockLookupTcpOp, SockLookupUdpOp, SockSkcLookupTcpOp>(op)) {
+        auto rt = cast<RecordType>(op->getOperand(1).getType());
+        btf::StructOp st = resolve(op, rt);
+        if (!st)
+          return;
+        StringRef family;
+        std::string sizes;
+        llvm::StringMap<int64_t> famSize;
+        SmallVector<StringRef> famOrder;
+        for (const bpfabi::SockTupleFieldABI &f : bpfabi::sockTupleFields()) {
+          if (!famSize.count(f.Family))
+            famOrder.push_back(f.Family);
+          famSize[f.Family] = std::max(famSize[f.Family], f.Offset + f.Elem * f.Count);
+        }
+        if (famOrder.empty()) {
+          bad = true;
+          op->emitOpError("the UAPI table has no struct bpf_sock_tuple view (socktuple rows)");
+          return;
+        }
+        for (StringRef fam : famOrder) {
+          sizes += (sizes.empty() ? "" : " or ") + std::to_string(famSize[fam]) + " (" + fam.str() + ")";
+          if (static_cast<int64_t>(rt.getSize()) == famSize[fam])
+            family = fam;
+        }
+        if (family.empty()) {
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName() << "\" is " << rt.getSize() << " bytes; " << op->getName()
+                            << " needs a struct bpf_sock_tuple view of " << sizes << " bytes";
+          return;
+        }
+        SmallVector<RecordLeaf> want;
+        for (const bpfabi::SockTupleFieldABI &f : bpfabi::sockTupleFields())
+          if (f.Family == family)
+            for (int64_t i = 0; i < f.Count; ++i)
+              want.push_back({f.Count == 1 ? f.Name.str() : (f.Name + "[" + std::to_string(i) + "]").str(),
+                              f.Offset + i * f.Elem, static_cast<unsigned>(f.Elem * 8), Attribute()});
+        checkExactView(st, want, ("struct bpf_sock_tuple " + family).str());
+        return;
+      }
+      // the fib_lookup record is exactly the 64-byte view of struct
+      // bpf_fib_lookup from the UAPI table (fibfield rows): same leaves, in the
+      // same order, at the same offsets and widths, and the UAPI struct size.
+      if (auto fl = dyn_cast<FibLookupOp>(op)) {
+        auto rt = cast<RecordType>(fl.getInput().getType());
+        btf::StructOp st = resolve(op, rt);
+        if (!st)
+          return;
+        std::optional<int64_t> size = bpfabi::lookupUapiStructSize("bpf_fib_lookup");
+        if (!size || bpfabi::fibFields().empty()) {
+          bad = true;
+          op->emitOpError("the UAPI table has no bpf_fib_lookup view (uapistruct / fibfield rows)");
+          return;
+        }
+        if (rt.getSize() != *size) {
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName() << "\" is " << rt.getSize()
+                            << " bytes; ebpf.fib.lookup needs the " << *size << "-byte struct bpf_fib_lookup view";
+          return;
+        }
+        SmallVector<RecordLeaf> want;
+        for (const bpfabi::FibFieldABI &f : bpfabi::fibFields())
+          for (int64_t i = 0; i < f.Count; ++i)
+            want.push_back({f.Count == 1 ? f.Name.str() : (f.Name + "[" + std::to_string(i) + "]").str(),
+                            f.Offset + i * f.Elem, static_cast<unsigned>(f.Elem * 8), Attribute()});
+        checkExactView(st, want, "struct bpf_fib_lookup");
+        return;
+      }
+      // tunnel key get / set — the record is exactly the non-overlapping
+      // "v4" / "v6" view (UAPI tunnelfield rows) of struct bpf_tunnel_key chosen
+      // by the flags: same leaves in the same order at the same offsets and
+      // widths (gaps are the unused IPv6 words, padding 0), and the 44-byte size.
+      if (isa<SkbGetTunnelKeyOp, SkbSetTunnelKeyOp>(op)) {
+        bool isGet = isa<SkbGetTunnelKeyOp>(op);
+        auto rt = cast<RecordType>(isGet ? cast<SkbGetTunnelKeyOp>(op).getInput().getType()
+                                         : cast<SkbSetTunnelKeyOp>(op).getKey().getType());
+        StringRef flags = isGet ? cast<SkbGetTunnelKeyOp>(op).getFlags() : cast<SkbSetTunnelKeyOp>(op).getFlags();
+        StringRef view = bpfabi::tunnelFlagsIpv6(flags) ? "v6" : "v4";
+        btf::StructOp st = resolve(op, rt);
+        if (!st)
+          return;
+        std::optional<int64_t> size = bpfabi::lookupUapiStructSize("bpf_tunnel_key");
+        if (!size || bpfabi::tunnelFields().empty()) {
+          bad = true;
+          op->emitOpError("the UAPI table has no bpf_tunnel_key view (uapistruct / tunnelfield rows)");
+          return;
+        }
+        if (rt.getSize() != *size) {
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName() << "\" is " << rt.getSize()
+                            << " bytes; the tunnel key ops need the " << *size << "-byte struct bpf_tunnel_key view";
+          return;
+        }
+        SmallVector<RecordLeaf> leaves;
+        std::string err;
+        if (failed(recordLeaves(records, st, leaves, err))) {
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName() << "\": " << err;
+          return;
+        }
+        SmallVector<RecordLeaf> want;
+        for (const bpfabi::TunnelFieldABI &f : bpfabi::tunnelFields()) {
+          if (f.View != view)
+            continue;
+          for (int64_t i = 0; i < f.Count; ++i)
+            want.push_back({f.Count == 1 ? f.Name.str() : (f.Name + "[" + std::to_string(i) + "]").str(),
+                            f.Offset + i * f.Elem, static_cast<unsigned>(f.Elem * 8), Attribute()});
+        }
+        auto layout = [](ArrayRef<RecordLeaf> ls) {
+          std::string s;
+          for (const RecordLeaf &l : ls)
+            s += " " + l.path + "@" + std::to_string(l.offsetBytes) + ":u" + std::to_string(l.bits);
+          return s;
+        };
+        // Every struct bpf_tunnel_key member is an unsigned UAPI integer (__u8 / __u16 / __be16 / __u32).
+        auto isUnsigned = [](const RecordLeaf &l) {
+          auto it = dyn_cast_or_null<btf::IntAttr>(l.type);
+          return it && it.getEncoding() == "unsigned";
+        };
+        for (size_t i = 0; i < std::max(leaves.size(), want.size()); ++i) {
+          const RecordLeaf *g = i < leaves.size() ? &leaves[i] : nullptr;
+          const RecordLeaf *w = i < want.size() ? &want[i] : nullptr;
+          if (g && w && g->path == w->path && g->offsetBytes == w->offsetBytes && g->bits == w->bits && isUnsigned(*g))
+            continue;
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName() << "\" is not the struct bpf_tunnel_key " << view << " view: "
+                            << (g ? "\"" + g->path + "\" at byte " + std::to_string(g->offsetBytes) + " (" +
+                                        (isUnsigned(*g) ? "u" : "i") + std::to_string(g->bits) + ")"
+                                  : std::string("nothing"))
+                            << " where the UAPI view has "
+                            << (w ? "\"" + w->path + "\" at byte " + std::to_string(w->offsetBytes) + " (u" + std::to_string(w->bits) + ")"
+                                  : std::string("nothing"))
+                            << "; want leaves" << layout(want);
+          return;
+        }
+      }
+      // record.field reads one leaf of the fib output with the declared width.
+      if (auto rf = dyn_cast<RecordFieldOp>(op)) {
+        auto rt = cast<RecordType>(rf.getRecord().getType());
+        btf::StructOp st = resolve(op, rt);
+        if (!st)
+          return;
+        std::string err;
+        FailureOr<RecordLeaf> leaf = resolveRecordPath(records, st, rf.getPath(), err);
+        if (failed(leaf)) {
+          bad = true;
+          op->emitOpError() << err;
+          return;
+        }
+        unsigned w = cast<IntegerType>(rf.getValue().getType()).getWidth();
+        if (leaf->bits != w) {
+          bad = true;
+          op->emitOpError() << "field \"" << st.getSymName() << "." << rf.getPath() << "\" is " << leaf->type
+                            << " in btf.struct @records::@" << st.getSymName() << " but read as i" << w;
+        }
+        return;
+      }
       // record.make names every declared field exactly once, with matching widths.
       // The nominal record name selects the declaration.
       if (auto mk = dyn_cast<RecordMakeOp>(op)) {
@@ -135,12 +386,12 @@ struct EBPFVerifyRecordsPass
           return;
         for (Attribute a : st.getMembers()) {
           auto m = cast<btf::MemberAttr>(a);
-          if (auto r = dyn_cast<btf::RefAttr>(m.getType()); r && r.getTarget().getLeafReference() == "bpf_spin_lock") {
+          if (refTypeName(m.getType()) == "bpf_spin_lock") {
             bad = true;
             op->emitOpError() << "record \"" << st.getSymName() << "\" has a spin_lock field; ebpf.record.make cannot build it";
             return;
           }
-          if (auto r = dyn_cast<btf::RefAttr>(m.getType()); r && r.getTarget().getLeafReference() == "bpf_timer") {
+          if (refTypeName(m.getType()) == "bpf_timer") {
             bad = true;
             op->emitOpError() << "record \"" << st.getSymName() << "\" has a timer field; ebpf.record.make cannot build it";
             return;
@@ -151,6 +402,13 @@ struct EBPFVerifyRecordsPass
                               << "\"); ebpf.record.make cannot build it (only ebpf.kptr.xchg writes a kptr field)";
             return;
           }
+        }
+        if (recordHasCpumask(records, st)) {
+          bad = true;
+          op->emitOpError() << "record \"" << st.getSymName()
+                            << "\" has a cpumask field; ebpf.record.make cannot build it (only kfuncs write a cpumask, "
+                               "through ebpf.ref.field.addr)";
+          return;
         }
         if (recordHasKptr(records, st)) {
           bad = true;
@@ -190,6 +448,27 @@ struct EBPFVerifyRecordsPass
           bad = true;
           op->emitOpError() << "gives field \"" << given.begin()->getKey() << "\" that btf.struct @records::@"
                             << st.getSymName() << " does not have";
+        }
+        return;
+      }
+
+      if (isa<CtxStackOp, KernelDPathOp, StrSnprintfOp>(op)) {
+        Value reservation = op->getOperand(0);
+        StringRef field = op->getAttrOfType<StringAttr>("field").getValue();
+        RecordType rt = recordIn(reservation.getType());
+        btf::StructOp st = rt ? resolve(op, rt) : btf::StructOp();
+        if (!st)
+          return;
+        std::string err;
+        auto t = resolveRecordTemplate(records, st, (field + "[]").str(), err);
+        bool stack = isa<CtxStackOp>(op);
+        if (failed(t) || t->dims.size() != 1 || t->bits != (stack ? 64u : 8u) ||
+            t->dims[0].count < 1 || t->dims[0].count > (stack ? 16u : 128u) ||
+            (stack && t->offsetBytes % 8 != 0)) {
+          bad = true;
+          op->emitOpError() << "needs a direct one-dimensional "
+              << (stack ? "i64[1..16] field with eight-byte alignment" : "i8[1..128] field")
+              << (failed(t) ? " — " + err : std::string());
         }
         return;
       }
@@ -246,6 +525,40 @@ struct EBPFVerifyRecordsPass
         return;
       }
 
+      // user.copy writes a nonempty one-dimensional eight-bit array, like user.read_str.
+      if (auto uc = dyn_cast<UserCopyOp>(op)) {
+        RecordType rt = recordIn(uc.getReservation().getType());
+        btf::StructOp st = rt ? resolve(op, rt) : btf::StructOp();
+        if (!st)
+          return;
+        std::string err;
+        FailureOr<RecordTemplate> t = resolveRecordTemplate(records, st, (uc.getField() + "[]").str(), err);
+        if (failed(t) || t->dims.size() != 1 || t->bits != 8 || t->dims[0].count < 1) {
+          bad = true;
+          op->emitOpError() << "field \"" << uc.getField() << "\" of record \"" << st.getSymName()
+                            << "\" must be a 1-dimensional array of 8-bit integers with at least 1 element for ebpf.user.copy"
+                            << (failed(t) ? " — " + err : std::string());
+        }
+        return;
+      }
+
+      // user.copy_task writes the same shape as user.copy.
+      if (auto uc = dyn_cast<UserCopyTaskOp>(op)) {
+        RecordType rt = recordIn(uc.getReservation().getType());
+        btf::StructOp st = rt ? resolve(op, rt) : btf::StructOp();
+        if (!st)
+          return;
+        std::string err;
+        FailureOr<RecordTemplate> t = resolveRecordTemplate(records, st, (uc.getField() + "[]").str(), err);
+        if (failed(t) || t->dims.size() != 1 || t->bits != 8 || t->dims[0].count < 1) {
+          bad = true;
+          op->emitOpError() << "field \"" << uc.getField() << "\" of record \"" << st.getSymName()
+                            << "\" must be a 1-dimensional array of 8-bit integers with at least 1 element for ebpf.user.copy_task"
+                            << (failed(t) ? " — " + err : std::string());
+        }
+        return;
+      }
+
       // kernel.read_str requires a one-dimensional eight-bit array of 1..64
       // elements, matching the kfield.copy bound.
       if (auto ks = dyn_cast<KernelReadStrOp>(op)) {
@@ -273,7 +586,8 @@ struct EBPFVerifyRecordsPass
           return;
         // Each variable-index [] in the field template requires one index.
         std::string err, tmpl = indexTemplate(ri.getField());
-        FailureOr<RecordTemplate> t = resolveRecordTemplate(records, st, tmpl, err);
+        Type argT = ri.getInRange().front().getArgument(0).getType();
+        FailureOr<RecordTemplate> t = resolveRecordTemplate(records, st, tmpl, err, /*recordLeaf=*/isa<BorrowedType>(argT));
         if (failed(t)) {
           bad = true;
           op->emitOpError() << err;
@@ -285,7 +599,48 @@ struct EBPFVerifyRecordsPass
                             << ri.getIndices().size() << " index value(s) are given";
           return;
         }
-        auto et = cast<ElemType>(ri.getInRange().front().getArgument(0).getType());
+        // a record-array element is borrowed as the element record (its
+        // name and size from @records). Its base is aligned to what 8, the
+        // element offset and the stride prove; a callee assumes an 8-byte
+        // aligned borrow, so a less aligned element is not passed to a call.
+        if (auto bt = dyn_cast<BorrowedType>(argT)) {
+          auto want = dyn_cast<RecordType>(bt.getPointee());
+          btf::StructOp est = t->elemRecord.empty() ? btf::StructOp()
+                                                    : dyn_cast_or_null<btf::StructOp>(SymbolTable::lookupSymbolIn(records, t->elemRecord));
+          if (!want || !est || want.getSymbol() != t->elemRecord ||
+              static_cast<uint64_t>(want.getSize()) * 8 != est.getSizeBits()) {
+            bad = true;
+            op->emitOpError() << "field \"" << st.getSymName() << "." << tmpl << "\" is "
+                              << (t->elemRecord.empty() ? std::string("not a record-array element")
+                                                        : "an element of record \"" + t->elemRecord + "\" (" +
+                                                              std::to_string(est ? est.getSizeBits() / 8 : 0) + " bytes)")
+                              << " in btf.scope @records, but the borrowed element is " << bt.getPointee();
+            return;
+          }
+          // A borrow of an element of an element: its base alignment is not tracked
+          // here, so it is treated as 1-byte aligned (not passed to a call).
+          auto parentArg = dyn_cast<BlockArgument>(ri.getRef());
+          bool nested = parentArg && isa_and_nonnull<RefIndexOp>(parentArg.getOwner()->getParentOp());
+          unsigned a = nested ? 1 : 8;
+          while (a > 1 && (t->offsetBytes % a != 0 || llvm::any_of(t->dims, [&](const RecordDim &d) { return d.strideBytes % a != 0; })))
+            a /= 2;
+          if (a < 8)
+            for (Operation *u : ri.getInRange().front().getArgument(0).getUsers())
+              if (isa<CallOp>(u)) {
+                bad = true;
+                u->emitOpError() << "passes an element of \"" << st.getSymName() << "." << tmpl << "\" (offset " << t->offsetBytes
+                                 << ", stride " << t->dims.back().strideBytes << " — " << a
+                                 << "-byte aligned) to a function; a function assumes an 8-byte aligned borrow";
+              }
+          return;
+        }
+        if (!t->elemRecord.empty()) {
+          bad = true;
+          op->emitOpError() << "field \"" << st.getSymName() << "." << tmpl << "\" is an element of record \"" << t->elemRecord
+                            << "\"; borrow it (in_range takes !ebpf.borrowed<!ebpf.record<\"" << t->elemRecord << "\", …>>)";
+          return;
+        }
+        auto et = cast<ElemType>(argT);
         unsigned w = cast<IntegerType>(et.getElement()).getWidth();
         if (t->bits != w) {
           bad = true;
@@ -301,14 +656,14 @@ struct EBPFVerifyRecordsPass
       auto memberOfType = [&](btf::StructOp st, StringRef type) -> std::string {
         for (Attribute a : st.getMembers()) {
           auto m = cast<btf::MemberAttr>(a);
-          if (auto r = dyn_cast<btf::RefAttr>(m.getType()); r && r.getTarget().getLeafReference() == type)
+          if (refTypeName(m.getType()) == type)
             return m.getName().str();
         }
         return "";
       };
       auto lockMember = [&](btf::StructOp st) { return memberOfType(st, "bpf_spin_lock"); };
       auto timerMember = [&](btf::StructOp st) { return memberOfType(st, "bpf_timer"); };
-      if (isa<TimerInitOp, TimerSetCallbackOp, TimerStartOp>(op)) {
+      if (isa<TimerInitOp, TimerSetCallbackOp, TimerStartOp, TimerCancelOp>(op)) {
         Value r = op->getOperand(0);
         StringRef tf = op->getAttrOfType<StringAttr>("field").getValue();
         RecordType rt = recordIn(r.getType());
@@ -320,6 +675,25 @@ struct EBPFVerifyRecordsPass
           bad = true;
           op->emitOpError() << "field \"" << tf << "\" of record \"" << st.getSymName() << "\" is not its timer field"
                             << (tm.empty() ? std::string(" (the record has none)") : " (it is \"" + tm + "\")");
+        }
+        return;
+      }
+      // kptr.load_rcu resolves its kptr leaf like kptr.xchg.
+      if (auto lr = dyn_cast<KPtrLoadRcuOp>(op)) {
+        RecordType rt = recordIn(lr.getRef().getType());
+        btf::StructOp st = rt ? resolve(op, rt) : btf::StructOp();
+        if (!st)
+          return;
+        StringRef want = lr.getPtr().getType().getStructName();
+        std::string err;
+        auto leaf = resolveKptrPath(records, st, lr.getField(), err);
+        if (failed(leaf)) {
+          bad = true;
+          op->emitOpError() << err;
+        } else if (leaf->structName != want) {
+          bad = true;
+          op->emitOpError() << "field \"" << lr.getField() << "\" of record \"" << st.getSymName() << "\" is a kptr to struct "
+                            << leaf->structName << ", but the read is typed for struct " << want;
         }
         return;
       }
@@ -356,6 +730,45 @@ struct EBPFVerifyRecordsPass
         }
         return;
       }
+      // ref.field.addr names a cpumask field whose size is the result's N.
+      if (auto fa = dyn_cast<RefFieldAddrOp>(op)) {
+        RecordType rt = recordIn(fa.getRef().getType());
+        btf::StructOp st = rt ? resolve(op, rt) : btf::StructOp();
+        if (!st)
+          return;
+        if (fa.getField().contains("[]")) {
+          bad = true;
+          op->emitOpError() << "index in \"" << fa.getField() << "\" must be a constant decimal integer";
+          return;
+        }
+        std::string err;
+        FailureOr<RecordTemplate> t =
+            resolveRecordTemplate(records, st, fa.getField(), err, /*recordLeaf=*/false, /*cpumaskLeaf=*/true);
+        if (failed(t)) {
+          bad = true;
+          op->emitOpError() << err;
+          return;
+        }
+        if (t->cpumaskBytes == 0) {
+          bad = true;
+          op->emitOpError() << "field \"" << st.getSymName() << "." << fa.getField()
+                            << "\" is not a cpumask field (schema {\"kind\": \"cpumask\", \"size\": N})";
+          return;
+        }
+        int64_t n = cast<CpumaskMemType>(fa.getAddr().getType()).getSize();
+        if (t->cpumaskBytes != n) {
+          bad = true;
+          op->emitOpError() << "field \"" << st.getSymName() << "." << fa.getField() << "\" is a cpumask of "
+                            << t->cpumaskBytes << " bytes in btf.struct @records::@" << st.getSymName()
+                            << " but the result is !ebpf.cpumask_mem<" << n << ">";
+        }
+        if (t->offsetBytes % 8) {
+          bad = true;
+          op->emitOpError() << "field \"" << st.getSymName() << "." << fa.getField() << "\" is at byte offset "
+                            << t->offsetBytes << ", not a multiple of 8 (a cpumask is unsigned long bits)";
+        }
+        return;
+      }
       StringRef field;
       Type ref, width;
       if (auto ld = dyn_cast<RefFieldLoadOp>(op)) {
@@ -370,6 +783,14 @@ struct EBPFVerifyRecordsPass
         field = addOp.getField();
         ref = addOp.getRef().getType();
         width = addOp.getDelta().getType();
+      } else if (auto cx = dyn_cast<RefFieldCmpxchgOp>(op)) {
+        field = cx.getField();
+        ref = cx.getRef().getType();
+        width = cx.getOld().getType();
+      } else if (auto orOp = dyn_cast<RefFieldAtomicOrOp>(op)) {
+        field = orOp.getField();
+        ref = orOp.getRef().getType();
+        width = orOp.getValue().getType();
       } else {
         return;
       }
@@ -422,10 +843,12 @@ struct EBPFVerifyRecordsPass
       }
       // Atomic addition requires natural alignment. Map values start eight-byte
       // aligned, so offset divisible by the value's byte width proves alignment.
-      if (isa<RefFieldAtomicAddOp>(op) && leaf->bits == w && leaf->offsetBytes % (w / 8) != 0) {
+      if (isa<RefFieldAtomicAddOp, RefFieldCmpxchgOp, RefFieldAtomicOrOp>(op) && leaf->bits == w && leaf->offsetBytes % (w / 8) != 0) {
         bad = true;
         op->emitOpError() << "field \"" << st.getSymName() << "." << field << "\" is at byte offset " << leaf->offsetBytes
-                          << ", not a multiple of " << w / 8 << "; a BPF atomic add needs a naturally aligned " << width << "";
+                          << ", not a multiple of " << w / 8 << "; a BPF atomic "
+                          << (isa<RefFieldAtomicAddOp>(op) ? "add" : isa<RefFieldCmpxchgOp>(op) ? "compare-and-exchange" : "or")
+                          << " needs a naturally aligned " << width << "";
       }
     });
     if (bad)

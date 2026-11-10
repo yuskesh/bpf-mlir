@@ -1,4 +1,4 @@
 {
   "result": "error",
-  "error": "map \"counts\": kind must be \"hash\", \"array\", \"ringbuf\", \"percpu_array\", \"percpu_hash\", \"lru_hash\", \"lru_percpu_hash\", \"devmap\", \"lpm_trie\", \"prog_array\", \"stack_trace\", \"perf_event_array\", \"sockmap\", \"sockhash\", \"reuseport_sockarray\", \"struct_ops\", \"sk_storage\", \"task_storage\", \"inode_storage\", \"cgrp_storage\", \"array_of_maps\", \"hash_of_maps\", \"user_ringbuf\", \"queue\", \"stack\", \"bloom_filter\", \"cpumap\", \"xskmap\", \"devmap_hash\" or \"cgroup_array\", got \"no_such_kind\""
+  "error": "map \"counts\": kind must be \"hash\", \"array\", \"ringbuf\", \"percpu_array\", \"percpu_hash\", \"lru_hash\", \"lru_percpu_hash\", \"devmap\", \"lpm_trie\", \"prog_array\", \"stack_trace\", \"perf_event_array\", \"sockmap\", \"sockhash\", \"reuseport_sockarray\", \"struct_ops\", \"sk_storage\", \"task_storage\", \"inode_storage\", \"cgrp_storage\", \"array_of_maps\", \"hash_of_maps\", \"user_ringbuf\", \"queue\", \"stack\", \"bloom_filter\", \"cpumap\", \"xskmap\", \"devmap_hash\", \"cgroup_array\" or \"arena\", got \"no_such_kind\""
 }

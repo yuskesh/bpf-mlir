@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "helper_target",
+      "program": "p",
+      "name": "d_path",
+      "id": 147,
+      "blocks_load": true
+    }
+  ]
+}

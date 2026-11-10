@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "core.ksyms: unknown key \"zz_unknown\" (known: name, per_cpu, slot, weak, note)"
+}

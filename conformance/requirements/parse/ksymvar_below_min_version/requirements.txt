@@ -1,0 +1,4 @@
+ebpf-requirements 23
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	syscall	31
+ksymvar	__preempt_count	percpu	i32	strong

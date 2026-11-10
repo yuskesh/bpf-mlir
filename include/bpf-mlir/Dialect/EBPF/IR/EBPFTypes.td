@@ -16,8 +16,12 @@ def EBPF_Dialect : Dialect {
   let summary = "a general dialect for eBPF ownership, maps and attach contracts";
   let description = [{
     This dialect contains no source-language vocabulary. Language-specific features belong in frontend extension layers.
+
+    **Module attribute** `ebpf.scx_kfuncs = "insert"`: declares the sched_ext kfunc family the `ebpf.scx.*` ops call (`include/bpf-mlir/Support/ScxContract.def`). A module with an `ebpf.scx.*` op must carry it; its only value is `"insert"`, and it is only on the top-level module. Other module attributes are unchanged.
   }];
   let useDefaultTypePrinterParser = 1;
+  // checks the module attribute ebpf.scx_kfuncs (other ebpf.* attributes pass).
+  let hasOperationAttrVerify = 1;
 }
 
 class EBPF_Type<string name, string typeMnemonic>
@@ -104,6 +108,73 @@ def EBPF_PktWindowType : EBPF_Type<"PktWindow", "pkt_window"> {
 }
 
 // Semantics, constraints and evidence: docs/reference/ebpf_types.md.
+def EBPF_MetaWindowType : EBPF_Type<"MetaWindow", "meta_window"> {
+  let summary = "a range-checked XDP metadata window of len bytes";
+  let description = [{
+    **Meaning**: `!ebpf.meta_window<len>` represents the len bytes starting at `data_meta` that ebpf.xdp.meta_check proved to end at or before `data` (`data_meta + len <= data`). It is a different type from `!ebpf.pkt_window<len>` because the bound is `data`, not `data_end`, and the packet window rules do not apply. The check does not say what the bytes contain: adjust_meta does not zero them.
+
+    **Where it appears**: at stage 1, only the sole block argument of xdp.meta_check's in_range region; at stage 2, only the sole argument of meta.check_br's ^in block. Uses are xdp.meta_store and xdp.meta_load inside that region. Yield, block-argument transport, call arguments, select, record / map storage, and loop / callback forwarding are rejected. Any packet-pointer invalidating operation between the check and a use makes the use a compile error; check again after it.
+
+    **Evidence**: Out of scope — kernel evidence is not yet measured (a separate VM run covers it); static checks cover compile rules and ELF form.
+  }];
+  let parameters = (ins "int64_t":$len);
+  let assemblyFormat = "`<` $len `>`";
+}
+
+// Semantics, constraints and evidence: docs/reference/ebpf_types.md.
+def EBPF_ArenaBaseType : EBPF_Type<"ArenaBase", "arena_base"> {
+  let summary = "the user-space start address of the module's arena";
+  let description = [{
+    **Meaning**: `!ebpf.arena_base` is the arena's `user_vm_start` — the user address at which the arena memory (schema `map_extra`) is mapped. It is a scalar, not a pointer: it addresses nothing by itself, and only ebpf.arena.check turns it into a window.
+
+    **Where it appears**: only the result of ebpf.arena.base in an ebpf.program body, used as the base operand of ebpf.arena.check (and, at stage 2, arena.check_br). It may be captured by a loop without callback; it is not a subprogram argument, a block argument, a yield value or a callback capture. At stage 3 it becomes the i64 of a CO-RE read of `bpf_arena.user_vm_start`.
+
+    **Evidence**: Out of scope — kernel evidence is not yet measured (a separate VM run covers it); static checks cover compile and ELF form.
+  }];
+}
+
+// Semantics, constraints and evidence: docs/reference/ebpf_types.md.
+def EBPF_ArenaPagesType : EBPF_Type<"ArenaPages", "arena_pages"> {
+  let summary = "a lexical proof of one successful arena page allocation";
+  let description = [{
+    **Meaning**: The success argument of arena.alloc. Identifies that operation's
+    map and constant page range, not a raw pointer or a reference-counted object.
+    **Where it appears**: Only the success entry argument. May only be consumed
+    once by arena.free in the same block; never transported, yielded or stored.
+    A success arm without free leaves pages owned by the map. The proof expires
+    at the lexical boundary even when the pages persist after program return.
+    **Evidence**: Out of scope — the static contract is checked; kernel execution is a separate experiment.
+  }];
+}
+
+def EBPF_ArenaWindowType : EBPF_Type<"ArenaWindow", "arena_window"> {
+  let summary = "a range-checked window of len bytes in the arena";
+  let description = [{
+    **Meaning**: `!ebpf.arena_window<len>` represents arena bytes [off, off + len) whose range was checked against the arena size by ebpf.arena.check. **The check is only a range check; it does not prove allocation** — a read of a page that is not allocated gives 0 and a write to it is discarded; after a fault on 7.3.1 kernels the read is not guaranteed to be 0. Only constant indices inside the window are valid.
+
+    **Where it appears**: at stage 1, only the sole block argument of arena.check's in_range region; at stage 2, only the sole argument of arena.check_br's ^in block. Uses are arena.load and arena.store inside that region. Yield, block-argument transport, call arguments and capture into a loop or a callback body are rejected. At stage 3 the window becomes `bpfabi.arena_addr` (`!llvm.ptr<1>`), created inside the in-range block only.
+
+    **Evidence**: Out of scope — kernel evidence is not yet measured (a separate VM run covers it); static checks cover compile and ELF form.
+  }];
+  let parameters = (ins "int64_t":$len);
+  let assemblyFormat = "`<` $len `>`";
+}
+
+// Semantics, constraints and evidence: docs/reference/ebpf_types.md.
+def EBPF_CpumaskMemType : EBPF_Type<"CpumaskMem", "cpumask_mem"> {
+  let summary = "the address of an embedded struct bpf_cpumask field of a writable record";
+  let description = [{
+    **Meaning**: `!ebpf.cpumask_mem<size>` is the address of a schema `{"kind": "cpumask", "size": size}` field — memory the cpumask kfuncs read and write in place (LAVD's `cpdom_cpumask[i]`). The kernel takes it as a fixed-size memory argument of its own `sizeof(struct bpf_cpumask)`, so the ELF carries the requirements row `kstructsize bpf_cpumask <size>` and the load stops on a kernel whose struct is larger (it would write past the field).
+
+    **Where it appears**: only the result of ebpf.ref.field.addr on a writable record borrow (map value, .bss record global, record-array element). Its only uses are `*bpf_cpumask` / `*cpumask` arguments of ebpf.kfunc.call kfuncs that neither acquire nor release; yield, stores, calls, region transport and loop capture are rejected.
+
+    **Evidence**: Out of scope — release evidence: no F id yet. Static: lit, BTF / ELF shape, requirements corpus; 7.1.8 load by the B0 root smoke's opcheck row; values (neighbouring elements unchanged) are measured separately.
+  }];
+  let parameters = (ins "int64_t":$size);
+  let assemblyFormat = "`<` $size `>`";
+}
+
+// Semantics, constraints and evidence: docs/reference/ebpf_types.md.
 def EBPF_UserBufType : EBPF_Type<"UserBuf", "user_buf"> {
   let summary = "a typed uprobe user-buffer address";
   let description = [{
@@ -111,6 +182,19 @@ def EBPF_UserBufType : EBPF_Type<"UserBuf", "user_buf"> {
     **Where it appears**: only uprobe.arg and uprobe_multi probe.target_arg results. It matches a schema user_buf parameter, while uprobearg/mtargetarg ptr (minimum format 18) is checked against a depth-one, eight-byte DWARF pointer.
     **Constraints**: casts, select, storage, function arguments and returns cannot construct or escape this type. Its only read consumer is ebpf.user.read. Raw identity uses the schema ptr form as i64.
     **Evidence**: F78. The type/declaration checks do not themselves establish memory-read behavior; user-read fixtures provide the memory and three-kernel differential checks separately.
+  }];
+}
+
+def EBPF_UserAddrType : EBPF_Type<"UserAddr", "user_addr"> {
+  let summary = "an explicitly reinterpreted user address, read only by ebpf.user.copy and ebpf.user.copy_task";
+  let description = [{
+    **Meaning**: `!ebpf.user_addr` is an i64 that the program author asserts to be a user-space address, with no parameters. It is **not** a proof of a valid user pointer: `ebpf.user.addr` reinterprets any i64 (a failing address makes the helper return −EFAULT and zero the destination, which is its defined behavior).
+
+    **Where it appears**: only as the result of `ebpf.user.addr`, in a `fentry` program written `sleepable`. Its only permitted use is the address operand of `ebpf.user.copy` or `ebpf.user.copy_task`.
+
+    **Constraints**: it cannot be stored in a record field, map or global, returned or yielded, passed to `ebpf.func` / `ebpf.call`, carried through a region result or block argument, or used by an integer operation. The verifier rejects every such use.
+
+    **Evidence**: Out of scope — not yet in release_scope (no F id until it is measured): (static verifier and lowering); (real-kernel differential on the sleepable `fentry.s` path).
   }];
 }
 
@@ -228,7 +312,7 @@ def EBPF_KPtrType : EBPF_Type<"KPtr", "kptr"> {
   let description = [{
     **Meaning**: `!ebpf.kptr<"S">` represents a kernel-supplied pointer with a BTF type. S names a @kernel struct, the schema core.kernel_types local type. Only declared fields can be read, using CO-RE relocations.
 
-    **Where it appears**: ctx.arg results and the present block argument of kptr.check after checking kptr_or_null. No operation constructs it from an integer. Its field-read consumer is kfield.load; loop capture is rejected. ebpf-verify-kptr checks S's declaration and ebpf-verify-schema checks the ctx.arg type name.
+    **Where it appears**: ctx.arg results, the present block argument of kptr.check after checking kptr_or_null, and task.current_btf (kptr<"task_struct">). No operation constructs it from an integer. Its field-read consumer is kfield.load; loop capture is rejected. ebpf-verify-kptr checks S's declaration and ebpf-verify-schema checks the ctx.arg type name.
 
     **Evidence**: F23. CO-RE field fixtures check the local @kernel declaration and tracing argument origin.
   }];
@@ -249,6 +333,66 @@ def EBPF_KPtrOrNullType : EBPF_Type<"KPtrOrNull", "kptr_or_null"> {
   }];
   let parameters = (ins StringRefParameter<"kernel struct name">:$structName);
   let assemblyFormat = "`<` $structName `>`";
+}
+
+// the verifier's MEM_RCU | PTR_MAYBE_NULL result of a
+// KF_RCU_PROTECTED kfunc. Not trusted: a separate pair from kptr.
+def EBPF_RcuPtrOrNullType : EBPF_Type<"RcuPtrOrNull", "rcu_ptr_or_null"> {
+  let summary = "a nullable RCU-protected kernel struct pointer returned by a KF_RCU_PROTECTED kfunc";
+  let description = [{
+    **Meaning**: `!ebpf.rcu_ptr_or_null<"S">` is the verifier's MEM_RCU | PTR_MAYBE_NULL pointer (7.1.8 / 7.3.1 verifier.c — the result of a KF_RCU_PROTECTED kfunc). It is valid only inside the RCU read section, which for a non-sleepable program is the whole program (`!in_sleepable(env)` in 6.12.111 / 7.1.8 / 7.3.1). It is not a trusted pointer and cannot be read directly.
+
+    **Where it appears**: The results of ebpf.scx.cpu_curr and ebpf.scx.dsq_peek (S = task_struct) and of ebpf.kptr.load_rcu (S = bpf_cpumask — a map value kptr field read in the RCU section). Only ebpf.kptr.check may use it; its present block argument is `!ebpf.rcu_ptr<"S">`. Loop capture, yield, call arguments and map stores are rejected.
+
+    **Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+    **Unsupported**: S other than task_struct (scx results) and bpf_cpumask (kptr.load_rcu).
+  }];
+  let parameters = (ins StringRefParameter<"kernel struct name">:$structName);
+  let assemblyFormat = "`<` $structName `>`";
+}
+
+def EBPF_RcuPtrType : EBPF_Type<"RcuPtr", "rcu_ptr"> {
+  let summary = "a checked RCU-protected kernel struct pointer";
+  let description = [{
+    **Meaning**: `!ebpf.rcu_ptr<"S">` is the present block argument of ebpf.kptr.check on `!ebpf.rcu_ptr_or_null<"S">` — the verifier's MEM_RCU pointer after the NULL check. It is not trusted: KF_TRUSTED_ARGS kfuncs (scx.dsq_insert*, scx.task_set_slice, scx.task_set_dsq_vtime) do not take it.
+
+    **Where it appears**: Inside the present region of kptr.check. Its consumers are ebpf.scx.task_cpu (KF_RCU), ebpf.kfield.load (always once) and the arguments of a KF_RCU ebpf.kfunc.call (the bpf_cpumask read kfuncs; acquire, release and non-KF_RCU kfuncs reject it). kfield.ptr, other scx ops, map stores, ebpf.call arguments, loop capture and yield out of the region are rejected.
+
+    **Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+    **Unsupported**: Passing it to a non-KF_RCU kfunc, kptr.xchg or any other op.
+  }];
+  let parameters = (ins StringRefParameter<"kernel struct name">:$structName);
+  let assemblyFormat = "`<` $structName `>`";
+}
+
+// Semantics, constraints and evidence: docs/reference/ebpf_types.md.
+def EBPF_IterNumSlotType : EBPF_Type<"IterNumSlot", "iter_num_slot"> {
+  let summary = "the stack slot of one open-coded number iterator (stage ② internal)";
+  let description = [{
+    **Meaning**: `!ebpf.iter_num_slot` is one `struct bpf_iter_num` (8 bytes, aligned 8 — UAPI `{ __u64 __opaque[1]; }`) on the program stack. The verifier tracks it as a stack-slot reference from bpf_iter_num_new to bpf_iter_num_destroy and requires new / next / destroy to name the same slot.
+
+    **Where it appears**: Only at stage ②: the result of ebpf.iter_num.begin, used by ebpf.iter_num.next_br and ebpf.iter_num.end, all created by ebpf-expand-regions from ebpf.iter.num. ebpf-compile input cannot write it. At stage ③ it is a dedicated 8-byte entry-block alloca without lifetime markers, so LLVM stack colouring never shares it with another slot.
+
+    **Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+    **Unsupported**: Any use other than the three stage-② iterator ops.
+  }];
+}
+
+// Semantics, constraints and evidence: docs/reference/ebpf_types.md.
+def EBPF_IterScxDsqSlotType : EBPF_Type<"IterScxDsqSlot", "iter_scx_dsq_slot"> {
+  let summary = "the stack slot of one open-coded sched_ext DSQ iterator (stage ② internal)";
+  let description = [{
+    **Meaning**: `!ebpf.iter_scx_dsq_slot` is one `struct bpf_iter_scx_dsq` (48 bytes, aligned 8 — `{ u64 __opaque[6]; }`, the uapistruct row from vmlinux BTF) on the program stack, tracked by the verifier from bpf_iter_scx_dsq_new to bpf_iter_scx_dsq_destroy.
+
+    **Where it appears**: Only at stage ②: the result of ebpf.iter_scx_dsq.begin, used by ebpf.iter_scx_dsq.next_br and ebpf.iter_scx_dsq.end, all created by ebpf-expand-regions from ebpf.iter.scx_dsq. ebpf-compile input cannot write it. At stage ③ it is a dedicated entry-block alloca without lifetime markers, so LLVM stack colouring never shares it with another slot.
+
+    **Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+    **Unsupported**: Any use other than the three stage-② iterator ops.
+  }];
 }
 
 // Semantics, constraints and evidence: docs/reference/ebpf_types.md.
@@ -297,20 +441,52 @@ def EBPF_DynptrType : EBPF_Type<"Dynptr", "dynptr"> {
 
 // Distinguish PTR_TO_SOCKET from PTR_TO_BTF_ID kref values.
 def EBPF_SockRefOrNullType : EBPF_Type<"SockRefOrNull", "sock_ref_or_null"> {
-  let summary = "an owned nullable socket reference acquired from a socket map";
+  let summary = "an owned nullable socket reference acquired from a socket map or a socket lookup helper";
   let description = [{
-    **Meaning**: sockmap/sockhash lookup returns an owned PTR_TO_SOCKET_OR_NULL, not a userspace map-value fd. Every path must pass it to sock.ref_check exactly once.
-    **Where it appears**: sock.map_lookup results and sock.ref_check operands; at stage 2 only is_present/assume_present. Call/yield/loop capture is rejected.
+    **Meaning**: sockmap/sockhash lookup and sock.lookup_tcp / lookup_udp return an owned PTR_TO_SOCKET_OR_NULL, not a userspace map-value fd; sock.skc_lookup_tcp returns an owned PTR_TO_SOCK_COMMON_OR_NULL in the same type (sk_release takes both). Every path must pass it to sock.ref_check exactly once. A future op that reads socket fields must split the type first: a sock_common reference is not a full socket.
+    **Where it appears**: sock.map_lookup / lookup_tcp / lookup_udp / skc_lookup_tcp results and sock.ref_check operands; at stage 2 only is_present/assume_present. Call/yield/loop capture is rejected.
     **Evidence**: F61. Ownership tests check single consumption on every path; child-netns tests on 7.1.8 match C for NULL and present results.
   }];
 }
 def EBPF_SockRefType : EBPF_Type<"SockRef", "sock_ref"> {
   let summary = "a checked non-NULL owned socket reference with linear release";
   let description = [{
-    **Meaning**: a checked PTR_TO_SOCKET, passed exactly once to sock.release on every CFG path. It is not converted to kref/PTR_TO_BTF_ID.
+    **Meaning**: a checked PTR_TO_SOCKET (or, from sock.skc_lookup_tcp, PTR_TO_SOCK_COMMON), passed exactly once to sock.release on every CFG path; sk.assign (sk_lookup kind, map-origin sockets only) is the one other use. It is not converted to kref/PTR_TO_BTF_ID.
     **Where it appears**: only sock.ref_check's present-region block argument, used only by sock.release without region escape. At stage 2 it is an assume_present result.
     **Evidence**: F61. Tests check one release on all paths and match C in a 7.1.8 child netns. The original ownership tests did not measure runtime on 6.12/6.6.
   }];
 }
 
+
+// the untrusted kernel address read out of a per-CPU typed ksym slot.
+def EBPF_KAddrType : EBPF_Type<"KAddr", "kaddr"> {
+  let summary = "an untrusted kernel address read from a per-CPU typed ksym slot";
+  let description = [{
+    **Meaning**: `!ebpf.kaddr<"S">` is the value of a per-CPU typed ksym slot declared `{"kind": "ptr", "struct": S}` (C's `DEFINE_PER_CPU(struct S *, v)`). bpf_per_cpu_ptr gives the slot as 8-byte PTR_TO_MEM | MEM_RDONLY, and a load from it is a scalar to the verifier (mark_reg_unknown — 7.3.1 verifier.c:6436-6478), so the address is not trusted: it cannot be dereferenced as a BTF pointer, and it is not an integer either. `!ebpf.kaddr<"">` is an untrusted `void *` (a kernel_types field `{"kind": "ptr"}`) — it can only be compared or tested for NULL.
+
+    **Where it appears**: the present block argument of ebpf.ksym.per_cpu_load for a pointer slot, and the pointer results of ebpf.kaddr.read and ebpf.kaddr.container_of. Its consumers are ebpf.kaddr.nonnull, ebpf.kaddr.eq, ebpf.kaddr.read, ebpf.kaddr.strncmp and ebpf.kaddr.container_of (the last three not on `kaddr<"">`). Arithmetic, map stores, call arguments, yield and loop capture are rejected.
+
+    **Evidence**: Out of scope — kernel evidence: compile only, with the verifier type read from the 4 kernel sources; a separate VM run covers it.
+
+    **Unsupported**: Slots that point to pointers or non-structs, and dereferencing it as a trusted BTF pointer.
+  }];
+  let parameters = (ins StringRefParameter<"kernel struct name">:$structName);
+  let assemblyFormat = "`<` $structName `>`";
+}
+
+// Semantics, constraints and evidence: docs/reference/ebpf_types.md.
+def EBPF_StrBufType : EBPF_Type<"StrBuf", "str_buf"> {
+  let summary = "a NUL-terminated N-byte stack string snapshot, passed only to a sched_ext dump's %s";
+  let description = [{
+    **Meaning**: `!ebpf.str_buf<N>` (1 <= N <= 64) is an N-byte program-stack buffer that holds a NUL within its N bytes: a literal (ebpf.str_buf.literal) or a snapshot of a kernel string taken by ebpf.kernel.read_str_buf (bpf_probe_read_kernel_str — the bytes at the time of the read, as LAVD's `char cgrp_name[64]` copy).
+
+    **Where it appears**: the result of ebpf.str_buf.literal and ebpf.kernel.read_str_buf. Its only uses are an ebpf.scx.dump argument at a `%s` conversion and a yield operand of ebpf.if (ebpf.if.yield) / ebpf.kptr.check / ebpf.kref.check / ebpf.ref.check (ebpf.yield) (whose result follows the same rule); the definition and the dump must have the same nearest enclosing loop / iterator / callback / RCU section / function. Every other use (other dump positions, scx.error / scx.exit, other operands, other yields, break / continue, stores, calls, func signatures, captures) is rejected. This is a compiler rule (a C-equivalent snapshot reaches the dump only) — the kernel itself lets a CAP_PERFMON struct_ops program leak stack addresses (7.3.1 verifier.c:21231, :6982-6984). At stage ③ it is a pointer to a dedicated entry-block alloca without lifetime markers (never shared with another buffer or slot).
+
+    **Evidence**: Out of scope — kernel evidence: compile only; a separate VM run covers it.
+
+    **Unsupported**: Copies to maps / ring buffers, scx.error / scx.exit `%s`, and N > 64.
+  }];
+  let parameters = (ins "int64_t":$size);
+  let assemblyFormat = "`<` $size `>`";
+}
 #endif // EBPF_TYPES

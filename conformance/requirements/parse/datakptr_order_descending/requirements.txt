@@ -1,0 +1,6 @@
+ebpf-requirements 23
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	g	syscall	31
+helper	g	kptr_xchg	194
+datakptr	.data.LAVD
+datakptr	.data.CPUMASK

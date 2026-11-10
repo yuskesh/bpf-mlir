@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "kfield_unknown",
+      "program": "s",
+      "name": "cpufreq_policy.governor_data (ptr:void)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

@@ -57,6 +57,10 @@ static cl::opt<uint64_t> presentOutlineThreshold("present-outline-threshold", cl
 // C3 conversion is enabled by default; =false selects the older conversion.
 // Debug auto preserves explicit frontend op locations in BTF line_info/DWARF;
 // off removes them all.
+// testing only (hidden) — skip the BPF CO-RE relocation passes so the
+// emitter's leftover-intrinsic check must stop the compile.
+static cl::opt<bool> testSkipCoreRelocationPass("test-skip-core-relocation-pass", cl::init(false), cl::Hidden,
+                                                cl::desc("testing only: skip the CO-RE relocation passes (the compile must fail)"));
 static cl::opt<std::string> lineInfoOpt("line-info", cl::init("auto"),
                                         cl::desc("auto (frontend-explicit op locations in line_info) | off (remove all)"));
 static cl::opt<bool> tuneSinkWindowLoads("tune-sink-window-loads", cl::init(true),
@@ -77,6 +81,10 @@ static cl::opt<bool> tuneWindowLoadNested("tune-window-load-nested", cl::init(tr
 // changing the ELF or successful exit status.
 static cl::opt<bool> warnNonrootIndex("warn-nonroot-index", cl::init(true),
                                       cl::desc("warn about ref.index index shapes that non-root loaders may reject (mixed constant/unknown values and non-unrolled loop values)"));
+// opt-in (default off) warning about non-atomic read-modify-writes of
+// shared map values and .bss globals within one function (rules).
+static cl::opt<bool> warnSharedRMW("warn-shared-rmw", cl::init(false),
+                                   cl::desc("warn when a value loaded from a shared (not per-CPU) map value or .bss global reaches a write of the same location in the same function (non-atomic read-modify-write; default off)"));
 static cl::opt<bool> tuneThreadI1Join("tune-thread-i1-join", cl::init(false),
                                       cl::desc("thread constant i1 joins per arm at the end of stage 2"));
 static cl::opt<bool> tuneBackedgeSpill("tune-backedge-spill", cl::init(true),
@@ -85,6 +93,9 @@ static cl::opt<bool> tuneBackedgeSpill("tune-backedge-spill", cl::init(true),
 static cl::opt<bool> tuneBackedgeRotate("tune-backedge-rotate", cl::init(false),
                                         cl::desc("R (disabled by default): rotate back-edge loops (entry only guards the bound 0 < n; "
                                                  "the latch tests i + 1 -> i < n -> i < N before the body — one fewer speculative push on the constant-trip main path)"));
+static cl::opt<bool> tuneReuseDominatedLookup("tune-reuse-dominated-lookup", cl::init(true),
+                                              cl::desc("(enabled by default; false restores the previous output): at stage 2, reuse a dominating present "
+                                                       "lookup of the same array map and key SSA values instead of a repeated lookup and its NULL branch"));
 static cl::opt<bool> tuneAlignedPacketLoad("tune-aligned-packet-load", cl::init(true),
                                            cl::desc("read a packet of width W at a constant offset off with (2 + off) mod W = 0 as one wide load "
                                                     "(accepted by the strict-alignment verifier, NET_IP_ALIGN = 2); other reads stay bytewise (enabled by default; false restores v1.19-style bytewise reads)"));
@@ -270,6 +281,9 @@ int main(int argc, char **argv) {
   pm.addPass(mlir::ebpf::createEBPFVerifyOwnership());
   // Verify subprogram reachability, non-recursion and call depth.
   pm.addPass(mlir::ebpf::createEBPFVerifyCallGraph());
+  // the context-dependent ops of each ebpf.func, per reaching context
+  // (kind level; the member and sleepable rules are in ebpf-verify-schema).
+  pm.addPass(mlir::ebpf::createEBPFVerifyCallContexts());
   {
     mlir::ebpf::EBPFVerifySchemaOptions o;
     o.schemaPath = schemaFile;
@@ -288,6 +302,8 @@ int main(int argc, char **argv) {
   // Nonblocking warnings leave IR unchanged.
   if (warnNonrootIndex)
     pm.addPass(mlir::ebpf::createEBPFWarnNonrootIndex());
+  if (warnSharedRMW)
+    pm.addPass(mlir::ebpf::createEBPFWarnSharedRMW());
   // Staged high-level-to-LLVM lowering, including each stage's exit checks.
   {
     mlir::ebpf::TuneOptions tune;
@@ -305,6 +321,7 @@ int main(int argc, char **argv) {
     tune.backedgeSpill = tuneBackedgeSpill;
     tune.backedgeRotate = tuneBackedgeRotate;
     tune.alignedPacketLoad = tuneAlignedPacketLoad;
+    tune.reuseDominatedLookup = tuneReuseDominatedLookup;
     mlir::ebpf::buildEBPFToLLVMPipeline(pm, tune, targetProfile);
   }
   pm.addPass(mlir::createArithToLLVMConversionPass());
@@ -370,7 +387,7 @@ int main(int argc, char **argv) {
                                        diags, licenseOpt,
                                        irOut ? &irOut->os() : nullptr,
                                        costOut ? &costOut->os() : nullptr,
-                                       presentOutlineThreshold)))
+                                       presentOutlineThreshold, testSkipCoreRelocationPass)))
       return 1;
   }
   if (irOut)

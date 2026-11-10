@@ -8,7 +8,11 @@ def EBPFVerifyOwnership : Pass<"ebpf-verify-ownership", "mlir::ModuleOp"> {
   let summary = "Check exactly one submit/discard on every CFG path from reserve";
   let description = [{
     Counting uses alone accepts a submission on only one branch as one use.
-    Walk the CFG to reject such path-dependent consumption.
+    Walk the CFG to reject such path-dependent consumption. A live resource
+    must not cross ebpf.loop / ebpf.iter.num / ebpf.iter.scx_dsq (and, for a
+    ring buffer reservation, ebpf.rcu.region); nor
+    through ebpf.call — a call made while a reservation is live is rejected
+    when the callee reaches one of them at any depth.
   }];
 }
 
@@ -39,6 +43,24 @@ def EBPFExpandRegions : Pass<"ebpf-expand-regions", "mlir::ModuleOp"> {
     Option<"backedgeRotate", "backedge-rotate", "bool", /*default=*/"false",
            "rotate back-edge loops: entry only guards bound 0 < n and starts at the body; latch tests i + 1 -> i < n -> i < N before returning to the body (one fewer speculative push on the constant-trip main path)">
   ];
+}
+
+def EBPFReuseDominatedLookup : Pass<"ebpf-reuse-dominated-lookup", "mlir::ModuleOp"> {
+  let summary = "Stage 2: reuse a dominating present lookup of the same array map and key";
+  let description = [{
+    Rewrites `L2 = ebpf.map.lookup %m[%k]` only when (a) %m is an `array` map,
+    (b) another `L1 = ebpf.map.lookup %m[%k]` with the same map and key SSA values
+    has an `ebpf.assume_present L1` that properly dominates L2 as an operation,
+    (c) that assume_present and L2 share one region (no callback boundary), and
+    (d) L2 is used only by ebpf.is_present (used only as cf.cond_br conditions)
+    and ebpf.assume_present. Each such cf.cond_br becomes cf.br to its true
+    destination with the true operands unchanged; assume_present L2 is replaced
+    by the dominating assume_present; unreachable blocks are erased.
+    An array element at an in-range index is a fixed cell that cannot be
+    deleted, and the same key SSA value is the same index, so the dominating
+    present lookup returns the same pointer.
+  }];
+  let dependentDialects = ["::mlir::cf::ControlFlowDialect"];
 }
 
 def EBPFVerifyStructured : Pass<"ebpf-verify-structured", "mlir::ModuleOp"> {
@@ -126,6 +148,30 @@ def EBPFVerifyCallGraph : Pass<"ebpf-verify-call-graph", "mlir::ModuleOp"> {
   }];
 }
 
+def EBPFVerifyCallContexts : Pass<"ebpf-verify-call-contexts", "mlir::ModuleOp"> {
+  let summary = "Check the context-dependent ops of each ebpf.func in every context that reaches it";
+  let description = [{
+    : an ebpf.func body may hold kfunc.call, kref.check,
+    iter.num, iter.scx_dsq, rcu.region, the kptr exchanges and RCU reads,
+    trace.printk and the sched_ext ops; the op verifiers check what does not
+    depend on the caller and leave the rest to this pass. For every context that
+    reaches the function (CallContexts.h: owner program and kind, entry — program
+    body, timer callback, helper callback — and the regions of the call sites on
+    the way), the op must be allowed as it would be in that place of the owner's
+    body: the kind (kfunc program types, OPS tags "scx" / "trace.printk" /
+    "sleepable"), no RCU section reached twice, the iterator and
+    ownership rules through calls, the program body's ancestor rules at the
+    call sites (the sched_ext ops' allowlist of ancestors such
+    as ebpf.ringbuf.if_reserved, scf.if around an iterator or RCU section, the
+    loop body's allowlist without ebpf.rcu.region), and — for now — none of these ops in a
+    function reached from a timer or helper callback (widens the timer
+    side). One failing context is named per op. The sched_ext_ops member and the
+    schema's sleepable flag are checked by ebpf-verify-schema with the same
+    contexts. A function no entry reaches has no context (ebpf-verify-call-graph
+    rejects it). Run after ebpf-verify-call-graph.
+  }];
+}
+
 def EBPFVerifyRecords : Pass<"ebpf-verify-records", "mlir::ModuleOp"> {
   let summary = "Check record types and field accesses against BTF declarations (btf.scope @records)";
   let description = [{
@@ -181,6 +227,29 @@ def EBPFWarnNonrootIndex : Pass<"ebpf-warn-nonroot-index", "mlir::ModuleOp"> {
     constant to exclude unreachable constants. IR is unchanged. These facts are
     a compiler approximation, not the kernel verifier's path exploration.
     Kernel versions are not compared.
+  }];
+}
+
+def EBPFWarnSharedRMW : Pass<"ebpf-warn-shared-rmw", "mlir::ModuleOp"> {
+  let summary = "Warn about non-atomic read-modify-writes of shared map values and .bss globals (stage 1, nonblocking, opt-in)";
+  let description = [{
+    warn when a value loaded from a shared (not per-CPU) map value
+    or a .bss global reaches, through arithmetic, region results and loop
+    iter_args, a write of the same location in the same function — ref.store /
+    ref.field.store / elem.store of the same borrow location, the delta of
+    ref.atomic_add / ref.field.atomic_add, map.update / try_update /
+    atomic_add with the same map and key signature, global.store /
+    global.atomic_add of the same @G, and the operand of ref.field.atomic_or /
+    global.atomic_or (like a delta; cmpxchg is the atomic retry form,
+    not a write here). Updates from other CPUs can be lost;
+    neither the verifier nor the compiler rejects the shape. Per-CPU map kinds
+    and a load and a write inside the same spin.region are excluded. The
+    advice "use atomic_add" fits additions only: a write chosen by a branch on
+    the loaded value (control dependence) is not detected, and an atomic delta
+    computed from a load of the same location gets its own message (remove the
+    load). Functions are not crossed — the interprocedural shapes are
+    rmwprobe's (docs/tools/rmwprobe.md). IR is unchanged; ebpf-compile runs it
+    only with --warn-shared-rmw (default off).
   }];
 }
 

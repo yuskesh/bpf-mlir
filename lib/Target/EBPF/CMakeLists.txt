@@ -19,8 +19,13 @@ target_link_libraries(BpfMLIREBPFObject PUBLIC
   LLVMBPFCodeGen
   LLVMBPFDesc
   LLVMBPFInfo
+  LLVMBPFAsmParser # scx.exit_info emits textual inline asm (cmpxchg32_32).
+  LLVMMCParser
   LLVMCodeGen
   LLVMTarget
   LLVMCore
+  LLVMObject
+  LLVMObjCopy
+  LLVMDebugInfoBTF
   LLVMMC
   LLVMPasses)

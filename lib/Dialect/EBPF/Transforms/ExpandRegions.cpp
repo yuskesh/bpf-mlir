@@ -39,7 +39,7 @@ void eraseUnreachable(Region &body);
 void threadI1Joins(Region &body);
 
 bool isStageOneControl(Operation *op) {
-  return isa<RefCheckOp, KPtrCheckOp, KRefCheckOp, SockRefCheckOp, RingbufIfReservedOp, MapAtomicAddOp, scf::IfOp, LoopOp, IfOp, RefIndexOp, PacketCheckOp, VerdictIfOp, TailCallOp, SpinRegionOp>(op);
+  return isa<RefCheckOp, KPtrCheckOp, KRefCheckOp, SockRefCheckOp, RingbufIfReservedOp, MapAtomicAddOp, scf::IfOp, LoopOp, IfOp, RefIndexOp, PacketCheckOp, MetaCheckOp, ArenaCheckOp, ArenaAllocOp, VerdictIfOp, TailCallOp, SpinRegionOp, IterNumOp, IterScxDsqOp, RcuRegionOp, KsymPerCpuLoadOp>(op);
 }
 
 class Expander {
@@ -82,11 +82,24 @@ public:
       } else if (auto pc = dyn_cast<PacketCheckOp>(op)) {
         if (failed(expandPacketCheck(pc, cont)))
           return failure();
+      } else if (auto mc = dyn_cast<MetaCheckOp>(op)) {
+        if (failed(expandMetaCheck(mc, cont)))
+          return failure();
+      } else if (auto allocation = dyn_cast<ArenaAllocOp>(op)) {
+        if (failed(expandArenaAlloc(allocation, cont)))
+          return failure();
+      } else if (auto ac = dyn_cast<ArenaCheckOp>(op)) {
+        if (failed(expandArenaCheck(ac, cont)))
+          return failure();
+      } else if (auto pl = dyn_cast<KsymPerCpuLoadOp>(op)) {
+        if (failed(expandPerCpuLoad(pl, cont)))
+          return failure();
       } else if (auto vi = dyn_cast<VerdictIfOp>(op)) {
         expandVerdictIf(vi);
         continue;
       } else if (auto rd = dyn_cast<RedirectOp>(op); rd && rd.getCond()) {
-        expandRedirectWhen(rd);
+        cur = expandRedirectWhen(rd);
+        it = cur->begin();
         continue;
       } else if (auto rm = dyn_cast<RedirectMapOp>(op); rm && rm.getCond()) {
         expandRedirectMapWhen(rm);
@@ -119,8 +132,20 @@ public:
       } else if (auto loop = dyn_cast<LoopOp>(op)) {
         if (failed(expandLoop(loop, cont)))
           return failure();
+      } else if (auto iter = dyn_cast<IterNumOp>(op)) {
+        if (failed(expandIterNum(iter, cont)))
+          return failure();
+      } else if (auto dsq = dyn_cast<IterScxDsqOp>(op)) {
+        if (failed(expandIterScxDsq(dsq, cont)))
+          return failure();
+      } else if (auto rr = dyn_cast<RcuRegionOp>(op)) {
+        if (failed(expandRcuRegion(rr, cont)))
+          return failure();
       } else if (auto fe = dyn_cast<MapForEachOp>(op)) {
         if (failed(expandForEach(fe, cont)))
+          return failure();
+      } else if (auto fv = dyn_cast<TaskFindVmaOp>(op)) {
+        if (failed(expandFindVma(fv, cont)))
           return failure();
       } else {
         continue;
@@ -436,6 +461,118 @@ private:
     return success();
   }
 
+  // arena.check becomes arena.check_br like packet.check (zero-extended
+  // offset, ^in(%w) / ^out, results on the continuation). No window-load
+  // rewrites — W0 / C1 / W1 are packet optimizations.
+  LogicalResult expandArenaAlloc(ArenaAllocOp allocation, Block *&cont) {
+    Location loc = allocation.getLoc();
+    Block *cur = allocation->getBlock();
+    Region *parent = cur->getParent();
+    OpBuilder b(allocation);
+    // Resolve each checked free while the lexical proof still has its owner.
+    SmallVector<ArenaFreeOp> frees;
+    allocation.walk([&](ArenaFreeOp op) { frees.push_back(op); });
+    for (ArenaFreeOp op : frees) {
+      b.setInsertionPoint(op);
+      ArenaFreePagesOp::create(b, op.getLoc(), allocation.getMap(), allocation.getPageOffsetAttr(), allocation.getPageCountAttr());
+      op.erase();
+    }
+    allocation.getAllocated().front().eraseArgument(0);
+    cont = cur->splitBlock(allocation.getOperation());
+    auto *in = new Block();
+    parent->getBlocks().insert(cont->getIterator(), in);
+    auto *out = new Block();
+    parent->getBlocks().insert(cont->getIterator(), out);
+    for (Value r : allocation.getResults())
+      r.replaceAllUsesWith(cont->addArgument(r.getType(), loc));
+    b.setInsertionPointToEnd(cur);
+    ArenaAllocBrOp::create(b, loc, allocation.getMap(), allocation.getPageOffsetAttr(), allocation.getPageCountAttr(), in, out);
+    if (failed(spliceArm(allocation, allocation.getAllocated(), in, cont)) ||
+        failed(spliceArm(allocation, allocation.getFailed(), out, cont)))
+      return failure();
+    allocation.erase();
+    if (failed(expandFrom(in)) || failed(expandFrom(out)))
+      return failure();
+    return success();
+  }
+
+  // xdp.meta_check becomes meta.check_br (no window-load rewrites — the
+  // packet optimizations do not apply to the metadata window; no results).
+  LogicalResult expandMetaCheck(MetaCheckOp mc, Block *&cont) {
+    Location loc = mc.getLoc();
+    Block *cur = mc->getBlock();
+    Region *parent = cur->getParent();
+    OpBuilder b(mc);
+    cont = cur->splitBlock(mc.getOperation());
+    auto *inBlk = new Block();
+    parent->getBlocks().insert(cont->getIterator(), inBlk);
+    auto *outBlk = new Block();
+    parent->getBlocks().insert(cont->getIterator(), outBlk);
+    BlockArgument w = mc.getInRange().front().getArgument(0);
+    w.replaceAllUsesWith(inBlk->addArgument(w.getType(), loc));
+    b.setInsertionPointToEnd(cur);
+    MetaCheckBrOp::create(b, loc, mc.getCtx(), mc.getLenAttr(), inBlk, outBlk);
+    if (failed(spliceArm(mc, mc.getInRange(), inBlk, cont)) || failed(spliceArm(mc, mc.getOutOfRange(), outBlk, cont)))
+      return failure();
+    mc->erase();
+    if (failed(expandFrom(inBlk)) || failed(expandFrom(outBlk)))
+      return failure();
+    return success();
+  }
+
+  LogicalResult expandArenaCheck(ArenaCheckOp ac, Block *&cont) {
+    Location loc = ac.getLoc();
+    Block *cur = ac->getBlock();
+    Region *parent = cur->getParent();
+    OpBuilder b(ac);
+    Value off = ac.getOffset();
+    Value off64 = off.getType() == b.getI64Type() ? off : arith::ExtUIOp::create(b, loc, b.getI64Type(), off).getResult();
+    cont = cur->splitBlock(ac.getOperation());
+    auto *inBlk = new Block();
+    parent->getBlocks().insert(cont->getIterator(), inBlk);
+    auto *outBlk = new Block();
+    parent->getBlocks().insert(cont->getIterator(), outBlk);
+    for (Value r : ac.getResults())
+      r.replaceAllUsesWith(cont->addArgument(r.getType(), loc));
+    BlockArgument w = ac.getInRange().front().getArgument(0);
+    w.replaceAllUsesWith(inBlk->addArgument(w.getType(), loc));
+    b.setInsertionPointToEnd(cur);
+    ArenaCheckBrOp::create(b, loc, ac.getBase(), off64, ac.getLenAttr(), inBlk, outBlk);
+    if (failed(spliceArm(ac, ac.getInRange(), inBlk, cont)) || failed(spliceArm(ac, ac.getOutOfRange(), outBlk, cont)))
+      return failure();
+    ac->erase();
+    if (failed(expandFrom(inBlk)) || failed(expandFrom(outBlk)))
+      return failure();
+    return success();
+  }
+
+  // per_cpu_load becomes the per_cpu_br terminator (helper, NULL test and
+  // slot load at ③) with the present arm receiving the slot value.
+  LogicalResult expandPerCpuLoad(KsymPerCpuLoadOp pl, Block *&cont) {
+    Location loc = pl.getLoc();
+    Block *cur = pl->getBlock();
+    Region *parent = cur->getParent();
+    OpBuilder b(pl);
+    cont = cur->splitBlock(pl.getOperation());
+    auto *inBlk = new Block();
+    parent->getBlocks().insert(cont->getIterator(), inBlk);
+    auto *outBlk = new Block();
+    parent->getBlocks().insert(cont->getIterator(), outBlk);
+    for (Value r : pl.getResults())
+      r.replaceAllUsesWith(cont->addArgument(r.getType(), loc));
+    BlockArgument s = pl.getPresentRegion().front().getArgument(0);
+    s.replaceAllUsesWith(inBlk->addArgument(s.getType(), loc));
+    b.setInsertionPointToEnd(cur);
+    auto br = KsymPerCpuBrOp::create(b, loc, pl.getNameAttr(), pl.getCpu(), inBlk, outBlk);
+    br->setDiscardableAttrs(pl->getDiscardableAttrDictionary()); // ebpf.weak / ebpf.extern_type for ③.
+    if (failed(spliceArm(pl, pl.getPresentRegion(), inBlk, cont)) || failed(spliceArm(pl, pl.getAbsentRegion(), outBlk, cont)))
+      return failure();
+    pl->erase();
+    if (failed(expandFrom(inBlk)) || failed(expandFrom(outBlk)))
+      return failure();
+    return success();
+  }
+
   // verdict.if becomes cond_br and two verdict terminators; nothing follows it.
   void expandVerdictIf(VerdictIfOp vi) {
     Location loc = vi.getLoc();
@@ -455,7 +592,7 @@ private:
   }
 
   // Split conditional redirect into cond_br and unconditional redirect/verdict.
-  void expandRedirectWhen(RedirectOp rd) {
+  Block *expandRedirectWhen(RedirectOp rd) {
     Location loc = rd.getLoc();
     Block *cur = rd->getBlock();
     Region *parent = cur->getParent();
@@ -466,10 +603,14 @@ private:
     OpBuilder b(rd);
     cf::CondBranchOp::create(b, loc, rd.getCond(), thenBlk, ValueRange{}, elseBlk, ValueRange{});
     b.setInsertionPointToEnd(thenBlk);
-    RedirectOp::create(b, loc, rd.getIfindex(), Value(), StringAttr());
+    RedirectOp::create(b, loc, rd.getIfindex(), Value(), StringAttr(), rd.getFlagsAttr(), rd.getViaAttr());
     b.setInsertionPointToEnd(elseBlk);
-    VerdictOp::create(b, loc, rd.getElseActionAttr());
+    if (rd.getFallback().empty())
+      VerdictOp::create(b, loc, rd.getElseActionAttr());
+    else
+      elseBlk->getOperations().splice(elseBlk->end(), rd.getFallback().front().getOperations());
     rd->erase();
+    return elseBlk;
   }
 
   // tail_call becomes nonterminating tail_call.try followed by fallback:
@@ -824,6 +965,109 @@ private:
     return success();
   }
 
+  // order. begin (slot + new) ends cur; the header's next_br enters the body
+  // with the index or goes to nul on NULL; the body's iter.yield reaches the
+  // latch, which returns to the header; break reaches done and continue the
+  // latch. done is the one block with end (destroy), reached by nul and break,
+  // so destroy runs once on every exit — including after a failed new.
+  LogicalResult expandIterNum(IterNumOp it, Block *&cont) {
+    return expandIterator(
+        it, it.getInits(), it.getBody(), cont, IntegerType::get(it.getContext(), 32),
+        [&](OpBuilder &b) { return IterNumBeginOp::create(b, it.getLoc(), IterNumSlotType::get(it.getContext()), it.getLo(), it.getHi()); },
+        [&](OpBuilder &b, Value slot, Block *body, Block *nul) { IterNumNextBrOp::create(b, it.getLoc(), slot, body, nul); },
+        [&](OpBuilder &b, Value slot) { IterNumEndOp::create(b, it.getLoc(), slot); });
+  }
+
+  // ebpf.iter.scx_dsq shares the iterator expansion; the body takes
+  // the task (!ebpf.rcu_ptr<"task_struct">) where iter.num takes the index.
+  LogicalResult expandIterScxDsq(IterScxDsqOp it, Block *&cont) {
+    return expandIterator(
+        it, it.getInits(), it.getBody(), cont, RcuPtrType::get(it.getContext(), "task_struct"),
+        [&](OpBuilder &b) { return IterScxDsqBeginOp::create(b, it.getLoc(), IterScxDsqSlotType::get(it.getContext()), it.getDsqId()); },
+        [&](OpBuilder &b, Value slot, Block *body, Block *nul) { IterScxDsqNextBrOp::create(b, it.getLoc(), slot, body, nul); },
+        [&](OpBuilder &b, Value slot) { IterScxDsqEndOp::create(b, it.getLoc(), slot); });
+  }
+
+  LogicalResult expandIterator(Operation *it, ValueRange inits, Region &bodyRegion, Block *&cont, Type elemTy,
+                               llvm::function_ref<Value(OpBuilder &)> begin,
+                               llvm::function_ref<void(OpBuilder &, Value, Block *, Block *)> nextBr,
+                               llvm::function_ref<void(OpBuilder &, Value)> end) {
+    Location loc = it->getLoc();
+    Block *cur = it->getBlock();
+    Region *parent = cur->getParent();
+    cont = cur->splitBlock(it);
+    for (Value r : it->getResults())
+      r.replaceAllUsesWith(cont->addArgument(r.getType(), loc));
+    auto blockWithTypes = [&](TypeRange types) {
+      auto *blk = new Block();
+      parent->getBlocks().insert(cont->getIterator(), blk);
+      for (Type t : types)
+        blk->addArgument(t, loc);
+      return blk;
+    };
+    TypeRange carried = inits.getTypes();
+    Block *header = blockWithTypes(carried);
+    Block *body = blockWithTypes({});
+    Block *latch = blockWithTypes(carried);
+    Block *nul = blockWithTypes({});
+    Block *done = blockWithTypes(carried);
+    OpBuilder b(it->getContext());
+    b.setInsertionPointToEnd(cur);
+    Value slot = begin(b);
+    cf::BranchOp::create(b, loc, header, inits);
+    b.setInsertionPointToEnd(header);
+    nextBr(b, slot, body, nul);
+    Value idx = body->addArgument(elemTy, loc);
+    // Move the body: the element and carried arguments become idx and the header's.
+    Block &src = bodyRegion.front();
+    src.getArgument(0).replaceAllUsesWith(idx);
+    for (auto [a, h] : llvm::zip(src.getArguments().drop_front(), header->getArguments()))
+      a.replaceAllUsesWith(h);
+    body->getOperations().splice(body->end(), src.getOperations());
+    auto y = cast<IterYieldOp>(body->getTerminator());
+    b.setInsertionPoint(y);
+    cf::BranchOp::create(b, loc, latch, y.getValues());
+    y.erase();
+    b.setInsertionPointToEnd(latch);
+    cf::BranchOp::create(b, loc, header, latch->getArguments());
+    b.setInsertionPointToEnd(nul);
+    cf::BranchOp::create(b, loc, done, header->getArguments());
+    b.setInsertionPointToEnd(done);
+    end(b, slot);
+    cf::BranchOp::create(b, loc, cont, done->getArguments());
+    it->erase();
+    loops.push_back({done, latch});
+    LogicalResult r = expandFrom(body);
+    loops.pop_back();
+    return r;
+  }
+
+  // ebpf.rcu.region becomes rcu.lock at the end of cur, the body, and
+  // rcu.unlock just before the branch to cont that replaces the one yield (the
+  // op verifier rejects every other exit, so this is the only unlock).
+  LogicalResult expandRcuRegion(RcuRegionOp rr, Block *&cont) {
+    Location loc = rr.getLoc();
+    Block *cur = rr->getBlock();
+    Region *parent = cur->getParent();
+    cont = cur->splitBlock(rr.getOperation());
+    for (Value r : rr.getResults())
+      r.replaceAllUsesWith(cont->addArgument(r.getType(), loc));
+    auto *inner = new Block();
+    parent->getBlocks().insert(cont->getIterator(), inner);
+    OpBuilder b(rr.getContext());
+    b.setInsertionPointToEnd(cur);
+    RcuLockOp::create(b, loc);
+    cf::BranchOp::create(b, loc, inner);
+    inner->getOperations().splice(inner->end(), rr.getBody().front().getOperations());
+    auto y = cast<YieldOp>(inner->getTerminator());
+    b.setInsertionPoint(y);
+    RcuUnlockOp::create(b, loc);
+    cf::BranchOp::create(b, loc, cont, y.getResults());
+    y.erase();
+    rr.erase();
+    return expandFrom(inner);
+  }
+
   // Helper loops move bodies into module-level loop_callback and emit bpf_loop.
   // Callback args are i32 IV, carried values, first-use-ordered captured
   // integers and maps rebound by owner symbols. End/continue returns zero;
@@ -848,7 +1092,7 @@ private:
         base = 1;
         syms = p.getMapSymbolsAttr();
       } else if (auto c = dyn_cast<LoopCallbackOp>(owner)) {
-        base = (c.getForEach() ? 2 : 1) + c.getNumCarried() + c.getNumCaptured(); // for_each callback arguments begin with key and value.
+        base = ((c.getForEach() || c.getFindVma()) ? 2 : 1) + c.getNumCarried() + c.getNumCaptured(); // for_each callback arguments begin with key and value.
         syms = c.getMapSymbols();
       } else {
         auto f = cast<SubprogramOp>(owner);
@@ -1046,6 +1290,66 @@ private:
     fe.replaceAllUsesWith(call->getResults());
     cont = fe->getBlock();
     fe.erase();
+    return success();
+  }
+  // task.find_vma moves its body into a module callback marked
+  // find_vma and emits find_vma_call. The entry takes the task, the vma, the
+  // carried values and the captured integers (the verifier rejects any other
+  // capture and any map); the yield becomes callback.return 0.
+  LogicalResult expandFindVma(TaskFindVmaOp fv, Block *&cont) {
+    Location loc = fv.getLoc();
+    if (!root)
+      return fv.emitOpError() << "ebpf.task.find_vma has no owning program";
+    Block &src = fv.getBody().front();
+    llvm::SetVector<Value> captured;
+    fv.getBody().walk([&](Operation *op) {
+      for (Value v : op->getOperands())
+        if (!fv.getBody().isAncestor(v.getParentRegion()))
+          captured.insert(v);
+    });
+    SmallVector<Value> ints;
+    for (Value v : captured) {
+      if (!isa<IntegerType>(v.getType()))
+        return fv.emitOpError() << "captures " << v.getType() << ", which cannot be passed to a find_vma callback";
+      ints.push_back(v);
+    }
+    OpBuilder b(fv.getContext());
+    SmallVector<Type> carried(fv.getInits().getTypes());
+    b.setInsertionPoint(root);
+    std::string name = ("__ebpf_findvma_cb_" + rootName + "_" + Twine(callbackCount++)).str();
+    auto cb = LoopCallbackOp::create(b, loc, b.getStringAttr(name), b.getI64IntegerAttr(carried.size()), b.getI64IntegerAttr(ints.size()),
+                                     b.getArrayAttr({}), UnitAttr(), b.getUnitAttr());
+    auto *entry = new Block();
+    cb.getBody().push_back(entry);
+    IRMapping m;
+    for (BlockArgument a : src.getArguments())
+      m.map(a, entry->addArgument(a.getType(), loc));
+    for (Value v : ints)
+      m.map(v, entry->addArgument(v.getType(), loc));
+    auto *next = new Block();
+    cb.getBody().push_back(next);
+    SmallVector<Value> nextArgs;
+    for (Type t : carried)
+      nextArgs.push_back(next->addArgument(t, loc));
+    {
+      OpBuilder rb = OpBuilder::atBlockEnd(next);
+      CallbackReturnOp::create(rb, loc, rb.getI64IntegerAttr(0), nextArgs);
+    }
+    b.setInsertionPointToEnd(entry);
+    for (Operation &op : src.without_terminator())
+      b.clone(op, m);
+    auto y = cast<TaskFindVmaYieldOp>(src.getTerminator());
+    SmallVector<Value> vals;
+    for (Value v : y.getValues())
+      vals.push_back(m.lookupOrDefault(v));
+    cf::BranchOp::create(b, loc, next, vals);
+    eraseUnreachable(cb.getBody());
+    b.setInsertionPoint(fv);
+    auto call = FindVmaCallOp::create(b, loc, fv->getResultTypes(), FlatSymbolRefAttr::get(cb.getSymNameAttr()), fv.getTask(), fv.getAddr(),
+                                      fv.getInits(), ints);
+    fv.replaceAllUsesWith(call->getResults());
+    cont = fv->getBlock();
+    fv.erase();
     return success();
   }
   unsigned callbackCount = 0;
@@ -1464,6 +1768,10 @@ struct EBPFExpandRegionsPass
     };
     for (auto prog : module.getOps<ProgramOp>())
       go(prog);
+    // ': a timer callback is an entry too — a function the program
+    // calls only inside an N = 0 loop body and the callback calls stays.
+    for (auto cb : module.getOps<TimerCallbackOp>())
+      go(cb);
     return seen;
   }
 

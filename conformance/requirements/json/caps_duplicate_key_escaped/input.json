@@ -1,5 +1,5 @@
 {"\u0066ormat": "ebpf-caps 2",
-  "format": "ebpf-caps 10",
+  "format": "ebpf-caps 20",
   "probed_as": {
     "uid": 0,
     "cap_eff": "000001ffffffffff"

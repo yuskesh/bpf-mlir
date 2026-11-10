@@ -1,4 +1,4 @@
 {
   "result": "error",
-  "error": "map \"g12cc\" struct_ops: unknown key \"zz_unknown\" (known: type, name, ops)"
+  "error": "map \"g12cc\" struct_ops: unknown key \"zz_unknown\" (known: type, name, ops, dispatch_max_batch, flags, timeout_ms, exit_dump_len, hotplug_seq, sub_cgroup_id)"
 }

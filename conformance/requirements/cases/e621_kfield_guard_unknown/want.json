@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "kfield_unknown",
+      "program": "p",
+      "name": "cpufreq_policy.cur (u32)",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

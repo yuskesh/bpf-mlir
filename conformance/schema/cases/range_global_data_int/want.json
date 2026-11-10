@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "global \"target_tgid\": a data:gkptr global must be a kptr ({\"kind\": \"kptr\", \"struct\": …}); integers go in rodata / bss — a data:\u003cname\u003e section holds hidden kptr globals only, which loaders do not mmap"
+}

@@ -1,4 +1,4 @@
 {
   "result": "error",
-  "error": "core.globals: unknown key \"zz_unknown\" (known: name, section, type, note)"
+  "error": "core.globals: unknown key \"zz_unknown\" (known: name, section, type, record, note)"
 }

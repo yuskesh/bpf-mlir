@@ -40,6 +40,7 @@ struct TuneOptions {
   bool alignedPacketLoad = true;    // Enabled by default: one wide packet read when (2 + constant offset) mod width = 0.
   bool backedgeRotate = false;      // R rotates bounded loops: entry has only the bound guard, latch checks
 // i+1, then i<n, then i<N.
+  bool reuseDominatedLookup = true; // reuse a dominating present lookup of the same array map and key.
 };
 // Empty targetProfile checks compiler legality only and defers target
 // decisions to loading; otherwise use the explicit verifier-policy profile.

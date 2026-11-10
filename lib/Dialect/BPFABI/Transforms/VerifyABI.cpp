@@ -16,6 +16,7 @@
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Dominance.h"
+#include "mlir/IR/Matchers.h"
 
 namespace mlir {
 namespace bpfabi {
@@ -44,9 +45,13 @@ CheckVerdict checkHelper(HelperCallOp op) {
                      << op.getId();
     return CheckVerdict::Rejected;
   }
-  if (op.getArgs().size() != h->numArgs) {
-    op.emitOpError() << "helper \"" << h->name << "\" takes " << h->numArgs
-                     << " argument(s), got " << op.getArgs().size();
+  auto [minArgs, maxArgs] = helperArgumentRange(*h);
+  if (op.getArgs().size() < minArgs || op.getArgs().size() > maxArgs) {
+    auto diag = op.emitOpError();
+    diag << "helper \"" << h->name << "\" takes " << minArgs;
+    if (minArgs != maxArgs)
+      diag << ".." << maxArgs;
+    diag << " argument(s), got " << op.getArgs().size();
     return CheckVerdict::Rejected;
   }
   // Return shape.
@@ -195,6 +200,25 @@ template <typename CallT> CheckVerdict checkNullGuard(CallT op, DominanceInfo &d
   return CheckVerdict::Verified;
 }
 
+CheckVerdict checkCtxMeta(CtxMetaOp op) {
+  auto ctx = lookupMetaCtx(op.getKind());
+  if (!ctx) {
+    op.emitOpError() << "program kind \"" << op.getKind() << "\" has no data_meta in the UAPI table";
+    return CheckVerdict::Rejected;
+  }
+  if (static_cast<int64_t>(op.getFieldBytes()) != ctx->fieldBytes ||
+      static_cast<int64_t>(op.getMetaOffset()) != ctx->metaOffset ||
+      static_cast<int64_t>(op.getDataOffset()) != ctx->dataOffset) {
+    auto d = op.emitOpError() << "the " << op.getKind() << " context reads data_meta at offset " << op.getMetaOffset()
+                              << " / data at offset " << op.getDataOffset() << " with " << op.getFieldBytes()
+                              << "-byte loads, but the UAPI table says offsets " << ctx->metaOffset << " / " << ctx->dataOffset
+                              << " with " << ctx->fieldBytes << "-byte fields";
+    d.attachNote() << "the kernel rejects a context access whose width does not match the field";
+    return CheckVerdict::Rejected;
+  }
+  return CheckVerdict::Verified;
+}
+
 CheckVerdict checkCtxPacket(CtxPacketOp op) {
   auto ctx = lookupPacketCtx(op.getKind());
   if (!ctx) {
@@ -324,6 +348,25 @@ CheckVerdict checkCoreFieldLoad(CoreFieldLoadOp op) {
   return CheckVerdict::Conditional;
 }
 
+// an arena window address is made only on the true edge of its range
+// compare — its block's sole predecessor ends in llvm.cond_br on
+// `icmp ule offset, <constant size − len>` with this block as the true
+// destination. The size comes from the schema (③); the shape is checked here.
+CheckVerdict checkArenaAddr(ArenaAddrOp op) {
+  Block *blk = op->getBlock();
+  Block *pred = blk->getSinglePredecessor();
+  auto br = pred ? dyn_cast<LLVM::CondBrOp>(pred->getTerminator()) : LLVM::CondBrOp();
+  auto cmp = br ? br.getCondition().getDefiningOp<LLVM::ICmpOp>() : LLVM::ICmpOp();
+  APInt lim;
+  if (!br || br.getTrueDest() != blk || br.getFalseDest() == blk || !cmp || cmp.getPredicate() != LLVM::ICmpPredicate::ule ||
+      cmp.getLhs() != op.getOffset() || !matchPattern(cmp.getRhs(), m_ConstantInt(&lim))) {
+    op.emitOpError() << "the arena address must be made only in the block entered through the true edge of "
+                        "`icmp ule <offset>, <size - len>` on the same offset";
+    return CheckVerdict::Rejected;
+  }
+  return CheckVerdict::Verified;
+}
+
 struct BPFABIVerifyPass
     : public mlir::bpfabi::impl::BPFABIVerifyBase<BPFABIVerifyPass> {
   using BPFABIVerifyBase::BPFABIVerifyBase;
@@ -353,13 +396,17 @@ struct BPFABIVerifyPass
       }
       else if (auto c = dyn_cast<CtxPacketOp>(op))
         tally.add(checkCtxPacket(c));
+      else if (auto cm = dyn_cast<CtxMetaOp>(op))
+        tally.add(checkCtxMeta(cm));
       else if (auto r = dyn_cast<ReturnOp>(op))
         tally.add(checkReturn(r));
       else if (auto a = dyn_cast<CtxArgOp>(op))
         tally.add(checkCtxArg(a));
       else if (auto f = dyn_cast<CoreFieldLoadOp>(op))
         tally.add(checkCoreFieldLoad(f));
-      else if (isa<CoreFieldAddrOp>(op))
+      else if (auto aa = dyn_cast<ArenaAddrOp>(op))
+        tally.add(checkArenaAddr(aa));
+      else if (isa<CoreFieldAddrOp, CoreExistsOp, CoreFieldOffsetOp>(op)) // core_exists and core_field_offset are Conditional on the loader resolving the relocation.
         tally.add(CheckVerdict::Conditional); // Conditional on target BTF matching the kfield byte-array requirement.
       else if (auto tp = dyn_cast<TpBufferLoadOp>(op))
         tally.add(succeeded(tp.verify()) ? CheckVerdict::Conditional : CheckVerdict::Rejected);

@@ -1,5 +1,5 @@
 {
-  "format": "ebpf-caps 10",
+  "format": "ebpf-caps 20",
   "probed_as": {
     "uid": 0,
     "cap_eff": "000001ffffffffff"
@@ -21,7 +21,12 @@
     "sockmap_attach": "link",
     "lsm_cgroup_load": "none",
     "fsession_load": "none",
-    "ksyscall_attach": "none"
+    "ksyscall_attach": "none",
+    "hidden_data_vars": "no_mmap",
+    "typed_ksym": "kallsyms_addr",
+    "kconfig": "strong_only",
+    "arena_cast": "corrupt",
+    "arena_premmap": "none"
   },
   "queries": {
     "ext_targets": {

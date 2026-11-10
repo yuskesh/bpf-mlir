@@ -1,0 +1,4 @@
+{
+  "result": "error",
+  "error": "kernel type \"scx_exit_info\" field \"kind\": unknown key \"zz_unknown\" (known: kind, bits)"
+}

@@ -2,16 +2,26 @@
 #include "bpf-mlir/Target/EBPF/ObjectEmitter.h"
 
 #include "bpf-mlir/Dialect/BPFABI/KernelABI.h"
+#include "bpf-mlir/Dialect/BTF/IR/BTFDialect.h"
+#include "bpf-mlir/Support/KernelFieldPath.h"
 #include "bpf-mlir/Support/ProgramKinds.h"
 #include "bpf-mlir/Support/StructOpsTypes.h"
-#include "bpf-mlir/Support/KernelFieldPath.h"
-#include "bpf-mlir/Dialect/BTF/IR/BTFDialect.h"
+#include "bpf-mlir/Support/TraceFormat.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Export.h"
 
 #include "llvm/IR/DIBuilder.h"
+#include "llvm/DebugInfo/BTF/BTFParser.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Object/ELFObjectFile.h"
+#include "llvm/ObjCopy/CommonConfig.h"
+#include "llvm/ObjCopy/ELF/ELFConfig.h"
+#include "llvm/ObjCopy/ELF/ELFObjcopy.h"
+#include "llvm/Support/Endian.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/IR/DebugInfoMetadata.h"
@@ -19,6 +29,7 @@
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/IntrinsicsBPF.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -77,6 +88,10 @@ struct ProgramRequirement {
   std::vector<std::string> argTags; // <tag> <class>, for example arg:nonnull mem.
   std::vector<std::string> ctxAccess; // <attach type> <struct> <field> <r|w> <bytes>, sorted by ABI lowering.
   std::vector<std::string> kfuncs;    // Called kfunc names, including reachable subprograms, from bpfabi.requires.
+  std::vector<std::string> coreEnums; // <enum> <name>, sorted, from bpfabi.requires core_enums.
+  std::vector<std::string> fibFlags;   // "<name> <mask>" sorted by mask, from bpfabi.requires fib_flags.
+  std::vector<std::string> subprograms; // reached subprograms / callbacks, from bpfabi.requires subprograms.
+  std::vector<std::string> helperTargets; // helper/ID/attach/actual target/arg/type.
   std::string tpbuf; // Actual buffer-access pointee contract; empty for older ELF profiles.
 };
 
@@ -94,6 +109,8 @@ struct KernelLocal {
     uint64_t arrayCount = 0; // Nonzero specifies arrayCount integer elements of bits width.
     bool strPtr = false;     // char* field: PTR -> eight-bit INT, with pointer width 64.
     std::string embedded = {};
+    bool isEnum = false;     // anonymous ENUM of bits width (kfield type enum:<bits>).
+    bool voidPtr = false;    // void * field: PTR -> VOID (kfield type ptr:void).
   };
   std::string name;
   uint64_t sizeBits;
@@ -134,7 +151,83 @@ struct Emitter {
   std::vector<KFieldRequirement> kfields;
   std::vector<std::string> btfFeatures;    // Format-5 btf requirement rows.
   bool hasCore = false;                    // Whether any CO-RE read marker was expanded.
+  // BTF features only the CO-RE bridge emits (a local kernel enum field).
+  // The ELF holds a raw ENUM of size bits/8 in every width (bpftool: a 64-bit
+  // field is ENUM size 8, vlen 0). The row is "enum64" for 64 bits because the
+  // readers treat size 8 as ENUM64: core.BTFFeaturesOf classifies size > 4 as
+  // enum64, and cilium's marshal sends a size-8 ENUM to ENUM64 (deflateEnum64
+  // when the kernel lacks it). Merged into btfFeatures by emitRequirements; an
+  // unread kernel_types enum adds nothing.
+  std::set<std::string> bridgeBTFFeatures;
   std::set<std::string> kfuncDecls;        // kfunc extern declarations marked bpfabi.kfunc; translation drops their sections.
+  // guards. guardTable is indexed by the provisional id of
+  // ebpf-verify-schema ("<kind>\t<target>"). A kfield row's guards are the
+  // matching guards common to all its sites (absent key: no site seen yet).
+  std::vector<std::string> guardTable;
+  std::map<std::string, std::vector<int>> ksymGuards;
+  std::map<KFieldRequirement, std::vector<int>> kfieldGuards;
+  // A type guard marks the kfield rows of its struct, a field guard those of
+  // the same struct and path; ksym guards mark only ksymvar rows.
+  bool guardMatches(int g, const KFieldRequirement &k) const {
+    if (g < 0 || static_cast<size_t>(g) >= guardTable.size())
+      return false;
+    auto [kind, target] = StringRef(guardTable[g]).split('\t');
+    if (kind == "type")
+      return target == k.structName;
+    if (kind == "field")
+      return target == k.structName + "." + k.field;
+    return false;
+  }
+  // function name -> programs whose rows its kfield reads
+  // belong to. A program maps to itself; a subprogram / callback to every
+  // program reaching it (bpfabi.requires subprograms — the reach the ABI stage
+  // computed for the helper / kfunc rows, before LLVM translation). The CO-RE
+  // expansion runs right after translation, before any LLVM pass or the
+  // present outlining, so the names are still those llvm.func names.
+  std::map<std::string, std::vector<std::string>> kfieldOwners;
+  void addKField(KFieldRequirement k, ArrayRef<int> siteGuards) {
+    auto ow = kfieldOwners.find(k.program);
+    if (ow == kfieldOwners.end()) {
+      diags.error("CO-RE read of " + k.structName + "." + k.field + " in \"" + k.program +
+                  "\": no program reaches this function, so its kfield requirement has no program row");
+      return;
+    }
+    for (const std::string &owner : ow->second) {
+      KFieldRequirement o = k;
+      o.program = owner;
+      addOwnedKField(std::move(o), siteGuards);
+    }
+  }
+  void addOwnedKField(KFieldRequirement k, ArrayRef<int> siteGuards) {
+    std::vector<int> keep;
+    for (int g : siteGuards)
+      if (guardMatches(g, k))
+        keep.push_back(g);
+    auto it = kfieldGuards.find(k);
+    if (it == kfieldGuards.end()) {
+      kfieldGuards.emplace(k, keep);
+    } else {
+      std::vector<int> both;
+      for (int g : it->second)
+        if (llvm::is_contained(keep, g))
+          both.push_back(g);
+      it->second = both;
+    }
+    kfields.push_back(std::move(k));
+  }
+  static std::vector<int> parseGuardSuffix(StringRef &rest) {
+    std::vector<int> ids;
+    auto [body, tag] = rest.split('@');
+    rest = body;
+    SmallVector<StringRef> parts;
+    tag.split(parts, ',', -1, false);
+    for (StringRef p : parts) {
+      int v = 0;
+      if (!p.getAsInteger(10, v))
+        ids.push_back(v);
+    }
+    return ids;
+  }
 
   Emitter(Module &mod, const Schema &s, Diagnostics &d, std::vector<KernelLocal> kl)
       : m(mod), schema(s), diags(d), kernelLocals(std::move(kl)) {
@@ -259,6 +352,13 @@ struct Emitter {
           members.push_back(db().createMemberType(cu, f.name, file, 0, 64, 0, f.offsetBits, DINode::FlagZero, pt));
           continue;
         }
+        if (f.voidPtr) { // void * — a DWARF pointer with no base type is BTF PTR -> VOID.
+          elems.push_back(PointerType::getUnqual(m.getContext()));
+          align = std::max<uint32_t>(align, 64);
+          members.push_back(db().createMemberType(cu, f.name, file, 0, 64, 0, f.offsetBits, DINode::FlagZero,
+                                                  db().createPointerType(nullptr, 64)));
+          continue;
+        }
         if (!f.ptrTo.empty()) {
           elems.push_back(PointerType::getUnqual(m.getContext()));
           align = std::max<uint32_t>(align, 64);
@@ -272,6 +372,12 @@ struct Emitter {
         // retain names/alignment for existing 32-bit local types.
         elems.push_back(llvm::Type::getIntNTy(m.getContext(), f.bits));
         align = std::max<uint32_t>(align, f.bits);
+        if (f.isEnum) { // anonymous enum without enumerators; cilium matches it with any target enum.
+          DIType *et = db().createEnumerationType(cu, "", file, 0, f.bits, f.bits, db().getOrCreateArray({}), nullptr);
+          bridgeBTFFeatures.insert(f.bits > 32 ? "enum64" : "enum");
+          members.push_back(db().createMemberType(cu, f.name, file, 0, f.bits, 0, f.offsetBits, DINode::FlagZero, et));
+          continue;
+        }
         const char *name = f.bits == 8    ? (f.isSigned ? "signed char" : "unsigned char")
                            : f.bits == 16 ? (f.isSigned ? "short" : "unsigned short")
                            : f.bits == 64 ? (f.isSigned ? "long long" : "unsigned long long")
@@ -306,7 +412,7 @@ struct Emitter {
       return steps;
     };
     auto fieldAddress = [&](IRBuilder<> &b, Value *base, ArrayRef<CoreStep> steps,
-                            StringRef program, StringRef root) -> Value * {
+                            StringRef program, StringRef root, ArrayRef<int> siteGuards = {}, bool record = true) -> Value * {
       Value *p = base;
       std::string prefix;
       for (auto [k, f] : steps) {
@@ -315,7 +421,7 @@ struct Emitter {
         p = b.CreatePreserveStructAccessIndex(st, p, idx, idx, di);
         if (!prefix.empty()) prefix += ".";
         prefix += f->name;
-        if (!f->embedded.empty()) kfields.push_back({program.str(), root.str(), prefix, "struct:" + f->embedded});
+        if (record && !f->embedded.empty()) addKField({program.str(), root.str(), prefix, "struct:" + f->embedded}, siteGuards);
       }
       return p;
     };
@@ -325,6 +431,7 @@ struct Emitter {
         markers.push_back(&f);
     for (Function *mk : markers) {
       StringRef rest = mk->getName().drop_front(strlen("__ebpf_core."));
+      std::vector<int> siteGuards = parseGuardSuffix(rest);
       auto [sname, fname] = rest.split('.');
       auto steps = resolvePath(sname, fname);
       const KernelLocal *k = steps.empty() ? nullptr : steps.front().first;
@@ -346,17 +453,18 @@ struct Emitter {
           calls.push_back(c);
       for (CallInst *c : calls) {
         IRBuilder<> b(c);
-        Value *p = fieldAddress(b, c->getArgOperand(0), steps, c->getFunction()->getName(), k->name);
+        Value *p = fieldAddress(b, c->getArgOperand(0), steps, c->getFunction()->getName(), k->name, siteGuards);
         // kfield.load is always once: volatile prevents codegen from merging reads.
         // Emit one B/H/W/DW load at the declared width.
         llvm::Type *lt = !ptrField ? static_cast<llvm::Type *>(b.getIntNTy(kf->bits))
                                    : PointerType::getUnqual(m.getContext());
         LoadInst *ld = b.CreateAlignedLoad(lt, p, Align(kf->bits / 8), /*isVolatile=*/true);
         c->replaceAllUsesWith(ld);
-        kfields.push_back({c->getFunction()->getName().str(), k->name, fname.str(),
+        addKField({c->getFunction()->getName().str(), k->name, fname.str(),
                            kf->strPtr           ? std::string("strptr") // strptr requires minimum format 15.
+                           : kf->isEnum         ? "enum:" + std::to_string(kf->bits) // enum requires minimum format 22.
                            : kf->ptrTo.empty() ? (kf->isSigned ? "i" : "u") + std::to_string(kf->bits)
-                                               : "ptr:" + kf->ptrTo});
+                                               : "ptr:" + kf->ptrTo}, siteGuards);
         c->eraseFromParent();
         hasCore = true;
       }
@@ -375,13 +483,16 @@ struct Emitter {
         addrMarkers.push_back(&f);
     for (Function *mk : addrMarkers) {
       StringRef rest = mk->getName().drop_front(strlen("__ebpf_core_addr."));
+      std::vector<int> siteGuards = parseGuardSuffix(rest);
       auto [sname, fname] = rest.split('.');
       auto steps = resolvePath(sname, fname);
       const KernelLocal *k = steps.empty() ? nullptr : steps.front().first;
       const KernelLocal::Field *kf = steps.empty() ? nullptr : steps.back().second;
-      // Include integer kfield.store destinations; pointer fields are read-only.
-      if (!kf || !kf->embedded.empty() || (!kf->arrayCount && (!kf->ptrTo.empty() || kf->strPtr))) {
-        diags.error("CO-RE address of \"" + rest.str() + "\": not an array or integer field declared in btf.scope @kernel");
+      // Include integer kfield.store destinations. kaddr.read also takes
+      // the address of a struct-pointer or void * field (it reads the pointer
+      // with probe_read_kernel — ebpf-verify-kptr limits each op's field kinds).
+      if (!kf || !kf->embedded.empty() || (!kf->arrayCount && kf->strPtr)) {
+        diags.error("CO-RE address of \"" + rest.str() + "\": not an array, integer or pointer field declared in btf.scope @kernel");
         continue;
       }
       SmallVector<CallInst *> calls;
@@ -390,11 +501,13 @@ struct Emitter {
           calls.push_back(c);
       for (CallInst *c : calls) {
         IRBuilder<> b(c);
-        Value *p = fieldAddress(b, c->getArgOperand(0), steps, c->getFunction()->getName(), k->name);
+        Value *p = fieldAddress(b, c->getArgOperand(0), steps, c->getFunction()->getName(), k->name, siteGuards);
         c->replaceAllUsesWith(p);
-        kfields.push_back({c->getFunction()->getName().str(), k->name, fname.str(),
-                           kf->arrayCount ? "[" + std::to_string(kf->arrayCount) + "]" + (kf->isSigned ? "i8" : "u8")
-                                          : (kf->isSigned ? "i" : "u") + std::to_string(kf->bits)}); // Integer stores record the same field contract as loads.
+        addKField({c->getFunction()->getName().str(), k->name, fname.str(),
+                           kf->arrayCount  ? "[" + std::to_string(kf->arrayCount) + "]" + (kf->isSigned ? "i8" : "u8")
+                           : kf->voidPtr   ? std::string("ptr:void") // format 25.
+                           : !kf->ptrTo.empty() ? "ptr:" + kf->ptrTo
+                                           : (kf->isSigned ? "i" : "u") + std::to_string(kf->bits)}, siteGuards); // Integer stores record the same field contract as loads.
         c->eraseFromParent();
         hasCore = true;
       }
@@ -404,13 +517,234 @@ struct Emitter {
       }
       mk->eraseFromParent();
     }
+    // __ebpf_core_exists.type.<S> / .field.<S>.<path> become clang's
+    // bpf_core_type_exists / bpf_core_field_exists: preserve.type.info(seq,
+    // BPF_TYPE_EXISTS 0) with the local S type, or preserve.field.info(…,
+    // BPF_FIELD_EXISTS 2) on preserve.struct.access.index from NULL. No
+    // requirement row: the loader resolves the relocation to 0 or 1.
+    {
+      SmallVector<Function *> exMarkers;
+      for (Function &f : m)
+        if (f.getName().starts_with("__ebpf_core_exists."))
+          exMarkers.push_back(&f);
+      uint32_t seq = 0;
+      for (Function *mk : exMarkers) {
+        StringRef rest = mk->getName().drop_front(strlen("__ebpf_core_exists."));
+        auto [kind, tail] = rest.split('.');
+        auto [sname, fname] = tail.split('.');
+        const KernelLocal *k = kernelLocal(sname);
+        SmallVector<CoreStep, 3> steps;
+        if (kind == "field")
+          steps = resolvePath(sname, fname);
+        if (!k || (kind == "field" && (steps.empty() || !steps.back().second->embedded.empty())) ||
+            (kind != "field" && kind != "type")) {
+          diags.error("CO-RE existence of \"" + tail.str() + "\": not declared in btf.scope @kernel (schema core.kernel_types)");
+          continue;
+        }
+        SmallVector<CallInst *> calls;
+        for (User *u : mk->users())
+          if (auto *c = dyn_cast<CallInst>(u))
+            calls.push_back(c);
+        for (CallInst *c : calls) {
+          IRBuilder<> b(c);
+          CallInst *r;
+          if (kind == "type") {
+            Function *fn = Intrinsic::getOrInsertDeclaration(&m, Intrinsic::bpf_preserve_type_info);
+            r = b.CreateCall(fn, {b.getInt32(seq++), b.getInt64(0)});
+            r->setMetadata(LLVMContext::MD_preserve_access_index, typeOf(*k).second);
+          } else {
+            Value *base = ConstantPointerNull::get(PointerType::getUnqual(m.getContext()));
+            Value *p = fieldAddress(b, base, steps, c->getFunction()->getName(), k->name, {}, /*record=*/false);
+            Function *fn = Intrinsic::getOrInsertDeclaration(&m, Intrinsic::bpf_preserve_field_info, {p->getType()});
+            r = b.CreateCall(fn, {p, b.getInt64(2)});
+          }
+          c->replaceAllUsesWith(r);
+          c->eraseFromParent();
+          hasCore = true;
+        }
+        if (!mk->use_empty()) {
+          diags.error("CO-RE marker \"" + mk->getName().str() + "\" is used by something other than a call");
+          continue;
+        }
+        mk->eraseFromParent();
+      }
+    }
+    // __ebpf_core_enum.<E>.<name>() -> i64 becomes clang's
+    // bpf_core_enum_value: preserve.enum.value(seq, "<name>:<signed decimal
+    // local value>", BPF_ENUMVAL_VALUE 1) with a local enum E. The local enum
+    // is ENUM64 (size 64, unsigned) with the one enumerator <name> — one local
+    // type per (E, name); libbpf and cilium match the target by the enum's and
+    // the enumerator's names. The local value is the UAPI table's scxenum row.
+    {
+      SmallVector<Function *> enMarkers;
+      for (Function &f : m)
+        if (f.getName().starts_with("__ebpf_core_enum."))
+          enMarkers.push_back(&f);
+      uint32_t seq = 0;
+      for (Function *mk : enMarkers) {
+        StringRef rest = mk->getName().drop_front(strlen("__ebpf_core_enum."));
+        auto [ename, name] = rest.split('.');
+        const mlir::bpfabi::ScxEnumABI *e = mlir::bpfabi::lookupScxEnum(name);
+        if (!e || e->enumName != ename) {
+          diags.error("CO-RE enum value \"" + rest.str() + "\": not a scxenum row of the UAPI table");
+          continue;
+        }
+        DIType *base = db().createBasicType("unsigned long", 64, dwarf::DW_ATE_unsigned);
+        DICompositeType *et = db().createEnumerationType(
+            cu, ename, file, 0, 64, 64, db().getOrCreateArray({db().createEnumerator(name, e->value, /*IsUnsigned=*/true)}), base);
+        bridgeBTFFeatures.insert("enum64");
+        std::string str = name.str() + ":" + std::to_string(static_cast<int64_t>(e->value));
+        GlobalVariable *strGV = nullptr; // Removed after PipelineStartEP (it would stay in .rodata.str1.1).
+        {
+          IRBuilder<> gb(m.getContext());
+          strGV = gb.CreateGlobalString(str, "__ebpf_core_enum_str", 0, &m);
+        }
+        SmallVector<CallInst *> calls;
+        for (User *u : mk->users())
+          if (auto *c = dyn_cast<CallInst>(u))
+            calls.push_back(c);
+        for (CallInst *c : calls) {
+          IRBuilder<> b(c);
+          Function *fn = Intrinsic::getOrInsertDeclaration(&m, Intrinsic::bpf_preserve_enum_value);
+          CallInst *r = b.CreateCall(fn, {b.getInt32(seq++), strGV, b.getInt64(1)});
+          r->setMetadata(LLVMContext::MD_preserve_access_index, et);
+          c->replaceAllUsesWith(r);
+          c->eraseFromParent();
+          hasCore = true;
+        }
+        if (!mk->use_empty()) {
+          diags.error("CO-RE marker \"" + mk->getName().str() + "\" is used by something other than a call");
+          continue;
+        }
+        mk->eraseFromParent();
+      }
+    }
+    // __ebpf_core_offset.<S>.<field>[@guards]() -> i32 is clang's
+    // bpf_core_field_offset (preserve.field.info(…, BPF_FIELD_BYTE_OFFSET 0) on
+    // preserve.struct.access.index from NULL) for kaddr.container_of. The
+    // field is an embedded struct T: fieldAddress records the kfield row
+    // struct:T (format 17) that the loader checks.
+    {
+      SmallVector<Function *> offMarkers;
+      for (Function &f : m)
+        if (f.getName().starts_with("__ebpf_core_offset."))
+          offMarkers.push_back(&f);
+      for (Function *mk : offMarkers) {
+        StringRef rest = mk->getName().drop_front(strlen("__ebpf_core_offset."));
+        std::vector<int> siteGuards = parseGuardSuffix(rest);
+        auto [sname, fname] = rest.split('.');
+        auto steps = resolvePath(sname, fname);
+        const KernelLocal *k = steps.empty() ? nullptr : steps.front().first;
+        if (!k || steps.back().second->embedded.empty()) {
+          diags.error("CO-RE offset of \"" + rest.str() + "\": not an embedded struct field declared in btf.scope @kernel");
+          continue;
+        }
+        SmallVector<CallInst *> calls;
+        for (User *u : mk->users())
+          if (auto *c = dyn_cast<CallInst>(u))
+            calls.push_back(c);
+        for (CallInst *c : calls) {
+          IRBuilder<> b(c);
+          Value *base = ConstantPointerNull::get(PointerType::getUnqual(m.getContext()));
+          Value *p = fieldAddress(b, base, steps, c->getFunction()->getName(), k->name, siteGuards);
+          Function *fn = Intrinsic::getOrInsertDeclaration(&m, Intrinsic::bpf_preserve_field_info, {p->getType()});
+          CallInst *r = b.CreateCall(fn, {p, b.getInt64(0)});
+          c->replaceAllUsesWith(r);
+          c->eraseFromParent();
+          hasCore = true;
+        }
+        if (!mk->use_empty()) {
+          diags.error("CO-RE marker \"" + mk->getName().str() + "\" is used by something other than a call");
+          continue;
+        }
+        mk->eraseFromParent();
+      }
+    }
+    // typed ksym / kconfig externs get clang's VAR debug types so the
+    // BPF backend writes extern VARs in DATASEC .ksyms / .kconfig.
+    for (GlobalVariable &gv : m.globals()) {
+      if (!gv.isDeclaration() || (gv.getSection() != ".ksyms" && gv.getSection() != ".kconfig"))
+        continue;
+      DIType *t = nullptr;
+      auto intType = [&](unsigned bits, bool sgn) -> DIType * {
+        const char *name = bits == 8    ? (sgn ? "signed char" : "unsigned char")
+                           : bits == 16 ? (sgn ? "short" : "unsigned short")
+                           : bits == 64 ? (sgn ? "long long" : "unsigned long long")
+                                        : (sgn ? "int" : "unsigned int");
+        return db().createBasicType(name, bits, sgn ? dwarf::DW_ATE_signed : dwarf::DW_ATE_unsigned);
+      };
+      if (gv.getSection() == ".ksyms") {
+        const KsymVar *kv = schema.ksym(gv.getName());
+        if (!kv) {
+          diags.error("extern \"" + gv.getName().str() + "\" in .ksyms is not in the schema (core.ksyms)");
+          continue;
+        }
+        if (!kv->slotStruct.empty()) {
+          const KernelLocal *kl = kernelLocal(kv->slotStruct);
+          if (!kl) {
+            diags.error("ksym \"" + kv->name + "\": slot struct \"" + kv->slotStruct + "\" is not in btf.scope @kernel");
+            continue;
+          }
+          t = db().createPointerType(typeOf(*kl).second, 64);
+        } else {
+          t = intType(kv->slotInt.bits, kv->slotInt.isSigned);
+        }
+      } else {
+        const KconfigDecl *kc = schema.kconfig(gv.getName());
+        if (!kc) {
+          diags.error("extern \"" + gv.getName().str() + "\" in .kconfig is not in the schema (core.kconfig)");
+          continue;
+        }
+        if (kc->type == "bool") {
+          t = db().createBasicType("_Bool", 8, dwarf::DW_ATE_boolean);
+        } else if (kc->type == "char") {
+          t = db().createBasicType("char", 8, dwarf::DW_ATE_signed_char);
+        } else if (kc->type == "tristate") { // libbpf matches enum libbpf_tristate by name (find_kcfg_type).
+          bridgeBTFFeatures.insert("enum");
+          SmallVector<Metadata *, 3> es = {db().createEnumerator("TRI_NO", 0, true), db().createEnumerator("TRI_YES", 1, true),
+                                           db().createEnumerator("TRI_MODULE", 2, true)};
+          t = db().createEnumerationType(cu, "libbpf_tristate", file, 0, 32, 32, db().getOrCreateArray(es),
+                                         intType(32, false));
+        } else {
+          t = intType(kc->bits(), kc->type[0] == 'i');
+        }
+      }
+      auto *gve = db().createGlobalVariableExpression(cu, gv.getName(), "", file, 0, t, /*IsLocalToUnit=*/false,
+                                                      /*isDefined=*/false);
+      gv.addDebugInfo(gve);
+    }
+    // a bss kaddr global's VAR is PTR -> the same local struct the
+    // CO-RE bridge emits (BTFToLLVMDI's own copy of the @kernel struct would
+    // be a second STRUCT of the same name; clang emits one).
+    for (const Global &sg : schema.globals()) {
+      if (!sg.isKaddr())
+        continue;
+      GlobalVariable *gv = m.getGlobalVariable(sg.name);
+      if (!gv) // Not referenced by the module: no global, like an unused integer global.
+        continue;
+      const KernelLocal *kl = kernelLocal(sg.kaddr);
+      if (gv->getSection() != ".bss" || !kl) {
+        diags.error("kaddr global \"" + sg.name + "\": " + (gv->getSection() != ".bss" ? "the module's global is not in .bss"
+                                                                                      : "struct \"" + sg.kaddr + "\" is not in btf.scope @kernel"));
+        continue;
+      }
+      gv->eraseMetadata(LLVMContext::MD_dbg);
+      auto *gve = db().createGlobalVariableExpression(cu, gv->getName(), "", file, 0, db().createPointerType(typeOf(*kl).second, 64),
+                                                      /*IsLocalToUnit=*/false, /*isDefined=*/true);
+      gv->addDebugInfo(gve);
+    }
     for (Function &f : m)
-      if (f.getName().starts_with("__ebpf_core.") || f.getName().starts_with("__ebpf_core_addr."))
+      if (f.getName().starts_with("__ebpf_core.") || f.getName().starts_with("__ebpf_core_addr.") ||
+          f.getName().starts_with("__ebpf_core_exists.") || f.getName().starts_with("__ebpf_core_offset.") ||
+          f.getName().starts_with("__ebpf_core_enum."))
         diags.error("unexpanded CO-RE marker \"" + f.getName().str() + "\"");
     // Add DISubprogram declarations to .ksyms externs so BPF emits extern FUNC,
     // FUNC_PROTO and DATASEC, matching clang __ksym. ABI kfunc rows own types;
     // *S uses the verified local @kernel CO-RE struct. Missing call locations
     // use function line zero, satisfying LLVM verification without line_info.
+    // one struct bpf_iter_num shared by the iterator kfuncs; the
+    // same for struct bpf_iter_scx_dsq (keyed by the struct name).
+    llvm::StringMap<DIType *> iterPtrs;
     for (const std::string &kn : kfuncDecls) {
       Function *fp = m.getFunction(kn);
       if (!fp || !fp->isDeclaration()) {
@@ -432,8 +766,32 @@ struct Emitter {
           return db().createBasicType("_Bool", 8, dwarf::DW_ATE_boolean);
         if (s == "*void") // Session context is void*.
           return db().createPointerType(nullptr, 64);
+        if (s == "*bool") // scx_bpf_select_cpu_dfl is_idle (bool *).
+          return db().createPointerType(diOf("bool"), 64);
         if (s.size() > 2 && s.starts_with("*") && (s[1] == 'i' || s[1] == 'u') && llvm::all_of(s.drop_front(2), llvm::isDigit)) // Integer pointer.
           return db().createPointerType(diOf(s.drop_front()), 64);
+        // the iterator slot type of bpf_iter_num_* is the UAPI struct
+        // bpf_iter_num { __u64 __opaque[N]; } (uapistruct row size), not a
+        // schema kernel type — the same shape clang emits from vmlinux.h.
+        bool iterStruct = s == "*bpf_iter_num" || s == "*bpf_iter_scx_dsq";
+        if (iterStruct && !kernelLocal(s.drop_front()))
+          if (DIType *p = iterPtrs.lookup(s.drop_front()))
+            return p;
+        if (iterStruct && !kernelLocal(s.drop_front())) {
+          llvm::StringRef name = s.drop_front();
+          std::optional<int64_t> size = mlir::bpfabi::lookupUapiStructSize(name);
+          if (!size || *size <= 0 || *size % 8 != 0) {
+            diags.error("kfunc \"" + f.getName().str() + "\": struct " + name.str() + " has no usable size in the UAPI table");
+            ok = false;
+            return nullptr;
+          }
+          uint64_t bits = static_cast<uint64_t>(*size) * 8;
+          DIType *u64 = db().createBasicType("unsigned long long", 64, dwarf::DW_ATE_unsigned);
+          DIType *arr = db().createArrayType(bits, 64, u64, db().getOrCreateArray({db().getOrCreateSubrange(0, *size / 8)}));
+          auto *st = db().createStructType(cu, name, file, 0, bits, 64, DINode::FlagZero, nullptr, db().getOrCreateArray({}));
+          db().replaceArrays(st, db().getOrCreateArray({db().createMemberType(cu, "__opaque", file, 0, bits, 0, 0, DINode::FlagZero, arr)}));
+          return iterPtrs[name] = db().createPointerType(st, 64);
+        }
         if (s.starts_with("*")) {
           const KernelLocal *kl = kernelLocal(s.drop_front());
           if (!kl) {
@@ -477,6 +835,22 @@ struct Emitter {
       finder.processModule(m);
       ValueToValueMapTy vm;
       for (DIType *t : finder.types()) {
+        // #btf.ulong marker enumeration -> anonymous unsigned 64-bit
+        // enumeration with one enumerator (BTF ENUM64, vlen 1 — libbpf __ulong).
+        if (auto *ct = dyn_cast<DICompositeType>(t);
+            ct && ct->getTag() == dwarf::DW_TAG_enumeration_type && ct->getName().starts_with(mlir::btf::kULongMarkerPrefix)) {
+          uint64_t v = 0;
+          if (ct->getName().drop_front(mlir::btf::kULongMarkerPrefix.size()).getAsInteger(10, v)) {
+            diags.error("ulong marker \"" + ct->getName().str() + "\" does not carry a decimal u64 value");
+            continue;
+          }
+          DIType *base = db().createBasicType("unsigned long", 64, dwarf::DW_ATE_unsigned);
+          DICompositeType *et = db().createEnumerationType(
+              cu, "", file, 0, 64, 64,
+              db().getOrCreateArray({db().createEnumerator(mlir::btf::kULongEnumeratorName, v, /*IsUnsigned=*/true)}), base);
+          vm.MD()[ct].reset(et);
+          continue;
+        }
         auto *dt = dyn_cast<DIDerivedType>(t);
         if (!dt || dt->getTag() != dwarf::DW_TAG_pointer_type || !dt->getName().starts_with(mlir::btf::kTypeTagMarkerPrefix))
           continue;
@@ -515,6 +889,8 @@ struct Emitter {
       for (DIType *t : after.types())
         if (t->getName().starts_with(mlir::btf::kTypeTagMarkerPrefix))
           diags.error("type_tag marker \"" + t->getName().str() + "\" is still in the debug info after the bridge");
+        else if (t->getName().starts_with(mlir::btf::kULongMarkerPrefix))
+          diags.error("ulong marker \"" + t->getName().str() + "\" is still in the debug info after the bridge");
     }
     std::sort(kfields.begin(), kfields.end());
     kfields.erase(std::unique(kfields.begin(), kfields.end()), kfields.end());
@@ -530,6 +906,10 @@ struct Emitter {
   // the section while libbpf/cilium ignore its unfamiliar contents.
   void emitRequirements(std::vector<ProgramRequirement> progs,
                         StringRef schemaSHA256) {
+    for (const std::string &f : bridgeBTFFeatures)
+      if (!llvm::is_contained(btfFeatures, f))
+        btfFeatures.push_back(f);
+    llvm::sort(btfFeatures); // Name order, as the BTF IR pass's std::set gave it.
     std::sort(progs.begin(), progs.end(),
               [](auto &a, auto &b) { return a.symbol < b.symbol; });
     // tp_btf target/args come from section and schema, matched before load
@@ -540,12 +920,17 @@ struct Emitter {
       std::vector<std::string> args;
       std::string type = "trace_raw_tp";
       std::string retsig; // fexit nargs and integer return-type spelling.
+      std::string funcret; // fexit return type only (no nargs) — funcret row, format 27.
       std::vector<std::string> extra; // Probe arch/ctxfield/argument companions immediately follow attach.
+      bool sleepable = false; // sleepable <program> row right after attach (format 32).
     };
     std::vector<AttachRow> attaches;
     bool anyFarg = false;
+    bool anySleepable = false; // a sleepable row requires format 32.
+    bool anyFuncRet = false; // funcret rows require format 27.
     bool anyGenericAttach = false; // Generic attach rows require format 9.
     bool anyFmodRet = false;       // trace_fmod_ret requires format 10.
+    bool anyNetkit = false;       // Direction-specific netkit links require format 30.
     bool anyV11 = false;           // trace_tp/trace_perf/trace_lsm/freplace/trace_struct_ops require format 11.
     bool anyMulti = false;         // Multi-probe families and mtarget require format 12.
     bool anyV13 = false;           // ksyscall/trace_lsm_cgroup/sysarg/mtargetarg require format 13; kfunc is counted below.
@@ -553,6 +938,7 @@ struct Emitter {
     bool anyUserStrV16 = false;    // Typed tracepoint/syscall user pointers require format 16.
     bool anyTpArrayV17 = false;    // fixed byte-array fields.
     bool anyUserPtrV18 = false;   // user-probe ptr arguments, both raw identity and typed buffer.
+    bool anyEnumArgV19 = false;   // struct_ops enum:<bits> farg values.
     for (const ProgramRequirement &p : progs) {
       Function *fn = m.getFunction(p.symbol);
       // Resolve requirement type/target from attachment-table REQATTACH, not section-prefix branches.
@@ -681,6 +1067,10 @@ struct Emitter {
       }
       if (ra.type == "trace_fentry") {
         AttachRow row{p.symbol, ra.target, {}, "trace_fentry"};
+        if (attachRow->flags == "sleepable") { // the FLAGS row selected by the program op keyword (section fentry.s/<fn>).
+          row.sleepable = true;
+          anySleepable = true;
+        }
         // fentry emits per-index farg struct names or unread '-', matched against target FUNC_PROTO.
         if (const Program *decl = schema.program(p.symbol))
           for (auto [i, a] : llvm::enumerate(decl->args)) {
@@ -694,13 +1084,19 @@ struct Emitter {
       // fexit emits attach and retsig from schema nargs/ret, matched against target FUNC_PROTO.
       if (ra.type == "trace_fexit") {
         const Program *decl = schema.program(p.symbol);
-        if (!decl || decl->nargs < 0) {
+        if (!decl || (decl->nargs < 0 && !decl->hasRet)) {
           diags.error("fexit program \"" + p.symbol + "\" has no signature (nargs / ret) in the schema");
           continue;
         }
-        attaches.push_back({p.symbol, ra.target, {}, "trace_fexit",
-                            std::to_string(decl->nargs) + "\t" + (decl->ret.isSigned ? "i" : "u") +
-                                std::to_string(decl->ret.bits)});
+        std::string ret = std::string(decl->ret.isSigned ? "i" : "u") + std::to_string(decl->ret.bits);
+        if (decl->nargs < 0) { // ret without nargs — funcret (format 27) instead of retsig.
+          AttachRow row{p.symbol, ra.target, {}, "trace_fexit", ""};
+          row.funcret = ret;
+          anyFuncRet = true;
+          attaches.push_back(std::move(row));
+          continue;
+        }
+        attaches.push_back({p.symbol, ra.target, {}, "trace_fexit", std::to_string(decl->nargs) + "\t" + ret});
         continue;
       }
       // fmod_ret emits trace_fmod_ret attach, retsig and integer/unread farg rows;
@@ -798,6 +1194,7 @@ struct Emitter {
         for (auto [i, a] : llvm::enumerate(decl->args)) {
           std::string s = !a.empty() && a.back() == '?' ? a.substr(0, a.size() - 1) : a;
           row.extra.push_back("farg\t" + p.symbol + "\t" + std::to_string(i) + "\t" + bpfmlir::structOpsArgBTFName(ops, s).str());
+          anyEnumArgV19 |= isEnumArgSpelling(s);
         }
         attaches.push_back(std::move(row));
         anyV11 = true;
@@ -960,8 +1357,9 @@ struct Emitter {
         continue;
       }
       // tcx attach direction is checked against loader capabilities.
-      if (ra.type == "tcx") {
-        attaches.push_back({p.symbol, ra.target, {}, "tcx"});
+      if (ra.type == "tcx" || ra.type == "netkit") {
+        anyNetkit |= ra.type == "netkit";
+        attaches.push_back({p.symbol, ra.target, {}, ra.type});
         continue;
       }
       // Return probes emit attach/arch and ABI return-register ctxfield.
@@ -1062,7 +1460,113 @@ struct Emitter {
     // kfield strptr requires format 15 under value-specific minimum rules.
     bool anyStrPtr = llvm::any_of(kfields, [](const KFieldRequirement &k) { return k.type == "strptr"; });
     bool anyPathV17 = llvm::any_of(kfields, [](const KFieldRequirement &k) { return StringRef(k.field).contains('.') || StringRef(k.type).starts_with("struct:"); });
-    std::string text = anyUserPtrV18 ? "ebpf-requirements 18\n"
+    // fibflags rows require format 21.
+    bool anyFibFlags = llvm::any_of(progs, [](const ProgramRequirement &p) { return !p.fibFlags.empty(); });
+    // coreenum rows (program order, then enum / name order from
+    // bpfabi.requires) require format 26; ELFs without them keep their format.
+    // The compiler no longer writes enumval rows (format 20).
+    std::vector<std::string> coreenumRows;
+    for (const ProgramRequirement &p : progs)
+      for (const std::string &ev : p.coreEnums) {
+        auto [en, name] = StringRef(ev).split(' ');
+        coreenumRows.push_back("coreenum\t" + p.symbol + "\t" + en.str() + "\t" + name.str() + "\n");
+      }
+    // one kstructsize row per distinct cpumask field size of the schema's
+    // records (ascending — std::set; format 28). The loader checks every row:
+    // the target's struct bpf_cpumask must fit each embedded cpumask.
+    std::set<uint64_t> cpumaskSizes;
+    for (const Record &r : schema.records())
+      for (const Field &f : r.fields)
+        if (auto *c = std::get_if<CpumaskType>(&f.type.v))
+          cpumaskSizes.insert(c->size);
+    // kfield rows of type enum:<bits> require format 22.
+    // The btf feature row "enum" (minimum 22) also raises the format: an
+    // enum declared in kernel_types but never read still puts an ENUM in
+    // the ELF's BTF (completion review — header 11 + btf enum was
+    // rejected by the reader).
+    bool anyEnumKField = llvm::any_of(kfields, [](const KFieldRequirement &k) { return StringRef(k.type).starts_with("enum:"); }) ||
+                         llvm::is_contained(btfFeatures, "enum") || llvm::is_contained(btfFeatures, "enum64");
+    // datakptr rows (one per .data.<name> section holding emitted kptr
+    // globals, in section order) require format 23 — the loader must not mmap
+    // hidden data variables (requirements_format.md §8 hidden_data_vars).
+    std::vector<std::string> dataKptrSections;
+    for (const ::ebpf::Global &gl : schema.globals())
+      if (gl.isKptr() && m.getGlobalVariable(gl.name, /*AllowInternal=*/true) &&
+          !llvm::is_contained(dataKptrSections, gl.elfSection()))
+        dataKptrSections.push_back(gl.elfSection());
+    std::sort(dataKptrSections.begin(), dataKptrSections.end());
+    // ksymvar / kconfig / guard rows and the guarded suffix require
+    // format 24 (requirements_format.md §3). Rows follow the referenced
+    // externs; guards are the used (kind, target) pairs, numbered in their
+    // sorted order.
+    std::vector<std::pair<std::string, std::vector<int>>> ksymRows; // Row text without suffix, provisional guards.
+    std::vector<std::string> kconfigRows;
+    for (const ::ebpf::KsymVar &kv : schema.ksyms()) {
+      GlobalVariable *gv = m.getGlobalVariable(kv.name);
+      if (!gv || gv->getSection() != ".ksyms")
+        continue;
+      std::vector<int> gs;
+      if (kv.weak) {
+        auto it = ksymGuards.find(kv.name);
+        if (it != ksymGuards.end())
+          gs = it->second;
+        if (gs.empty())
+          diags.error("weak ksym \"" + kv.name + "\" has no guard of its own (internal: ebpf-verify-schema checks reads)");
+      }
+      ksymRows.push_back({"ksymvar\t" + kv.name + "\tpercpu\t" + kv.slotSpelling() + "\t" + (kv.weak ? "weak" : "strong"), gs});
+    }
+    for (const ::ebpf::KconfigDecl &kc : schema.kconfigs()) {
+      GlobalVariable *gv = m.getGlobalVariable(kc.name);
+      if (gv && gv->getSection() == ".kconfig")
+        kconfigRows.push_back("kconfig\t" + kc.name + "\t" + kc.type + "\t" + (kc.weak ? "weak" : "strong"));
+    }
+    std::sort(ksymRows.begin(), ksymRows.end());
+    std::sort(kconfigRows.begin(), kconfigRows.end());
+    std::set<std::string> usedGuards; // "<kind>\t<target>"
+    auto guardName = [&](int g) -> std::string {
+      return g >= 0 && static_cast<size_t>(g) < guardTable.size() ? guardTable[g] : std::string();
+    };
+    for (auto &[row, gs] : ksymRows)
+      for (int g : gs)
+        usedGuards.insert(guardName(g));
+    for (auto &[k, gs] : kfieldGuards)
+      for (int g : gs)
+        usedGuards.insert(guardName(g));
+    usedGuards.erase(std::string());
+    std::map<std::string, int> finalId;
+    for (const std::string &g : usedGuards)
+      finalId.emplace(g, static_cast<int>(finalId.size()));
+    auto suffix = [&](const std::vector<int> &gs) {
+      std::set<int> ids;
+      for (int g : gs)
+        if (auto it = finalId.find(guardName(g)); it != finalId.end())
+          ids.insert(it->second);
+      std::string s;
+      for (int i : ids)
+        s += (s.empty() ? "\tguarded\t" : "\t") + std::to_string(i);
+      return s;
+    };
+    bool anyV24 = !ksymRows.empty() || !kconfigRows.empty() || !finalId.empty();
+    // kfield ptr:void (a void * field read by kaddr.read) requires format 25.
+    bool anyPtrVoid = llvm::any_of(kfields, [](const KFieldRequirement &k) { return k.type == "ptr:void"; });
+    // an arena map has its arena row (format 29 — the reader requires the
+    // row for every arena map of a format-29 document).
+    bool anyArena = llvm::any_of(emittedMaps, [](const EmittedMap &m) { return m.typeName == "arena"; });
+    bool anyHelperTarget = llvm::any_of(progs, [](const ProgramRequirement &p) { return !p.helperTargets.empty(); });
+    std::string text = anySleepable ? "ebpf-requirements 32\n"
+                       : anyHelperTarget ? "ebpf-requirements 31\n"
+                       : anyNetkit ? "ebpf-requirements 30\n"
+                       : anyArena ? "ebpf-requirements 29\n"
+                       : !cpumaskSizes.empty() ? "ebpf-requirements 28\n"
+                       : anyFuncRet ? "ebpf-requirements 27\n"
+                       : !coreenumRows.empty() ? "ebpf-requirements 26\n"
+                       : anyPtrVoid ? "ebpf-requirements 25\n"
+                       : anyV24 ? "ebpf-requirements 24\n"
+                       : !dataKptrSections.empty() ? "ebpf-requirements 23\n"
+                       : anyEnumKField ? "ebpf-requirements 22\n"
+                       : anyFibFlags ? "ebpf-requirements 21\n"
+                       : anyEnumArgV19 ? "ebpf-requirements 19\n"
+                       : anyUserPtrV18 ? "ebpf-requirements 18\n"
                        : (anyTpArrayV17 || anyPathV17) ? "ebpf-requirements 17\n"
                        : anyUserStrV16 ? "ebpf-requirements 16\n"
                        : anyStrPtr  ? "ebpf-requirements 15\n"
@@ -1098,14 +1602,38 @@ struct Emitter {
       if (!mp.inner.empty())
         text += "innermap\t" + mp.symbol + "\t" + mp.inner + "\n";
     }
+    // arena rows after every map / innermap row, in symbol order (maps is sorted).
+    for (const EmittedMap &mp : maps)
+      if (mp.typeName == "arena")
+        text += "arena\t" + mp.symbol + "\n";
+    for (const std::string &sec : dataKptrSections)
+      text += "datakptr\t" + sec + "\n";
+    for (auto &[row, gs] : ksymRows)
+      text += row + suffix(gs) + "\n";
+    for (const std::string &row : kconfigRows)
+      text += row + "\n";
+    {
+      std::vector<std::pair<int, std::string>> byId;
+      for (auto &[g, id] : finalId)
+        byId.push_back({id, g});
+      std::sort(byId.begin(), byId.end());
+      for (auto &[id, g] : byId)
+        text += "guard\t" + std::to_string(id) + "\t" + g + "\n";
+    }
 
     // kfield rows sort by program/type/field.
-    for (const KFieldRequirement &k : kfields)
+    for (const KFieldRequirement &k : kfields) {
+      auto git = kfieldGuards.find(k);
       text += "kfield\t" + k.program + "\t" + k.structName + "\t" + k.field +
-              "\t" + k.type + "\n";
+              "\t" + k.type + (git != kfieldGuards.end() ? suffix(git->second) : std::string()) + "\n";
+    }
     // trace_raw_tp attach and per-index argument rows.
     for (const AttachRow &at : attaches) {
       text += "attach\t" + at.program + "\t" + at.type + "\t" + at.tracepoint + "\n";
+      if (at.sleepable)
+        text += "sleepable\t" + at.program + "\n";
+      if (!at.funcret.empty())
+        text += "funcret\t" + at.program + "\t" + at.funcret + "\n";
       if (!at.retsig.empty())
         text += "retsig\t" + at.program + "\t" + at.retsig + "\n";
       for (const std::string &x : at.extra)
@@ -1114,6 +1642,9 @@ struct Emitter {
         text += "arg\t" + at.program + "\t" + std::to_string(i) + "\t" +
                 (!a.empty() && a.back() == '?' ? a.substr(0, a.size() - 1) : a) + "\n";
     }
+    for (const ProgramRequirement &p : progs)
+      for (const std::string &target : p.helperTargets)
+        text += "helper_target\t" + p.symbol + "\t" + target + "\n";
     // BTF feature names sort lexically. Match target support before loading
     // rather than permit loader sanitization to erase required information.
     for (const std::string &f : btfFeatures)
@@ -1142,6 +1673,17 @@ struct Emitter {
     // kfunc rows follow program order, then name order.
     for (const std::string &r : kfuncRows)
       text += r;
+    for (const std::string &r : coreenumRows)
+      text += r;
+    // fibflags rows follow program order, then mask order (format 21).
+    for (const ProgramRequirement &p : progs)
+      for (const std::string &ff : p.fibFlags) {
+        auto [name, mask] = StringRef(ff).split(' ');
+        text += "fibflags\t" + p.symbol + "\t" + name.str() + "\t" + mask.str() + "\n";
+      }
+    // kstructsize rows last, ascending N (format 28).
+    for (uint64_t n : cpumaskSizes)
+      text += "kstructsize\tbpf_cpumask\t" + std::to_string(n) + "\n";
 
     auto *data =
         ConstantDataArray::getString(m.getContext(), text, /*AddNull=*/false);
@@ -1165,12 +1707,124 @@ struct Emitter {
 
 } // namespace
 
+Error validateObjectLayout(StringRef bytes) {
+  auto parsed = object::ObjectFile::createObjectFile(MemoryBufferRef(bytes, "emitted ELF"));
+  if (!parsed)
+    return parsed.takeError();
+  const auto &obj = **parsed;
+  std::map<std::string, uint64_t> sections;
+  for (auto sec : obj.sections()) {
+    auto name = sec.getName();
+    if (!name)
+      return name.takeError();
+    if (name->empty())
+      continue;
+    if (!sections.emplace(name->str(), sec.getSize()).second)
+      return createStringError(inconvertibleErrorCode(), "duplicate output section \"%s\"", name->str().c_str());
+  }
+  std::map<std::pair<std::string, std::string>, uint64_t> offsets;
+  for (auto sym : obj.symbols()) {
+    auto sec = sym.getSection();
+    if (!sec)
+      return sec.takeError();
+    if (*sec == obj.section_end())
+      continue;
+    auto section = (*sec)->getName();
+    auto name = sym.getName();
+    auto address = sym.getAddress();
+    if (!section) return section.takeError();
+    if (!name) return name.takeError();
+    if (!address) return address.takeError();
+    offsets[{section->str(), name->str()}] = *address;
+  }
+  BTFParser btf;
+  SmallVector<char, 0> readerBytes;
+  std::unique_ptr<object::ObjectFile> readerObject;
+  const object::ObjectFile *btfInput = &obj;
+  if (!sections.count(".BTF.ext")) {
+    // LLVM's type reader also requires an extension header. Add it only to a
+    // private reader view; types-only ELF is valid without an extension.
+    std::string original = bytes.str();
+    auto *elf = dyn_cast<object::ELFObjectFileBase>(parsed->get());
+    if (!elf)
+      return createStringError(inconvertibleErrorCode(), "BTF layout requires ELF");
+    BTF::ExtHeader empty{};
+    auto endian = obj.isLittleEndian() ? endianness::little : endianness::big;
+    support::endian::write16(&empty.Magic, BTF::MAGIC, endian);
+    empty.Version = BTF::VERSION;
+    support::endian::write32(&empty.HdrLen, sizeof(empty), endian);
+    static_assert(sizeof(empty) == 32);
+    objcopy::CommonConfig config;
+    config.AddSection.emplace_back(".BTF.ext", MemoryBuffer::getMemBufferCopy(
+        StringRef(reinterpret_cast<const char *>(&empty), sizeof(empty))));
+    raw_svector_ostream readerStream(readerBytes);
+    if (auto err = objcopy::elf::executeObjcopyOnBinary(config, objcopy::ELFConfig{}, *elf, readerStream))
+      return err;
+    if (bytes != original)
+      return createStringError(inconvertibleErrorCode(), "BTF reader changed the output ELF");
+    auto view = object::ObjectFile::createObjectFile(MemoryBufferRef(
+        StringRef(readerBytes.data(), readerBytes.size()), "BTF reader view"));
+    if (!view)
+      return view.takeError();
+    readerObject = std::move(*view);
+    auto btfBytes = [](const object::ObjectFile &file) -> Expected<StringRef> {
+      for (auto sec : file.sections()) {
+        auto name = sec.getName();
+        if (!name) return name.takeError();
+        if (*name == ".BTF") return sec.getContents();
+      }
+      return createStringError(inconvertibleErrorCode(), "missing .BTF section");
+    };
+    auto before = btfBytes(obj);
+    if (!before) return before.takeError();
+    auto after = btfBytes(*readerObject);
+    if (!after) return after.takeError();
+    if (*before != *after)
+      return createStringError(inconvertibleErrorCode(), "BTF reader view changed .BTF bytes");
+    btfInput = readerObject.get();
+  }
+  if (auto err = btf.parse(*btfInput, {false, true, false}))
+    return err;
+  for (size_t id = 1; id < btf.typesCount(); ++id) {
+    const auto *type = btf.findType(id);
+    if (type->getKind() != BTF::BTF_KIND_DATASEC)
+      continue;
+    StringRef name = btf.findString(type->NameOff);
+    if (name == ".ksyms" || name == ".kconfig") // Extern-only DATASECs (libbpf makes the maps); adds .kconfig.
+      continue;
+    auto section = sections.find(name.str());
+    if (section == sections.end())
+      return createStringError(inconvertibleErrorCode(), "BTF DATASEC \"%s\" has no output section", name.str().c_str());
+    SmallVector<std::pair<uint64_t, uint64_t>> ranges;
+    auto *vars = reinterpret_cast<const BTF::BTFDataSec *>(type + 1);
+    for (const auto &var : ArrayRef(vars, type->getVlen())) {
+      const auto *vt = btf.findType(var.Type);
+      if (!vt || vt->getKind() != BTF::BTF_KIND_VAR)
+        return createStringError(inconvertibleErrorCode(), "BTF DATASEC \"%s\" has a non-VAR member", name.str().c_str());
+      StringRef variable = btf.findString(vt->NameOff);
+      auto offset = offsets.find({name.str(), variable.str()});
+      if (offset == offsets.end())
+        return createStringError(inconvertibleErrorCode(), "BTF DATASEC \"%s\" VAR \"%s\" has no ELF symbol", name.str().c_str(), variable.str().c_str());
+      uint64_t start = offset->second;
+      if (start > section->second || var.Size > section->second - start)
+        return createStringError(inconvertibleErrorCode(), "BTF DATASEC \"%s\" VAR \"%s\" range exceeds its output section", name.str().c_str(), variable.str().c_str());
+      if (var.Size)
+        ranges.emplace_back(start, start + var.Size);
+    }
+    llvm::sort(ranges);
+    for (size_t i = 1; i < ranges.size(); ++i)
+      if (ranges[i].first < ranges[i - 1].second)
+        return createStringError(inconvertibleErrorCode(), "BTF DATASEC \"%s\" VAR ranges overlap", name.str().c_str());
+  }
+  return Error::success();
+}
+
 mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
                                StringRef schemaSHA256, raw_pwrite_stream &os,
                                Diagnostics &diags, StringRef license,
                                llvm::raw_ostream *llvmIROut,
                                llvm::raw_ostream *presentCostOut,
-                               uint64_t presentOutlineThreshold) {
+                               uint64_t presentOutlineThreshold, bool testSkipCoreRelocationPass) {
   // Reject a big-endian declaration before emitting little-endian BPF.
   auto checkLittle = [&](const ebpf::Type &t, StringRef where) {
     if (const auto *i = std::get_if<IntType>(&t.v))
@@ -1190,6 +1844,23 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
   }
   if (diags.failed)
     return mlir::failure();
+
+  // the guard table (provisional id → "<kind>\t<target>") and the
+  // ksymvar rows' guard sets from ebpf-verify-schema.
+  std::vector<std::string> guardTable;
+  std::map<std::string, std::vector<int>> ksymGuards;
+  if (auto t = module->getAttrOfType<mlir::ArrayAttr>("ebpf.guard_table")) {
+    for (mlir::Attribute a : t)
+      guardTable.push_back(llvm::cast<mlir::StringAttr>(a).getValue().str());
+    module->removeAttr("ebpf.guard_table");
+  }
+  if (auto kg = module->getAttrOfType<mlir::DictionaryAttr>("ebpf.ksym_guards")) {
+    for (mlir::NamedAttribute na : kg) {
+      auto ids = llvm::cast<mlir::DenseI32ArrayAttr>(na.getValue()).asArrayRef();
+      ksymGuards[na.getName().str()] = std::vector<int>(ids.begin(), ids.end());
+    }
+    module->removeAttr("ebpf.ksym_guards");
+  }
 
   // Read and remove requirement attributes before LLVM translation. Never
   // emit a program without requirements, which would bypass pre-load checks.
@@ -1230,6 +1901,12 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
         diags.error("program \"" + sym + "\": helper not in the UAPI table");
         continue;
       }
+      // GPL-only helpers come from the UAPI helpergpl rows, not names.
+      if (mlir::bpfabi::isGPLOnlyHelper(h->name) &&
+          !bpfmlir::isGPLCompatible(license))
+        diags.error("program \"" + sym + "\": " + h->name.str() +
+                    " is a GPL-only helper (UAPI table helpergpl) and "
+                    "requires a GPL-compatible license");
       pr.helpers.push_back({h->id, h->name.str()});
     }
     if (auto ats = req.getAs<mlir::ArrayAttr>("arg_tags"))
@@ -1241,8 +1918,20 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
     if (auto ks = req.getAs<mlir::ArrayAttr>("kfuncs"))
       for (mlir::Attribute a : ks)
         pr.kfuncs.push_back(llvm::cast<mlir::StringAttr>(a).getValue().str());
+    if (auto evs = req.getAs<mlir::ArrayAttr>("core_enums"))
+      for (mlir::Attribute a : evs)
+        pr.coreEnums.push_back(llvm::cast<mlir::StringAttr>(a).getValue().str());
+    if (auto fs = req.getAs<mlir::ArrayAttr>("fib_flags"))
+      for (mlir::Attribute a : fs)
+        pr.fibFlags.push_back(llvm::cast<mlir::StringAttr>(a).getValue().str());
+    if (auto targets = req.getAs<mlir::ArrayAttr>("helper_targets"))
+      for (mlir::Attribute a : targets)
+        pr.helperTargets.push_back(llvm::cast<mlir::StringAttr>(a).getValue().str());
     if (auto tpbuf = req.getAs<mlir::StringAttr>("tpbuf"))
       pr.tpbuf = tpbuf.getValue().str();
+    if (auto ss = req.getAs<mlir::ArrayAttr>("subprograms"))
+      for (mlir::Attribute a : ss)
+        pr.subprograms.push_back(llvm::cast<mlir::StringAttr>(a).getValue().str());
     progs.push_back(std::move(pr));
     fn->removeAttr("bpfabi.requires");
     fn->removeAttr("bpfabi.prog_type");
@@ -1295,12 +1984,24 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
               k.fields.push_back(fs);
               continue;
             }
+            if (llvm::isa<mlir::btf::VoidAttr>(pa.getPointee())) { // void *.
+              KernelLocal::Field fv{mb.getName().str(), mb.getOffsetBits(), false, 64, ""};
+              fv.voidPtr = true;
+              k.fields.push_back(fv);
+              continue;
+            }
             auto ref = llvm::dyn_cast<mlir::btf::RefAttr>(pa.getPointee());
             if (!ref) {
               diags.error("CO-RE local type " + k.name + "." + mb.getName().str() + ": a pointer member must point to a kernel type");
               return mlir::failure();
             }
             k.fields.push_back({mb.getName().str(), mb.getOffsetBits(), false, 64, ref.getTarget().getLeafReference().str()});
+            continue;
+          }
+          if (auto en = llvm::dyn_cast<mlir::btf::EnumAttr>(mb.getType())) { // kernel ENUM field.
+            KernelLocal::Field fe{mb.getName().str(), mb.getOffsetBits(), false, static_cast<unsigned>(en.getBits()), ""};
+            fe.isEnum = true;
+            k.fields.push_back(fe);
             continue;
           }
           auto it = llvm::dyn_cast<mlir::btf::IntAttr>(mb.getType());
@@ -1519,6 +2220,7 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
   LLVMInitializeBPFTarget();
   LLVMInitializeBPFTargetMC();
   LLVMInitializeBPFAsmPrinter();
+  LLVMInitializeBPFAsmParser(); // the object streamer parses inline asm text.
 
   Triple triple("bpfel-unknown-none");
   std::string err;
@@ -1541,11 +2243,31 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
   {
     Emitter e(*llvmModule, schema, diags, std::move(kernelLocals));
     e.kfuncDecls = kfuncDecls;
+    e.guardTable = guardTable;
+    e.ksymGuards = ksymGuards;
+    for (const ProgramRequirement &p : progs) { // (addendum 2)
+      e.kfieldOwners[p.symbol].push_back(p.symbol);
+      for (const std::string &s : p.subprograms)
+        e.kfieldOwners[s].push_back(p.symbol);
+    }
     e.collectMaps();
     e.expandCoreMarkers();
     hasCore = e.hasCore;
     e.btfFeatures = btfFeatures;
     e.emitRequirements(progs, schemaSHA256);
+    // a sleepable struct_ops program moves to section struct_ops.s
+    // (cilium struct_ops.s+ loads it with BPF_F_SLEEPABLE). VerifySchema
+    // checked the member; requirements above saw the struct_ops section.
+    for (const Program &p : schema.programs()) {
+      const bpfmlir::ProgramKindInfo *sk = bpfmlir::lookupProgramKind(p.kind);
+      if (!p.sleepable || !sk || sk->attach != bpfmlir::AttachForm::StructOpsMap)
+        continue; // a sleepable fentry already lowered to section fentry.s/<fn>.
+      Function *f = llvmModule->getFunction(p.name);
+      if (!f || f->getSection() != "struct_ops")
+        diags.error("sleepable program \"" + p.name + "\" is not a struct_ops function of this object");
+      else
+        f->setSection("struct_ops.s");
+    }
     e.moveLicenseLast();
     e.db().finalize();
   }
@@ -1607,27 +2329,51 @@ mlir::LogicalResult emitObject(mlir::ModuleOp module, const Schema &schema,
     pb.crossRegisterProxies(lam, fam, cgam, mam);
     ModulePassManager mpm;
     pb.invokePipelineStartEPCallbacks(mpm, OptimizationLevel::O0);
-    mpm.run(*llvmModule, mam);
+    if (!testSkipCoreRelocationPass) // testing only — reach the leftover check below.
+      mpm.run(*llvmModule, mam);
     for (Function &f : *llvmModule)
       for (Instruction &i : instructions(f))
         if (auto *ci = dyn_cast<CallInst>(&i))
           if (Function *callee = ci->getCalledFunction())
-            if (callee->getIntrinsicID() ==
+            if (callee->getIntrinsicID() == Intrinsic::bpf_preserve_enum_value ||
+                callee->getIntrinsicID() ==
                 Intrinsic::preserve_struct_access_index) {
               diags.error("CO-RE access in \"" + f.getName().str() +
                           "\" was not turned into a relocation");
               return mlir::failure();
             }
+    // the enum value relocation's "<name>:<value>" strings are unused
+    // once BPFAbstractMemberAccess has turned the intrinsic into a relocation
+    // (clang's -O2 drops them in globaldce); remove them so they do not land
+    // in .rodata.str1.1.
+    SmallVector<GlobalVariable *> enumStrs;
+    for (GlobalVariable &gv : llvmModule->globals())
+      if (gv.getName().starts_with("__ebpf_core_enum_str"))
+        enumStrs.push_back(&gv);
+    for (GlobalVariable *gv : enumStrs) {
+      if (!gv->use_empty()) {
+        diags.error("CO-RE enum value string \"" + gv->getName().str() + "\" is still used after the relocation pass");
+        return mlir::failure();
+      }
+      gv->eraseFromParent();
+    }
   }
 
   legacy::PassManager pm;
-  if (tm->addPassesToEmitFile(pm, os, nullptr, CodeGenFileType::ObjectFile)) {
+  SmallVector<char, 0> objectBytes;
+  raw_svector_ostream objectStream(objectBytes);
+  if (tm->addPassesToEmitFile(pm, objectStream, nullptr, CodeGenFileType::ObjectFile)) {
     diags.error("the bpfel target machine cannot emit an object file");
     return mlir::failure();
   }
   pm.run(*llvmModule);
   if (backend.failed)
     return mlir::failure();
+  if (auto err = validateObjectLayout(StringRef(objectBytes.data(), objectBytes.size()))) {
+    diags.error("invalid emitted ELF: " + toString(std::move(err)));
+    return mlir::failure();
+  }
+  os.write(objectBytes.data(), objectBytes.size());
   return mlir::success();
 }
 

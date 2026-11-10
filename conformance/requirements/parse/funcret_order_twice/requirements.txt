@@ -1,0 +1,6 @@
+ebpf-requirements 27
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	prog	tracing	26
+attach	prog	trace_fexit	bpf_fentry_test1
+funcret	prog	i32
+funcret	prog	i32

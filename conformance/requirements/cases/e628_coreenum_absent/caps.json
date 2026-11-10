@@ -1,0 +1,141 @@
+{
+  "format": "ebpf-caps 20",
+  "probed_as": {
+    "uid": 0,
+    "cap_eff": "000001ffffffffff"
+  },
+  "loader": {
+    "name": "cilium-v0.22",
+    "kprobe_alias_prefix": {
+      "x86_64": "__x64_"
+    },
+    "uprobe_reopens_path": true,
+    "core_poisons_missing_field": true,
+    "btf_rewrite": {
+      "decl_tag": "rewrite",
+      "enum64": "rewrite",
+      "func_global": "rewrite",
+      "type_tag": "rewrite"
+    },
+    "usdt_attach": "none",
+    "sockmap_attach": "link",
+    "lsm_cgroup_load": "none",
+    "fsession_load": "none",
+    "ksyscall_attach": "none",
+    "hidden_data_vars": "no_mmap",
+    "typed_ksym": "kallsyms_addr",
+    "kconfig": "strong_only",
+    "arena_cast": "corrupt",
+    "arena_premmap": "none"
+  },
+  "queries": {
+    "attach_targets": {
+      "struct_ops/map:e600s": {
+        "value": true
+      }
+    },
+    "enum_values": {
+      "scx_dsq_id_flags/SCX_DSQ_LOCAL": {
+        "diffs": [
+          "target BTF enum scx_dsq_id_flags has no SCX_DSQ_LOCAL"
+        ]
+      },
+      "scx_public_consts/SCX_SLICE_DFL": {
+        "text": "0x0000000001312d00"
+      }
+    },
+    "kfunc_protos": {
+      "scx_bpf_create_dsq/i32(u64,i32)": {
+        "diffs": []
+      },
+      "scx_bpf_dsq_insert/void(ptr:task_struct,u64,u64,u64)": {
+        "diffs": []
+      },
+      "scx_bpf_dsq_insert_vtime/void(ptr:task_struct,u64,u64,u64,u64)": {
+        "diffs": []
+      },
+      "scx_bpf_dsq_move_to_local/bool(u64)": {
+        "diffs": []
+      },
+      "scx_bpf_error_bstr/void(ptr:u8,ptr:u64,u32)": {
+        "diffs": []
+      },
+      "scx_bpf_select_cpu_dfl/i32(ptr:task_struct,i32,u64,ptr:bool)": {
+        "diffs": []
+      },
+      "scx_bpf_task_set_dsq_vtime/bool(ptr:task_struct,u64)": {
+        "diffs": []
+      }
+    },
+    "struct_ops_members": {
+      "sched_ext_ops.dispatch/2/void(-,-)": {
+        "diffs": []
+      },
+      "sched_ext_ops.enqueue/2/void(task_struct,u64)": {
+        "diffs": []
+      },
+      "sched_ext_ops.exit/1/void(-)": {
+        "diffs": []
+      },
+      "sched_ext_ops.init/0/i32()": {
+        "diffs": []
+      },
+      "sched_ext_ops.select_cpu/3/i32(task_struct,i32,u64)": {
+        "diffs": []
+      }
+    }
+  },
+  "privileged_queries": {
+    "attach_types": {
+      "struct_ops/struct_ops": {
+        "value": true
+      }
+    },
+    "btf_feature": {
+      "array": {
+        "value": true
+      },
+      "datasec": {
+        "value": true
+      },
+      "enum64": {
+        "value": true
+      },
+      "func": {
+        "value": true
+      },
+      "func_global": {
+        "value": true
+      },
+      "func_proto": {
+        "value": true
+      },
+      "int": {
+        "value": true
+      },
+      "ptr": {
+        "value": true
+      },
+      "struct": {
+        "value": true
+      },
+      "var": {
+        "value": true
+      }
+    },
+    "helper": {},
+    "map_type": {
+      "struct_ops": {
+        "value": true
+      }
+    },
+    "prog_type": {
+      "struct_ops": {
+        "value": true
+      },
+      "xdp": {
+        "value": true
+      }
+    }
+  }
+}

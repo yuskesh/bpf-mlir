@@ -49,6 +49,17 @@ LogicalResult KfuncCallOp::verify() {
   return success();
 }
 
+// the value must be the UAPI table's scxenum row (the compiler never
+// writes another value; the target BTF is compared at load time).
+LogicalResult CoreEnumValueOp::verify() {
+  const ScxEnumABI *e = lookupScxEnum(getName());
+  if (!e || e->enumName != getEnumName())
+    return emitOpError() << "enum constant " << getEnumName() << "." << getName() << " is not a scxenum row of the UAPI table";
+  if (static_cast<uint64_t>(getValue()) != e->value)
+    return emitOpError() << getName() << " has value " << static_cast<uint64_t>(getValue()) << ", the UAPI table has " << e->value;
+  return success();
+}
+
 LogicalResult CtxPacketOp::verify() {
   if (getFieldBytes() != 4 && getFieldBytes() != 8)
     return emitOpError() << "field_bytes must be 4 or 8, got "
@@ -57,6 +68,14 @@ LogicalResult CtxPacketOp::verify() {
       getDataEndOffset() % getFieldBytes() != 0)
     return emitOpError() << "data / data_end offsets must be multiples of "
                          << "field_bytes";
+  return success();
+}
+
+LogicalResult CtxMetaOp::verify() {
+  if (getFieldBytes() != 4)
+    return emitOpError() << "field_bytes must be 4, got " << getFieldBytes();
+  if (getMetaOffset() % getFieldBytes() != 0 || getDataOffset() % getFieldBytes() != 0)
+    return emitOpError() << "data_meta / data offsets must be multiples of field_bytes";
   return success();
 }
 
@@ -92,5 +111,13 @@ LogicalResult TpBufferStoreOp::verify() { return verifyTpBufferABI(*this); }
 LogicalResult CoreFieldLoadOp::verify() {
   if (getStructName().empty() || getField().empty())
     return emitOpError() << "needs a struct and a field name";
+  return success();
+}
+
+// the arena window address is an address-space-1 (__arena) pointer.
+LogicalResult ArenaAddrOp::verify() {
+  auto pt = dyn_cast<LLVM::LLVMPointerType>(getResult().getType());
+  if (!pt || pt.getAddressSpace() != 1)
+    return emitOpError() << "the arena address must be !llvm.ptr<1>, got " << getResult().getType();
   return success();
 }

@@ -1,0 +1,6 @@
+ebpf-requirements 26
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	a	struct_ops	27
+program	b	struct_ops	27
+coreenum	a	scx_public_consts	SCX_SLICE_DFL
+coreenum	a	scx_dsq_id_flags	SCX_DSQ_LOCAL

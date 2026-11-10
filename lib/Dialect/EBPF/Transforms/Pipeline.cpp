@@ -27,6 +27,8 @@ void mlir::ebpf::buildEBPFToLLVMPipeline(OpPassManager &pm, const TuneOptions &t
   er.backedgeSpill = tune.backedgeSpill;   // Iteration spill barrier.
   er.backedgeRotate = tune.backedgeRotate; // Back-edge rotation.
   pm.addPass(createEBPFExpandRegions(er));
+  if (tune.reuseDominatedLookup)
+    pm.addPass(createEBPFReuseDominatedLookup());
   pm.addPass(createEBPFVerifyStructured());
   ConvertEBPFToBPFABIOptions cv;
   cv.skipFullCoverMemset = tune.skipFullCoverMemset;

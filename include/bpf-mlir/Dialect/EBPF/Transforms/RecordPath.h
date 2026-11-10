@@ -38,11 +38,25 @@ struct RecordTemplate {
   unsigned bits;
   Attribute type;
   llvm::SmallVector<RecordDim, 2> dims; // In [] order.
+  // the leaf is a record-array element ("items[]") — its record symbol;
+  // bits is 0 and the element is borrowed (!ebpf.borrowed<!ebpf.record<…>>).
+  std::string elemRecord;
+  int64_t elemBytes = 0; // the element record's size.
+  // the leaf is an embedded cpumask field (cpumaskLeaf) — its byte size;
+  // bits is 0 (only ebpf.ref.field.addr takes it).
+  int64_t cpumaskBytes = 0;
 };
 
+// the local opaque struct of a schema {"kind": "cpumask", "size": N}
+// field (BuildBTF's __ebpf_cpumask_<N>; Schema reserves the prefix).
+inline bool isCpumaskRecordName(llvm::StringRef name) { return name.starts_with("__ebpf_cpumask_"); }
+
 // Resolve an integer leaf in st; invalid shapes fail with a reason in err.
+// recordLeaf also accepts a path that ends at an element of a record
+// array (its last component carries an index), giving elemRecord.
 FailureOr<RecordTemplate> resolveRecordTemplate(btf::ScopeOp records, btf::StructOp st, llvm::StringRef path,
-                                                std::string &err);
+                                                std::string &err, bool recordLeaf = false,
+                                                bool cpumaskLeaf = false);
 
 // Resolve a constant path in btf.scope @records, rejecting dynamic [] and
 // invalid shapes with a reason in err.
@@ -72,6 +86,8 @@ FailureOr<KptrLeaf> resolveKptrPath(btf::ScopeOp records, btf::StructOp st,
                                   llvm::StringRef path, std::string &err);
 // Closure check prevents record.make from treating a nested kptr as integer-only.
 bool recordHasKptr(btf::ScopeOp records, btf::StructOp st);
+// st or a record it embeds has a cpumask field.
+bool recordHasCpumask(btf::ScopeOp records, btf::StructOp st);
 
 // Return T only for referenced map-value kptr members:
 // #btf.ptr<#btf.type_tag<"kptr", #btf.ref<@kernel::@T>>>; otherwise empty.

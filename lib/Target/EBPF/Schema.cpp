@@ -230,6 +230,8 @@ Expected<Type> parseType(const json::Value &v, StringRef where) {
       return err(where + ": a timer cannot be an array element (a record has at most one timer, as a direct field)");
     if (std::holds_alternative<KptrType>(elem->v))
       return err(where + ": a kptr cannot be an array element (a compiler restriction — only a direct record field)");
+    if (std::holds_alternative<CpumaskType>(elem->v)) // the element stride is a record's size.
+      return err(where + ": a cpumask cannot be an array element — use an array of records with a cpumask field");
     ArrayType at;
     at.count = *count;
     at.element = std::make_unique<Type>(std::move(*elem));
@@ -267,6 +269,20 @@ Expected<Type> parseType(const json::Value &v, StringRef where) {
     if (st->empty())
       return err(where + ": a kptr type needs a non-empty \"struct\"");
     t.v = KptrType{st->str()};
+    return t;
+  }
+  // embedded struct bpf_cpumask; size is required (no default — schema_format.md §4).
+  if (*kind == "cpumask") {
+    if (Error e = requireOnlyKeys(*o, kKeysTypeCpumask, where))
+      return std::move(e);
+    if (!o->get("size"))
+      return err(where + ": a cpumask type needs \"size\" (the bytes reserved for the kernel's struct bpf_cpumask — 1032 on a 7.x x86_64 kernel with NR_CPUS 8192, 16 with NR_CPUS 64 or less; no default)");
+    auto n = getU64(*o, "size", where);
+    if (!n)
+      return n.takeError();
+    if (*n == 0 || *n % 8 != 0 || *n > (uint64_t(1) << 20))
+      return err(where + ": a cpumask size must be a positive multiple of 8 of at most 1048576 bytes, got " + std::to_string(*n));
+    t.v = CpumaskType{*n};
     return t;
   }
   if (*kind == "record_ref") {
@@ -563,6 +579,13 @@ void emitTypeBody(raw_ostream &os, const KptrType &t, unsigned ind) {
   indent(os, ind); os << "}";
 }
 
+void emitTypeBody(raw_ostream &os, const CpumaskType &t, unsigned ind) {
+  os << "{\n";
+  indent(os, ind + 2); os << "\"kind\": \"cpumask\",\n";
+  indent(os, ind + 2); os << "\"size\": " << t.size << "\n";
+  indent(os, ind); os << "}";
+}
+
 void emitTypeBody(raw_ostream &os, const StackBuildIdType &, unsigned ind) {
   os << "{\n";
   indent(os, ind + 2); os << "\"kind\": \"stack_build_id\"\n";
@@ -679,6 +702,8 @@ static Expected<uint64_t> sizeOfImpl(const Schema &s, const Type &t,
   // kptr is a 64-bit pointer.
   if (std::holds_alternative<KptrType>(t.v))
     return uint64_t(8);
+  if (const auto *c = std::get_if<CpumaskType>(&t.v)) // the declared size.
+    return c->size;
   const auto &r = std::get<RecordRefType>(t.v);
   return recordSize(s, r.symbol, visiting);
 }
@@ -691,7 +716,7 @@ Expected<uint64_t> Schema::sizeOf(const Type &t) const {
 bool Schema::operator==(const Schema &o) const {
   if (!(coverage_ == o.coverage_ &&
         programs_ == o.programs_ && maps_ == o.maps_ && records_ == o.records_ &&
-        kernelTypes_ == o.kernelTypes_ && globals_ == o.globals_ &&
+        kernelTypes_ == o.kernelTypes_ && globals_ == o.globals_ && ksyms_ == o.ksyms_ && kconfigs_ == o.kconfigs_ &&
         signals_ == o.signals_ && clocks_ == o.clocks_ &&
         valueMaps_ == o.valueMaps_ && boundsSets_ == o.boundsSets_))
     return false;
@@ -940,6 +965,8 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
   // unsupported. Reserve bpf_timer for its BTF type.
     if (r.symbol == "bpf_timer")
       return err(where + ": the record name \"bpf_timer\" is reserved (the BTF type of a timer field)");
+    if (StringRef(r.symbol).starts_with("__ebpf_cpumask_")) // the BTF type of a cpumask field.
+      return err(where + ": record names starting with \"__ebpf_cpumask_\" are reserved (the BTF type of a cpumask field)");
     unsigned timers = 0;
     for (const Field &f : r.fields)
       if (std::holds_alternative<TimerType>(f.type.v)) {
@@ -1009,6 +1036,7 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
   // Referenced kptrs may reach map values through record_ref chains. Compute
   // containment closure to a fixed point so key/payload checks include parents.
   std::set<std::string> kptrRecords;
+  std::set<std::string> cpumaskRecords;
   for (const Record &r : s.records_)
     for (const Field &f : r.fields)
       if (std::holds_alternative<KptrType>(f.type.v)) {
@@ -1042,6 +1070,35 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
         return err("record \"" + r.symbol + "\" field \"" + f.name +
                    "\": a nested record with a kptr field must be at an offset that is a multiple of 8");
     }
+  // records holding an embedded cpumask (directly or nested, also as
+  // record-array elements) keep it 8-byte aligned: the field and any nested
+  // holder at offsets that are multiples of 8, the holder's alignment ≥ 8 (so
+  // an element stride is a multiple of 8). Placement is checked per map / global.
+  for (const Record &r : s.records_)
+    for (const Field &f : r.fields)
+      if (std::holds_alternative<CpumaskType>(f.type.v)) {
+        if (f.offset % 8 != 0)
+          return err("record \"" + r.symbol + "\" field \"" + f.name + "\": a cpumask field must be at an offset that is a multiple of 8");
+        cpumaskRecords.insert(r.symbol);
+      }
+  for (bool added = true; added;) {
+    added = false;
+    for (const Record &r : s.records_)
+      for (const Field &f : r.fields) {
+        // Every array dimension (re-review: array<array<record_ref>> was missed with one level).
+        const Type *t = &f.type;
+        while (const auto *a = std::get_if<ArrayType>(&t->v))
+          t = a->element.get();
+        if (const auto *rr = std::get_if<RecordRefType>(&t->v); rr && cpumaskRecords.count(rr->symbol)) {
+          if (f.offset % 8 != 0)
+            return err("record \"" + r.symbol + "\" field \"" + f.name + "\": a nested record with a cpumask field must be at an offset that is a multiple of 8");
+          added |= cpumaskRecords.insert(r.symbol).second;
+        }
+      }
+  }
+  for (const Record &r : s.records_)
+    if (cpumaskRecords.count(r.symbol) && r.alignment < 8)
+      return err("record \"" + r.symbol + "\": a record with a cpumask field needs alignment 8 (its stride as an array element keeps the cpumask 8-byte aligned)");
 
   // Reject record_ref cycles first: sizeOf returns declared sizes and would
   // otherwise allow impossible self-containing structs.
@@ -1155,6 +1212,12 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
       // them as kernel type names; internal and requirement spellings coincide.
       if (isTPArgScalarSpelling(k.name))
         return err("core.kernel_types: \"" + k.name + "\" is reserved (an integer or unread tp_btf argument spelling)");
+      if (isEnumArgSpelling(k.name))
+        return err("core.kernel_types: \"" + k.name + "\" is reserved (a struct_ops enum argument spelling)");
+      // the compiler adds the local CO-RE type bpf_arena { user_vm_start: u64 }
+      // for an arena map's window base; a user declaration would collide with it.
+      if (k.name == "bpf_arena")
+        return err("core.kernel_types: \"bpf_arena\" is reserved (the compiler declares bpf_arena { user_vm_start: u64 } for an arena map)");
       std::string where = "kernel type \"" + k.name + "\"";
       if (Error e = optStrInto(*o, "note", "core.kernel_types", k.note))
         return std::move(e);
@@ -1228,6 +1291,47 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
           k.fields.push_back(std::move(f));
           continue;
         }
+        // ptr is an eight-byte void * (C's `void *governor_data`), read only
+        // by kaddr.read as an untrusted !ebpf.kaddr<""> (compare / NULL test only).
+        if (const auto *to = tv->getAsObject(); to && to->getString("kind") == "ptr") {
+          for (const auto &kv : *to)
+            if (kv.first != "kind")
+              return err(fwhere + ": a ptr (void *) field type takes only \"kind\" (a struct pointer is {\"kind\": \"kptr\", \"struct\": S}), got \"" +
+                         kv.first.str() + "\"");
+          f.voidPtr = true;
+          if (Error e = optStrInto(*fo, "note", "core.kernel_types field", f.note))
+            return std::move(e);
+          off = (off + 7) / 8 * 8;
+          maxAlign = std::max<uint64_t>(maxAlign, 8);
+          f.offset = off;
+          off += 8;
+          k.fields.push_back(std::move(f));
+          continue;
+        }
+        // a kernel ENUM field. The local type is an anonymous enum of the
+        // width (an int local type makes cilium's CO-RE relocation impossible).
+        if (const auto *to = tv->getAsObject(); to && to->getString("kind") == "enum") {
+          if (Error e = requireOnlyKeys(*to, kKeysKernelEnum, fwhere)) return std::move(e);
+          auto bits = getU64(*to, "bits", fwhere);
+          if (!bits)
+            return bits.takeError();
+          if (*bits != 8 && *bits != 16 && *bits != 32 && *bits != 64)
+            return err(fwhere + ": an enum field must be 8 / 16 / 32 / 64 bits, got " + std::to_string(*bits));
+          f.isEnum = true;
+          f.type.bits = static_cast<uint32_t>(*bits);
+          f.type.isSigned = false;
+          f.type.endianness = Endianness::Little;
+          f.type.alignment = static_cast<uint32_t>(*bits / 8);
+          if (Error e = optStrInto(*fo, "note", "core.kernel_types field", f.note))
+            return std::move(e);
+          uint64_t w = *bits / 8;
+          off = (off + w - 1) / w * w;
+          maxAlign = std::max(maxAlign, w);
+          f.offset = off;
+          off += w;
+          k.fields.push_back(std::move(f));
+          continue;
+        }
         auto ft = parseType(*tv, fwhere);
         if (!ft)
           return ft.takeError();
@@ -1279,7 +1383,7 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
           if (it == s.kernelTypes_.end()) return err("embedded kernel struct is not declared: " + f.embedded);
           if (Error e = layout(*it)) return e;
           sz = it->size; a = it->alignment;
-        } else if (!f.ptrTo.empty() || f.strPtr) { sz = a = 8; }
+        } else if (!f.ptrTo.empty() || f.strPtr || f.voidPtr) { sz = a = 8; }
         else if (f.arrayCount) { sz = f.arrayCount; a = 1; }
         else { sz = a = f.type.bits / 8; }
         const uint64_t max = std::numeric_limits<uint64_t>::max() / 8;
@@ -1389,6 +1493,10 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
       // User ring buffers share no-key/value, power-of-two size and nominal sample-record rules.
       if (m.key || m.value)
         return err(where + ": a user_ringbuf map has no key/value");
+    } else if (m.kind == MapKind::Arena) {
+      // arena memory is pages, not key/value entries (kernel key_size / value_size 0).
+      if (m.key || m.value)
+        return err(where + ": an arena map has no key/value (its memory is max_entries pages at map_extra)");
     } else if (m.kind == MapKind::StructOps) {
       // struct_ops uses its operation table; loader maps the kernel value type.
     // Key is u32, kernel key_size four, with only key zero.
@@ -1444,6 +1552,12 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
       if (m.maxEntries != 0)
         return err(where + ": a " + *kind + " map takes max_entries 0 (one value per owner object — the kernel refuses a positive max_entries), got " +
                    Twine(m.maxEntries));
+    } else if (m.kind == MapKind::Arena) {
+      // arena max_entries is pages of 4096 bytes, at most 4 GiB (2^20 pages).
+      // Bounding pages first keeps pages × 4096 below 2^64 in the map_extra checks.
+      if (m.maxEntries < 1 || m.maxEntries > kArenaMaxPages)
+        return err(where + ": an arena map takes max_entries (pages of " + Twine(kArenaPageSize) + " bytes) from 1 to " + Twine(kArenaMaxPages) +
+                   " (pages ≥ 1 and pages × " + Twine(kArenaPageSize) + " ≤ 4 GiB), got " + Twine(m.maxEntries));
     } else if (m.maxEntries == 0)
       return err(where + ": max_entries must be positive");
     if (m.kind == MapKind::RingBuf && !isPowerOfTwo(m.maxEntries))
@@ -1722,6 +1836,25 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
       if (!m.record.empty() && kptrRecords.count(m.record))
         return err(where + ": a record with a kptr field cannot be carried by a ring buffer / perf event map");
     }
+    // an embedded cpumask is written by kfuncs in place — only writable
+    // map values (array / hash families), never a key or a ring / perf payload.
+    {
+      auto isCpumaskRef = [&](const std::optional<Type> &t) {
+        const auto *rr = t ? std::get_if<RecordRefType>(&t->v) : nullptr;
+        return rr && cpumaskRecords.count(rr->symbol);
+      };
+      if ((m.key && std::holds_alternative<CpumaskType>(m.key->v)) || (m.value && std::holds_alternative<CpumaskType>(m.value->v)))
+        return err(where + ": a cpumask is only a field of a record, not a map key or value by itself");
+      if (isCpumaskRef(m.key))
+        return err(where + ": a record with a cpumask field cannot be a map key");
+      bool permitsCpumask = m.kind == MapKind::Array || m.kind == MapKind::PerCpuArray || m.kind == MapKind::Hash ||
+                            m.kind == MapKind::PerCpuHash || m.kind == MapKind::LruHash || m.kind == MapKind::LruPerCpuHash;
+      if (isCpumaskRef(m.value) && !permitsCpumask)
+        return err(where + ": a record with a cpumask field is only supported as the value of an array, per-CPU array or hash-family map, not \"" +
+                   std::string(mapKindName(m.kind)) + "\"");
+      if (!m.record.empty() && cpumaskRecords.count(m.record))
+        return err(where + ": a record with a cpumask field cannot be carried by a ring buffer / perf event map");
+    }
     // perf_event_array uses u32 key/FD value, flags zero, and a required nominal
     // payload record, distinct from the FD map value.
     if (m.kind == MapKind::PerfEventArray) {
@@ -1762,6 +1895,9 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
       const auto *so = sv->getAsObject();
       if (!so)
         return err(where + ": struct_ops must be an object {type, name, ops}");
+      // sched_ext_ops.priv is a kernel pointer: non-zero non-function members are EINVAL.
+      if (so->get("priv"))
+        return err(where + ": struct_ops \"priv\" is not writable (a kernel pointer member — the kernel rejects a non-zero value); leave it out");
       if (Error er = requireOnlyKeys(*so, kKeysMapStructOps, where + " struct_ops"))
         return std::move(er);
       Map::StructOps st;
@@ -1791,6 +1927,34 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
                      st.name + "\"");
       } else if (so->get("name")) {
         return err(where + ": struct_ops type \"" + st.type + "\" has no name member (StructOpsTypes.def); leave out \"name\"");
+      }
+      // Integer DATA keys are optional; absent means zero and no member. Accept
+      // only JSON integers (not 3000.0) within the width and the row's RULE.
+      for (const auto &[k, v] : *so) {
+        if (!bpfmlir::isStructOpsIntDataKey(k))
+          continue;
+        const bpfmlir::StructOpsDataInfo *row = bpfmlir::structOpsDataByKey(st.type, k);
+        if (!row)
+          return err(where + ": struct_ops type \"" + st.type + "\" has no data member \"" + k.str() +
+                     "\" (StructOpsTypes.def); leave it out");
+      }
+      for (const bpfmlir::StructOpsDataInfo *row : bpfmlir::structOpsDataOf(st.type)) {
+        if (!bpfmlir::isStructOpsIntData(*row))
+          continue;
+        const json::Value *dv = so->get(row->schemaKey);
+        if (!dv)
+          continue;
+        std::optional<uint64_t> n = dv->getAsUINT64();
+        if (!n) {
+          std::optional<int64_t> neg = dv->kind() == json::Value::Number ? dv->getAsInteger() : std::nullopt;
+          return err(where + ": struct_ops \"" + row->schemaKey + "\" must be a JSON unsigned integer (" + row->kind +
+                     (neg && *neg < 0 ? "), got a negative number" : dv->kind() == json::Value::Number ? "), got a decimal or a value beyond 2^64-1" : "), got a non-number"));
+        }
+        std::string why = bpfmlir::checkStructOpsDataValue(*row, *n);
+        if (!why.empty())
+          return err(where + ": struct_ops \"" + row->schemaKey + "\" " + Twine(*n) + " " + why + " (" + st.type + "." + row->member +
+                     " — " + row->evidence + ")");
+        st.data.push_back({row->member.str(), *n});
       }
       auto opsArr = getArr(*so, "ops", where + " struct_ops");
       if (!opsArr)
@@ -1836,6 +2000,60 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
         return err(where + ": a struct_ops map takes no flags (the loader sets BPF_F_LINK for .struct_ops.link)");
       if (!m.record.empty())
         return err(where + ": a struct_ops map carries no record");
+    }
+    // map_extra is the arena's user address (BPF_MAP_CREATE map_extra).
+    // Required for arena, rejected for every other kind. Read with getAsUINT64:
+    // llvm::json keeps integers up to 2^64-1 exact (int64 / uint64, never a
+    // double), and getAsUINT64 rejects decimals and negatives rather than
+    // rounding — getU64 (getAsInteger) would accept 4096.0 and stop at 2^63-1.
+    if (const json::Value *mev = o->get("map_extra"); mev && m.kind != MapKind::Arena) {
+      return err(where + ": only an arena map has map_extra (the arena's user address)");
+    } else if (m.kind == MapKind::Arena) {
+      if (!mev)
+        return err(where + ": an arena map needs map_extra (the user address of the arena, a multiple of " + Twine(kArenaPageSize) +
+                   " whose low 32 bits are at least " + Twine(kArenaPageSize) + ")");
+      std::optional<uint64_t> me = mev->getAsUINT64();
+      if (!me)
+        return err(where + ": map_extra must be a JSON unsigned integer below 2^64 (" +
+                   (mev->kind() == json::Value::Number ? "got a negative number, a decimal or a value beyond 2^64-1" : "got a non-number") + ")");
+      m.mapExtra = *me;
+      const uint64_t size = m.maxEntries * kArenaPageSize; // pages ≤ 2^20 was checked above: no overflow.
+      if (m.mapExtra % kArenaPageSize != 0)
+        return err(where + ": arena map_extra " + Twine(m.mapExtra) + " is not a multiple of " + Twine(kArenaPageSize) +
+                   " (map_extra mod " + Twine(kArenaPageSize) + " = 0 — the kernel refuses an unaligned user address)");
+      if (m.mapExtra > UINT64_MAX - size)
+        return err(where + ": arena map_extra " + Twine(m.mapExtra) + " + " + Twine(size) + " bytes (max_entries " + Twine(m.maxEntries) +
+                   " pages) overflows u64 (map_extra + pages × " + Twine(kArenaPageSize) + " must fit in 64 bits)");
+      if ((m.mapExtra >> 32) != ((m.mapExtra + size - 1) >> 32))
+        return err(where + ": arena [map_extra " + Twine(m.mapExtra) + ", +" + Twine(size) +
+                   ") crosses a 4 GiB boundary (map_extra >> 32 must equal (map_extra + pages × " + Twine(kArenaPageSize) +
+                   " - 1) >> 32 — the program addresses the arena by its low 32 bits)");
+      if ((m.mapExtra & 0xffffffffull) < kArenaPageSize)
+        return err(where + ": arena map_extra " + Twine(m.mapExtra) + " has low 32 bits below " + Twine(kArenaPageSize) +
+                   " ((map_extra & 0xffffffff) ≥ " + Twine(kArenaPageSize) +
+                   " — the arena's first page would overlap a program NULL, whose low 32 bits are 0)");
+      // Flags: BPF_F_MMAPABLE is required (userspace shares the pages).
+      // BPF_F_SEGV_ON_FAULT and BPF_F_NO_USER_CONV are rejected by name; any other flag is outside the compiler's range.
+      std::optional<int64_t> mmapable = mlir::bpfabi::lookupMapFlag("mmapable");
+      std::optional<int64_t> segv = mlir::bpfabi::lookupMapFlag("segv_on_fault");
+      std::optional<int64_t> noConv = mlir::bpfabi::lookupMapFlag("no_user_conv");
+      if (!mmapable || !segv || !noConv)
+        return err(where + ": BPF_F_MMAPABLE / BPF_F_SEGV_ON_FAULT / BPF_F_NO_USER_CONV is not in the UAPI table");
+      if (m.flags & static_cast<uint64_t>(*noConv))
+        return err(where + ": an arena map does not take BPF_F_NO_USER_CONV (" + std::to_string(*noConv) +
+                   ") — the arena is shared with userspace");
+      if (!(m.flags & static_cast<uint64_t>(*mmapable)))
+        return err(where + ": an arena map needs BPF_F_MMAPABLE (" + std::to_string(*mmapable) +
+                   ", UAPI mapflag mmapable) — userspace shares the arena by mmap, got flags " + std::to_string(m.flags));
+      if (m.flags != static_cast<uint64_t>(*mmapable) && m.flags != static_cast<uint64_t>(*mmapable | *segv))
+        return err(where + ": an arena map takes BPF_F_MMAPABLE optionally with BPF_F_SEGV_ON_FAULT, got " +
+                   std::to_string(m.flags));
+      if (!m.record.empty())
+        return err(where + ": an arena map carries no record");
+      // One arena per schema (one module): its window base is the map's single user_vm_start.
+      for (const Map &o2 : s.maps_)
+        if (o2.kind == MapKind::Arena)
+          return err(where + ": a second arena map (\"" + o2.symbol + "\" is already declared — the compiler supports one arena per schema)");
     }
     s.maps_.push_back(std::move(m));
   }
@@ -1931,6 +2149,20 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
             nullable = *b;
           }
           p.args.push_back(nm->str() + (nullable ? "?" : ""));
+          continue;
+        }
+        // Enum args declare only the BTF ENUM width; the family check below
+        // keeps them to struct_ops. No sign: matching compares kind and size.
+        if (const auto *ao = a.getAsObject(); ao && ao->getString("kind") == "enum") {
+          for (const auto &kv : *ao)
+            if (kv.first != "kind" && kv.first != "bits")
+              return err(where + ": enum args entries take only \"kind\" and \"bits\", got \"" + kv.first.str() + "\"");
+          const json::Value *bv = ao->get("bits");
+          std::optional<int64_t> bits = bv ? bv->getAsInteger() : std::nullopt;
+          std::string sp = bits ? "enum:" + std::to_string(*bits) : std::string();
+          if (!isEnumArgSpelling(sp))
+            return err(where + ": enum args entries need \"bits\" 8, 16, 32 or 64 (the size of the BTF enum)");
+          p.args.push_back(sp);
           continue;
         }
         if (a.getAsObject()) {
@@ -2032,11 +2264,11 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
         break;
       if (bpfmlir::lookupProgramAttach(*info, p.attachTarget))
         break;
-      llvm::SmallVector<llvm::StringRef, 4> vals = bpfmlir::attachValuesOf(*info);
+      auto vals = bpfmlir::attachDiagnosticValuesOf(*info, p.attachTarget);
       std::string list;
       for (size_t i = 0; i < vals.size(); ++i)
         list += (i ? (i + 1 == vals.size() ? " or " : ", ") : "") + ("\"" + vals[i] + "\"").str();
-      llvm::StringRef what = info->attach == bpfmlir::AttachForm::TcxDirection      ? "the tcx direction"
+      llvm::StringRef what = info->attach == bpfmlir::AttachForm::TcxDirection      ? (llvm::StringRef(p.attachTarget).starts_with("netkit_") ? "the netkit direction" : "the tcx direction")
                              : info->attach == bpfmlir::AttachForm::SockoptHook     ? "the sockopt hook"
                              : info->attach == bpfmlir::AttachForm::CgroupDirection ? "the cgroup attach direction"
                              : info->attach == bpfmlir::AttachForm::ReuseportHook   ? "the reuseport hook"
@@ -2046,6 +2278,10 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
                  p.attachTarget + "\"");
     }
     }
+    // Enum args are a struct_ops capability; other families match
+    // integer spellings only, so an enum there would be checked as something else.
+    if (info->sig != bpfmlir::SigFamily::OpsSig && llvm::any_of(p.args, [](const std::string &a) { return isEnumArgSpelling(a); }))
+      return err(where + ": enum args entries are only for struct_ops programs (a " + p.kind + " program declares integer, struct or null args)");
     if (info->sig == bpfmlir::SigFamily::TpArgs) { // Signature family from SIG.
       if (p.args.empty())
         return err(where + ": a " + p.kind + " program needs args (the kernel types "
@@ -2093,16 +2329,23 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
     bool extSig = info->sig == bpfmlir::SigFamily::ExtSig; // ext replacement signature feeds extret/extarg and BTF FUNC_PROTO.
     bool opsSig = info->sig == bpfmlir::SigFamily::OpsSig; // struct_ops member signature feeds structop retsig/farg.
     if (info->sig == bpfmlir::SigFamily::FuncRet || info->sig == bpfmlir::SigFamily::IntArgs || extSig || opsSig) { // fmod_ret also supplies retsig for return-value replacement.
-      if (!nv || !rv)
+      // fexit (FuncRet) may omit nargs — the return value is then read
+      // with ctx.func_ret and only its type is checked (funcret). Other
+      // families keep nargs required.
+      bool funcRetOnly = info->sig == bpfmlir::SigFamily::FuncRet && !nv && rv;
+      if ((!nv && !funcRetOnly) || !rv)
         return err(where + ": a " + p.kind + " program needs nargs and ret (" +
                    (extSig   ? "the signature of the BPF function it replaces"
                     : opsSig ? "the signature of the struct_ops member it implements"
                              : "the signature of the kernel function — its return value sits after nargs arguments") +
                    ")");
-      std::optional<int64_t> n = nv->getAsInteger();
-      if (!n || *n < 0 || *n > (extSig ? 5 : 12))
-        return err(where + (extSig ? ": nargs must be an integer in 0..5 (a BPF function takes at most 5 arguments)" : ": nargs must be an integer in 0..12"));
-      p.nargs = *n;
+      if (nv) {
+        std::optional<int64_t> n = nv->getAsInteger();
+        if (!n || *n < 0 || *n > (extSig ? 5 : 12))
+          return err(where + (extSig ? ": nargs must be an integer in 0..5 (a BPF function takes at most 5 arguments)" : ": nargs must be an integer in 0..12"));
+        p.nargs = *n;
+      }
+      p.hasRet = true;
       if (opsSig && p.args.size() > static_cast<size_t>(p.nargs))
         return err(where + ": args of a " + p.kind + " program declare " + std::to_string(p.args.size()) + " arguments, more than nargs " +
                    std::to_string(p.nargs) + "");
@@ -2296,6 +2539,22 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
     } else if (o->get("semaphore") || o->get("max_points")) {
       return err(where + ": semaphore and max_points are only for " +
                  bpfmlir::joinProgramKinds([](auto &k) { return k.attach == bpfmlir::AttachForm::UsdtProbe; }, "", ", ", " and ") + " programs");
+    }
+    // sleepable struct_ops programs (section struct_ops.s — the loader sets
+    // BPF_F_SLEEPABLE). Which members accept it is checked with the struct_ops
+    // map (ebpf-verify-schema, ScxContract.def keyed by ops type and member).
+    if (o->get("sleepable")) {
+      // also the kinds whose ProgramAttaches.def has a sleepable row (fentry:
+      // section fentry.s/<fn>); the program op's `sleepable` keyword must agree
+      // (ebpf-verify-schema).
+      if (info->attach != bpfmlir::AttachForm::StructOpsMap && !bpfmlir::kindHasFlagRow(*info, "sleepable"))
+        return err(where + ": sleepable is only for " +
+                   bpfmlir::joinProgramKinds([](auto &k) { return k.attach == bpfmlir::AttachForm::StructOpsMap; }, "", ", ", " and ") +
+                   " programs");
+      auto sl = getBool(*o, "sleepable", where);
+      if (!sl)
+        return sl.takeError();
+      p.sleepable = *sl;
     }
     // Only tracepoint declares optional event fields. Require offset >= 8 because
     // the first eight bytes become pt_regs*, natural width alignment, and
@@ -2552,14 +2811,160 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
       if (!sec)
         return sec.takeError();
       g.section = sec->str();
-      if (g.section != "rodata" && g.section != "bss")
-        return err(where + ": section must be \"rodata\" or \"bss\", got \"" + g.section + "\"");
+      // "data:<name>" is the compiler's dedicated section .data.<name>
+      // (C's private(name)) of hidden kptr globals only.
+      if (StringRef(g.section).starts_with("data:")) {
+        StringRef sn = StringRef(g.section).drop_front(5);
+        if (sn.empty() || !llvm::all_of(sn, [](char c) { return llvm::isAlnum(c) || c == '_'; }))
+          return err(where + ": section \"" + g.section + "\" must be \"data:<name>\" with a name of letters, digits and '_' (the ELF section .data.<name>)");
+        if (o->get("record"))
+          return err(where + ": a " + g.section + " global is a kptr \"type\", not a \"record\" (a data:<name> section holds kptr globals only)");
+        const json::Value *tv = o->get("type");
+        if (!tv)
+          return err(where + ": a " + g.section + " global needs a kptr \"type\" ({\"kind\": \"kptr\", \"struct\": \"bpf_cpumask\"})");
+        auto t = parseType(*tv, where + " type");
+        if (!t)
+          return t.takeError();
+        const auto *kp = std::get_if<KptrType>(&t->v);
+        if (!kp)
+          return err(where + ": a " + g.section + " global must be a kptr ({\"kind\": \"kptr\", \"struct\": …}); integers go in rodata / bss — "
+                             "a data:<name> section holds hidden kptr globals only, which loaders do not mmap");
+        if (kp->structName != "bpf_cpumask")
+          return err(where + ": a kptr global to struct " + kp->structName +
+                     " is not supported; the compiler supports global kptrs only for bpf_cpumask");
+        if (!llvm::any_of(s.kernelTypes_, [&](const KernelType &k) { return k.name == kp->structName; }))
+          return err(where + ": kptr to \"" + kp->structName + "\", which is not declared in core.kernel_types");
+        g.kptr = kp->structName;
+        if (Error e = optStrInto(*o, "note", "core.globals", g.note))
+          return std::move(e);
+        s.globals_.push_back(std::move(g));
+        continue;
+      }
+      if (g.section != "rodata" && g.section != "bss" && g.section != "data")
+        return err(where + ": section must be \"rodata\", \"bss\", \"data\" or \"data:<name>\", got \"" + g.section + "\"");
+      // a .data global is a zero-initialized record (the UEI of sched_ext);
+      // rodata / bss globals stay integers.
+      if (g.section == "data") {
+        if (const json::Value *tv = o->get("type")) {
+          // name the kptr rule for a kptr "type" in plain data (not the record rule).
+          if (const json::Object *to = tv->getAsObject(); to && to->getString("kind") == "kptr")
+            return err(where + ": a kptr global goes in a \"data:<name>\" section, not data (the .data map is mmapped, "
+                               "which the kernel refuses for a map with a kptr)");
+          return err(where + ": a data global takes \"record\", not \"type\" (data globals are records)");
+        }
+        auto rec = getStr(*o, "record", where);
+        if (!rec)
+          return err(where + ": a data global needs \"record\" (a core.records symbol)");
+        g.record = rec->str();
+        if (!llvm::any_of(s.records_, [&](const Record &r) { return r.symbol == g.record; }))
+          return err(where + ": record \"" + g.record + "\" is not declared in core.records");
+        // (§0.4 (b)): a kptr in a .data record would share the section with
+        // the mmapped (non-hidden) record and make cilium's NewCollection fail
+        // with -ENOTSUPP; a kptr global goes in its own "data:<name>" section.
+        std::function<bool(StringRef, unsigned)> hasKptr = [&](StringRef sym, unsigned depth) {
+          if (depth > 8)
+            return false;
+          for (const Record &r : s.records_) {
+            if (r.symbol != sym)
+              continue;
+            for (const Field &f : r.fields) {
+              if (std::holds_alternative<KptrType>(f.type.v))
+                return true;
+              if (const auto *rr = std::get_if<RecordRefType>(&f.type.v); rr && hasKptr(rr->symbol, depth + 1))
+                return true;
+            }
+          }
+          return false;
+        };
+        if (hasKptr(g.record, 0))
+          return err(where + ": record \"" + g.record + "\" has a kptr field; a kptr global goes in its own \"data:<name>\" section "
+                             "(a kptr in the .data record makes the mmapped .data map fail with -ENOTSUPP)");
+        if (Error e = optStrInto(*o, "note", "core.globals", g.note))
+          return std::move(e);
+        s.globals_.push_back(std::move(g));
+        continue;
+      }
+      // a rodata / bss record global (C's struct / array globals), borrowed
+      // with ebpf.global.ref. Special fields stay map-value only: a kptr makes the
+      // mmapped map fail, and lock / timer fields are not opened for globals.
+      if (o->get("record")) {
+        if (o->get("type"))
+          return err(where + ": a " + g.section + " global takes either an integer \"type\" or a \"record\", not both");
+        auto rec = getStr(*o, "record", where);
+        if (!rec)
+          return rec.takeError();
+        g.record = rec->str();
+        if (!llvm::any_of(s.records_, [&](const Record &r) { return r.symbol == g.record; }))
+          return err(where + ": record \"" + g.record + "\" is not declared in core.records");
+        std::function<std::string(StringRef, unsigned)> special = [&](StringRef sym, unsigned depth) -> std::string {
+          if (depth > 8)
+            return {};
+          std::function<std::string(const Type &)> ofType = [&](const Type &t) -> std::string {
+            if (std::holds_alternative<KptrType>(t.v))
+              return "a kptr";
+            if (std::holds_alternative<SpinLockType>(t.v))
+              return "a spin_lock";
+            if (std::holds_alternative<TimerType>(t.v))
+              return "a timer";
+            if (std::holds_alternative<StackBuildIdType>(t.v))
+              return "a stack_build_id";
+            // an embedded cpumask is written by kfuncs — bss only (.rodata is frozen after load).
+            if (std::holds_alternative<CpumaskType>(t.v) && g.section != "bss")
+              return "a cpumask";
+            if (const auto *rr = std::get_if<RecordRefType>(&t.v))
+              return special(rr->symbol, depth + 1);
+            if (const auto *at = std::get_if<ArrayType>(&t.v); at && at->element)
+              return ofType(*at->element);
+            return {};
+          };
+          for (const Record &r : s.records_) {
+            if (r.symbol != sym)
+              continue;
+            for (const Field &f : r.fields)
+              if (std::string k = ofType(f.type); !k.empty())
+                return k + " field (\"" + f.name + "\" of record \"" + r.symbol + "\")";
+          }
+          return {};
+        };
+        if (std::string k = special(g.record, 0); !k.empty())
+          return err(where + ": record \"" + g.record + "\" has " + k + "; a " + g.section +
+                     " record global holds integers, integer arrays and nested records only (kptr, spin_lock and timer fields stay in map values; "
+                     "a cpumask field only in a bss record global — the kfuncs write it)");
+        if (Error e = optStrInto(*o, "note", "core.globals", g.note))
+          return std::move(e);
+        s.globals_.push_back(std::move(g));
+        continue;
+      }
       const json::Value *tv = o->get("type");
       if (!tv)
         return err(where + ": needs a type");
+      // {"kind": "kaddr", "struct": S} — a bss global caching an
+      // untrusted kernel address (C's `static struct S *g`: BTF PTR -> STRUCT,
+      // no type tag, a scalar to the verifier). rodata cannot hold one: the
+      // loader does not know kernel addresses.
+      if (const auto *ko = tv->getAsObject(); ko && ko->getString("kind") == StringRef("kaddr")) {
+        if (Error e = requireOnlyKeys(*ko, kKeysGlobalKaddr, where + " type"))
+          return std::move(e);
+        if (g.section != "bss")
+          return err(where + ": a kaddr global goes in bss, not " + g.section +
+                     " (the loader does not know kernel addresses, so a rodata kaddr could only be 0)");
+        auto st = ko->getString("struct");
+        if (!st || st->empty())
+          return err(where + ": a kaddr type needs a \"struct\" name (a void kernel address is not supported)");
+        if (!llvm::any_of(s.kernelTypes_, [&](const KernelType &k) { return k.name == *st; }))
+          return err(where + ": kaddr to \"" + st->str() + "\", which is not declared in core.kernel_types");
+        g.kaddr = st->str();
+        if (Error e = optStrInto(*o, "note", "core.globals", g.note))
+          return std::move(e);
+        s.globals_.push_back(std::move(g));
+        continue;
+      }
       auto t = parseType(*tv, where + " type");
       if (!t)
         return t.takeError();
+      if (std::holds_alternative<KptrType>(t->v))
+        return err(where + ": a kptr global goes in a \"data:<name>\" section, not " + g.section +
+                   " (rodata / bss maps are mmapped, which the kernel refuses for a map with a kptr)");
       const auto *it = std::get_if<IntType>(&t->v);
       if (!it)
         return err(where + ": type must be an int (integer globals only)");
@@ -2567,6 +2972,134 @@ Expected<Schema> Schema::parseJSON(StringRef jsonText) {
       if (Error e = optStrInto(*o, "note", "core.globals", g.note))
         return std::move(e);
       s.globals_.push_back(std::move(g));
+    }
+  }
+
+  // core.ksyms (per-CPU typed ksym VARs) and core.kconfig (kconfig
+  // externs). Both become UND ELF symbols, so names share the ELF namespace.
+  auto symbolTaken = [&](StringRef n) {
+    return llvm::any_of(s.maps_, [&](const Map &m) { return m.symbol == n; }) ||
+           llvm::any_of(s.programs_, [&](const Program &p) { return p.name == n; }) ||
+           llvm::any_of(s.globals_, [&](const Global &g) { return g.name == n; });
+  };
+  auto optWeak = [&](const json::Object &o, StringRef where, bool &out) -> Error {
+    if (const json::Value *wv = o.get("weak")) {
+      auto b = wv->getAsBoolean();
+      if (!b)
+        return err(where + ": \"weak\" must be a boolean");
+      out = *b;
+    }
+    return Error::success();
+  };
+  if (const json::Value *kv = (*coreObj)->get("ksyms")) {
+    const auto *ka = kv->getAsArray();
+    if (!ka)
+      return err("core.ksyms must be an array");
+    StringSet<> names;
+    for (const json::Value &v : *ka) {
+      const auto *o = v.getAsObject();
+      if (!o)
+        return err("core.ksyms: entry must be an object");
+      if (Error e = requireOnlyKeys(*o, kKeysKsym, "core.ksyms"))
+        return std::move(e);
+      KsymVar k;
+      auto name = getStr(*o, "name", "core.ksyms");
+      if (!name)
+        return name.takeError();
+      k.name = name->str();
+      std::string where = "ksym \"" + k.name + "\"";
+      if (!isCIdentifier(k.name))
+        return err("core.ksyms: name \"" + k.name + "\" must be a C identifier (it is a kernel symbol)");
+      if (!names.insert(k.name).second)
+        return err("core.ksyms: duplicate ksym \"" + k.name + "\"");
+      if (symbolTaken(k.name) || k.name == "_license" || StringRef(k.name).starts_with("__ebpf"))
+        return err(where + ": the name is already an ELF symbol of this object (a map, program or global) or reserved");
+      // Only per-CPU VARs : bpf_per_cpu_ptr gives a sized read-only
+      // slot; a plain typed VAR's direct load has another contract (and
+      // cilium's kallsyms address makes it a load from a scalar).
+      const json::Value *pv = o->get("per_cpu");
+      auto pc = pv ? pv->getAsBoolean() : std::nullopt;
+      if (!pc)
+        return err(where + ": needs \"per_cpu\": true (a per-CPU kernel variable)");
+      if (!*pc)
+        return err(where + ": only per-CPU typed ksym variables are supported; a plain typed variable is read differently "
+                           "by the verifier, and cilium's kallsyms address would make its load a load from a number");
+      const json::Value *sv = o->get("slot");
+      if (!sv)
+        return err(where + ": needs a \"slot\" (an integer type, or {\"kind\": \"ptr\", \"struct\": S})");
+      const auto *so = sv->getAsObject();
+      if (so && (so->getString("kind") == StringRef("ptr") || so->getString("kind") == StringRef("struct"))) {
+        if (Error e = requireOnlyKeys(*so, kKeysKsymSlotPtr, where + " slot"))
+          return std::move(e);
+        if (so->getString("kind") != StringRef("ptr"))
+          return err(where + ": slot object must be {\"kind\": \"ptr\", \"struct\": S}; a struct slot (bpf_per_cpu_ptr gives a "
+                             "PTR_TO_BTF_ID) and pointers to pointers are not supported");
+        auto st = so->getString("struct");
+        if (!st || st->empty())
+          return err(where + ": a ptr slot needs a \"struct\" name");
+        if (!llvm::any_of(s.kernelTypes_, [&](const KernelType &t) { return t.name == *st; }))
+          return err(where + ": slot pointer to \"" + st->str() + "\", which is not declared in core.kernel_types");
+        k.slotStruct = st->str();
+      } else {
+        auto t = parseType(*sv, where + " slot");
+        if (!t)
+          return t.takeError();
+        const auto *it = std::get_if<IntType>(&t->v);
+        if (!it || it->endianness != Endianness::Little)
+          return err(where + ": slot must be a little-endian integer (i8..u64) or {\"kind\": \"ptr\", \"struct\": S}");
+        k.slotInt = *it;
+      }
+      if (Error e = optWeak(*o, where, k.weak))
+        return std::move(e);
+      if (Error e = optStrInto(*o, "note", "core.ksyms", k.note))
+        return std::move(e);
+      s.ksyms_.push_back(std::move(k));
+    }
+  }
+  if (const json::Value *cv = (*coreObj)->get("kconfig")) {
+    const auto *ca = cv->getAsArray();
+    if (!ca)
+      return err("core.kconfig must be an array");
+    StringSet<> names;
+    for (const json::Value &v : *ca) {
+      const auto *o = v.getAsObject();
+      if (!o)
+        return err("core.kconfig: entry must be an object");
+      if (Error e = requireOnlyKeys(*o, kKeysKconfig, "core.kconfig"))
+        return std::move(e);
+      KconfigDecl k;
+      auto name = getStr(*o, "name", "core.kconfig");
+      if (!name)
+        return name.takeError();
+      k.name = name->str();
+      std::string where = "kconfig \"" + k.name + "\"";
+      // libbpf's virtual LINUX_* values are loader-made (the kernel version among
+      // them); a program comparing them would replace requirements.
+      StringRef rest = StringRef(k.name);
+      if (!rest.consume_front("CONFIG_") || rest.empty() || !llvm::all_of(rest, [](char c) { return llvm::isAlnum(c) || c == '_'; }))
+        return err(where + ": name must be CONFIG_<letters, digits, _>; libbpf's virtual LINUX_* values are not supported "
+                           "(the loader makes them, and the program would compare kernel versions instead of stating requirements)");
+      if (!names.insert(k.name).second)
+        return err("core.kconfig: duplicate kconfig \"" + k.name + "\"");
+      if (symbolTaken(k.name) || llvm::any_of(s.ksyms_, [&](const KsymVar &x) { return x.name == k.name; }))
+        return err(where + ": the name is already an ELF symbol of this object");
+      auto ty = getStr(*o, "type", where);
+      if (!ty)
+        return ty.takeError();
+      // libbpf 1.7 find_kcfg_type: every one-byte non-bool INT is KCFG_CHAR
+      // (it takes y/n/m as a character), so i8/u8 would not be the integer
+      // kind they spell — write char.
+      static const char *const kTypes[] = {"bool", "tristate", "char", "i16", "i32", "i64", "u16", "u32", "u64"};
+      if (*ty == "i8" || *ty == "u8")
+        return err(where + ": type \"" + ty->str() + "\": libbpf treats every one-byte integer kconfig as char (it accepts y / n / m) — write \"char\"");
+      if (!llvm::is_contained(kTypes, *ty))
+        return err(where + ": type must be bool, tristate, char or i16..u64, got \"" + ty->str() + "\" (string options are not supported)");
+      k.type = ty->str();
+      if (Error e = optWeak(*o, where, k.weak))
+        return std::move(e);
+      if (Error e = optStrInto(*o, "note", "core.kconfig", k.note))
+        return std::move(e);
+      s.kconfigs_.push_back(std::move(k));
     }
   }
 
@@ -3117,6 +3650,10 @@ std::string Schema::serializeJSON() const {
           os << "}";
         } else if (f.strPtr) {
           os << "{\"kind\": \"strptr\"}";
+        } else if (f.voidPtr) {
+          os << "{\"kind\": \"ptr\"}";
+        } else if (f.isEnum) {
+          os << "{\"kind\": \"enum\", \"bits\": " << f.type.bits << "}";
         } else if (f.arrayCount) {
           ArrayType at;
           at.element = std::make_unique<Type>(Type{f.type});
@@ -3165,6 +3702,9 @@ std::string Schema::serializeJSON() const {
       if (bpfmlir::structOpsDataByKey(m.structOps->type, "name")) { // Types without a name DATA row, such as bpf_dummy_ops, omit name.
         os << ", \"name\": "; emitStr(os, m.structOps->name);
       }
+      for (const ::ebpf::Map::StructOps::Data &d : m.structOps->data) { // Integer DATA only when present, in table order.
+        os << ", "; emitStr(os, d.member); os << ": " << d.value;
+      }
       os << ", \"ops\": [";
       for (auto [j, q] : llvm::enumerate(m.structOps->ops)) {
         os << (j ? ", " : "") << "{\"member\": "; emitStr(os, q.member);
@@ -3175,6 +3715,8 @@ std::string Schema::serializeJSON() const {
     if (!m.inner.empty()) { // Emit inner templates only when present.
       os << "        \"inner\": "; emitStr(os, m.inner); os << ",\n";
     }
+    if (m.kind == MapKind::Arena) // arena map_extra (u64, exact decimal), only for arena.
+      os << "        \"map_extra\": " << m.mapExtra << ",\n";
     os << "        \"note\": "; emitStr(os, m.note); os << "\n";
     os << "      }" << (i + 1 < userMaps.size() ? "," : "") << "\n";
   }
@@ -3216,6 +3758,8 @@ std::string Schema::serializeJSON() const {
           os << "{\"kind\": \"struct\", \"name\": ";
           emitStr(os, StringRef(aa).drop_back());
           os << ", \"nullable\": true}";
+        } else if (isEnumArgSpelling(aa)) { // struct_ops enum argument (width only).
+          os << "{\"kind\": \"enum\", \"bits\": " << StringRef(aa).drop_front(5) << "}";
         } else if (isTPArgScalarSpelling(aa)) { // Naturally aligned little-endian integer argument.
           IntType it;
           it.bits = std::stoi(aa.substr(1));
@@ -3229,8 +3773,9 @@ std::string Schema::serializeJSON() const {
       }
       os << "],\n";
     }
-    if (p.nargs >= 0) { // Omit absent return signatures to preserve canonical output.
-      os << "        \"nargs\": " << p.nargs << ",\n";
+    if (p.nargs >= 0 || p.hasRet) { // Omit absent return signatures to preserve canonical output.
+      if (p.nargs >= 0) // fexit may omit nargs (ctx.func_ret / funcret).
+        os << "        \"nargs\": " << p.nargs << ",\n";
       os << "        \"ret\": ";
       if (p.retVoid) // Void struct_ops member.
         os << "\"void\"";
@@ -3285,6 +3830,8 @@ std::string Schema::serializeJSON() const {
       os << "        \"semaphore\": "; emitStr(os, p.usdtSemaphore); os << ",\n";
       os << "        \"max_points\": " << p.usdtMaxPoints << ",\n";
     }
+    if (p.sleepable) // struct_ops only; false is the omitted default.
+      os << "        \"sleepable\": true,\n";
     if (!p.fields.empty()) { // Tracepoint only; omit when absent.
       os << "        \"fields\": [";
       for (auto [j, f] : llvm::enumerate(p.fields)) {
@@ -3306,8 +3853,11 @@ std::string Schema::serializeJSON() const {
     os << "        \"note\": "; emitStr(os, p.note); os << "\n";
     os << "      }" << (i + 1 < programs_.size() ? "," : "") << "\n";
   }
-  if (globals_.empty()) { // Omit absent globals to preserve canonical output.
-    os << "    ]\n";
+  // Omit absent globals / ksyms / kconfig to preserve canonical output. Each
+  // present array closes the previous one with "],".
+  bool moreAfterGlobals = !ksyms_.empty() || !kconfigs_.empty();
+  if (globals_.empty()) {
+    os << (moreAfterGlobals ? "    ],\n" : "    ]\n");
   } else {
     os << "    ],\n";
     os << "    \"globals\": [\n";
@@ -3315,9 +3865,46 @@ std::string Schema::serializeJSON() const {
       os << "      {\n";
       os << "        \"name\": "; emitStr(os, g.name); os << ",\n";
       os << "        \"section\": "; emitStr(os, g.section); os << ",\n";
-      os << "        \"type\": "; emitType(os, Type{g.type}, 8); os << ",\n";
+      if (g.isRecord()) { // data globals are records; rodata / bss record globals.
+        os << "        \"record\": "; emitStr(os, g.record); os << ",\n";
+      } else if (g.isKaddr()) { // a bss global holding an untrusted kernel address.
+        os << "        \"type\": {\"kind\": \"kaddr\", \"struct\": "; emitStr(os, g.kaddr); os << "},\n";
+      } else if (g.isKptr()) { // data:<name> globals are kptrs.
+        os << "        \"type\": "; emitType(os, Type{KptrType{g.kptr}}, 8); os << ",\n";
+      } else {
+        os << "        \"type\": "; emitType(os, Type{g.type}, 8); os << ",\n";
+      }
       os << "        \"note\": "; emitStr(os, g.note); os << "\n";
       os << "      }" << (i + 1 < globals_.size() ? "," : "") << "\n";
+    }
+    os << (moreAfterGlobals ? "    ],\n" : "    ]\n");
+  }
+  if (!ksyms_.empty()) {
+    os << "    \"ksyms\": [\n";
+    for (auto [i, k] : llvm::enumerate(ksyms_)) {
+      os << "      {\n";
+      os << "        \"name\": "; emitStr(os, k.name); os << ",\n";
+      os << "        \"per_cpu\": true,\n";
+      if (k.slotStruct.empty()) {
+        os << "        \"slot\": "; emitType(os, Type{k.slotInt}, 8); os << ",\n";
+      } else {
+        os << "        \"slot\": {\"kind\": \"ptr\", \"struct\": "; emitStr(os, k.slotStruct); os << "},\n";
+      }
+      os << "        \"weak\": " << (k.weak ? "true" : "false") << ",\n";
+      os << "        \"note\": "; emitStr(os, k.note); os << "\n";
+      os << "      }" << (i + 1 < ksyms_.size() ? "," : "") << "\n";
+    }
+    os << (!kconfigs_.empty() ? "    ],\n" : "    ]\n");
+  }
+  if (!kconfigs_.empty()) {
+    os << "    \"kconfig\": [\n";
+    for (auto [i, k] : llvm::enumerate(kconfigs_)) {
+      os << "      {\n";
+      os << "        \"name\": "; emitStr(os, k.name); os << ",\n";
+      os << "        \"type\": "; emitStr(os, k.type); os << ",\n";
+      os << "        \"weak\": " << (k.weak ? "true" : "false") << ",\n";
+      os << "        \"note\": "; emitStr(os, k.note); os << "\n";
+      os << "      }" << (i + 1 < kconfigs_.size() ? "," : "") << "\n";
     }
     os << "    ]\n";
   }

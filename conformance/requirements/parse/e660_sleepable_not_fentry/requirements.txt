@@ -1,0 +1,5 @@
+ebpf-requirements 32
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	tracing	26
+attach	p	trace_fexit	do_sys_poll
+sleepable	p

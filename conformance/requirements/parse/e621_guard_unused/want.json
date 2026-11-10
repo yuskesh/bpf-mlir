@@ -1,0 +1,5 @@
+{
+  "accept": false,
+  "row": "guard",
+  "rule": "guard_unused"
+}

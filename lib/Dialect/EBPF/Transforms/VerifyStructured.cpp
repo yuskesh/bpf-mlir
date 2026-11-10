@@ -45,7 +45,28 @@ using bpfmlir::CheckVerdict;
 namespace {
 
 bool isMaybe(Type t) { return isa<MaybeRefType, MaybeReservationType, SockRefOrNullType>(t); }
-bool isChecked(Type t) { return isa<BorrowedType, ReservationType, ElemType, SockRefType>(t); }
+bool isChecked(Type t) { return isa<BorrowedType, ReservationType, ElemType, SockRefType, ArenaWindowType, MetaWindowType>(t); }
+
+// the one block argument a meta window may be — the sole argument of the
+// in-range block of a meta.check_br that is the block's only predecessor.
+bool isMetaWindowEntry(Block &blk, BlockArgument arg) {
+  if (!isa<MetaWindowType>(arg.getType()) || blk.getNumArguments() != 1)
+    return false;
+  Block *pred = blk.getSinglePredecessor();
+  auto br = pred ? dyn_cast<MetaCheckBrOp>(pred->getTerminator()) : MetaCheckBrOp();
+  return br && br.getInRange() == &blk && br.getOutOfRange() != &blk;
+}
+
+// the one block argument an arena window may be — the sole argument of
+// the in-range block of an arena.check_br that is the block's only predecessor
+// (③ creates the window address there; any other transport is rejected).
+bool isArenaWindowEntry(Block &blk, BlockArgument arg) {
+  if (!isa<ArenaWindowType>(arg.getType()) || blk.getNumArguments() != 1)
+    return false;
+  Block *pred = blk.getSinglePredecessor();
+  auto br = pred ? dyn_cast<ArenaCheckBrOp>(pred->getTerminator()) : ArenaCheckBrOp();
+  return br && br.getInRange() == &blk && br.getOutOfRange() != &blk;
+}
 
 // elem.at must sit solely below the true edge of matching ref/field/index
 // elem.in_range. Its result is restricted to elem.load/store. For multiple
@@ -57,6 +78,18 @@ CheckVerdict checkElemAt(ElemAtOp at) {
                         "ebpf.elem.in_range of the same reference, field and index"
                      << (at.getIndices().size() > 1 ? " (for every dimension, in order)" : "");
     return CheckVerdict::Rejected;
+  }
+  // a borrowed record element is used by the ref ops and calls, never
+  // by a terminator (a branch operand would carry it past the checked edge).
+  // The placement check above is unchanged.
+  if (isa<BorrowedType>(at.getResult().getType())) {
+    for (Operation *user : at.getResult().getUsers())
+      if (user->hasTrait<OpTrait::IsTerminator>()) {
+        at.emitOpError() << "a borrowed record element must not be passed to a terminator, but it is used by '"
+                         << user->getName() << "'";
+        return CheckVerdict::Rejected;
+      }
+    return CheckVerdict::Verified;
   }
   for (Operation *user : at.getResult().getUsers())
     if (!isa<ElemLoadOp, ElemStoreOp>(user)) {
@@ -175,12 +208,25 @@ CheckVerdict checkCheckedUses(AssumePresentOp a) {
 
   // Present kernel pointers may be used only by supported kernel-pointer operations.
   if (isa<KPtrType>(v.getType())) {
+    // kfield.strncmp's operand origin (a trusted pointer only —  D1) is the op verifier's (KFieldStrncmpOp::verify).
     for (Operation *user : v.getUsers())
-      if (!isa<KFieldLoadOp, KFieldPtrOp, KFieldCopyOp, KPtrAddrOp, KernelReadStrOp, SeqWriteOp, KFieldStoreOp, StorageGetOp, StorageDeleteOp>(
-              user)) { // Includes field traversal/copy/string reads, seq_file writes, field stores and storage owners.
+      if (!isa<KFieldLoadOp, KFieldPtrOp, KFieldCopyOp, KPtrAddrOp, KernelDPathOp, KernelReadStrOp, KernelReadStrBufOp, SeqWriteOp, KFieldStoreOp, StorageGetOp, StorageDeleteOp,
+               ScxDsqInsertOp, ScxDsqInsertVtimeOp, ScxSelectCpuDflOp, ScxTaskSetDsqVtimeOp, ScxExitInfoOp, ScxTaskCpuOp, ScxTaskSetSliceOp,
+               ScxPickIdleCpuOp, KfuncCallOp, KFieldStrncmpOp>(
+              user)) { // Includes field traversal/copy/string reads, seq_file writes, field stores, storage owners and sched_ext task kfuncs; adds kfield.strncmp.
         a.emitOpError() << "a checked " << v.getType()
-                        << " may only be used by ebpf.kfield.load / ebpf.kfield.ptr / ebpf.kfield.copy / ebpf.kernel.read_str / ebpf.kfield.store / "
-                           "ebpf.seq.write / ebpf.storage.get / ebpf.storage.delete, but it is used by '"
+                        << " may only be used by ebpf.kfield.load / ebpf.kfield.ptr / ebpf.kfield.copy / ebpf.kfield.strncmp / ebpf.kernel.read_str / ebpf.kfield.store / "
+                           "ebpf.seq.write / ebpf.storage.get / ebpf.storage.delete / the ebpf.scx.* task ops / ebpf.scx.exit_info / ebpf.kfunc.call, but it is used by '"
+                        << user->getName() << "'";
+        return CheckVerdict::Rejected;
+      }
+    return CheckVerdict::Verified;
+  }
+  // present RCU pointers (MEM_RCU, untrusted) reach only scx.task_cpu (KF_RCU) and field reads.
+  if (isa<RcuPtrType>(v.getType())) {
+    for (Operation *user : v.getUsers())
+      if (!isa<KFieldLoadOp, ScxTaskCpuOp, KfuncCallOp>(user)) { // KF_RCU kfunc arguments (the kfunc.call verifier checks the flag).
+        a.emitOpError() << "a checked " << v.getType() << " may only be used by ebpf.kfield.load / ebpf.scx.task_cpu / a KF_RCU ebpf.kfunc.call, but it is used by '"
                         << user->getName() << "'";
         return CheckVerdict::Rejected;
       }
@@ -190,7 +236,8 @@ CheckVerdict checkCheckedUses(AssumePresentOp a) {
     // verification separately owns consumption counts.
   if (isa<KRefType>(v.getType())) {
     for (Operation *user : v.getUsers())
-      if (!isa<KfuncCallOp, KFieldLoadOp, KPtrAddrOp, KPtrXchgOp>(user)) { // addr is a non-consuming borrow.
+      if (!isa<KfuncCallOp, KFieldLoadOp, KPtrAddrOp, KPtrXchgOp, GlobalKPtrXchgOp, KFieldPtrOp, ScxTaskCpuOp>(user) &&
+          !(isa<UserCopyTaskOp>(user) && cast<UserCopyTaskOp>(user).getTask() == v)) { // the task operand only. // addr is a non-consuming borrow (global.kptr_xchg takes it; kfield.ptr and scx.task_cpu read through it).
         a.emitOpError() << "a checked " << v.getType() << " may only be used by ebpf.kfunc.call / ebpf.kfield.load, but it is used by '"
                         << user->getName() << "'";
         return CheckVerdict::Rejected;
@@ -200,12 +247,12 @@ CheckVerdict checkCheckedUses(AssumePresentOp a) {
   for (Operation *user : v.getUsers()) {
     // Checked references may enter calls; callees cannot return pointers, so no escape.
     bool allowed =
-        isRes ? isa<RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, UserReadStrOp, UserReadOp, KFieldCopyOp, TpFieldCopyOp, KernelReadStrOp, RingbufSubmitOp,
+        isRes ? isa<RingbufStoreFieldOp, RingbufStoreRecordOp, TaskCommOp, CtxStackOp, KernelDPathOp, StrSnprintfOp, UserReadStrOp, UserCopyOp, UserCopyTaskOp, UserReadOp, KFieldCopyOp, TpFieldCopyOp, KernelReadStrOp, RingbufSubmitOp,
                     RingbufDiscardOp>(user) // kfield.copy and kernel.read_str destinations.
-              : isa<RefLoadOp, RefStoreOp, RefAtomicAddOp, RefFieldLoadOp, RefFieldStoreOp, RefFieldAtomicAddOp, CallOp,
+              : isa<RefLoadOp, RefStoreOp, RefAtomicAddOp, RefFieldLoadOp, RefFieldStoreOp, RefFieldAtomicAddOp, RefFieldCmpxchgOp, RefFieldAtomicOrOp, RefFieldAddrOp, CallOp,
                     ElemInRangeOp, ElemAtOp, ElemMaskOp, SpinLockOp, SpinUnlockOp, // Expanded lock/unlock and elem.mask.
-                    TimerInitOp, TimerSetCallbackOp, TimerStartOp, // Timer helpers receive a timer within the value.
-                    KFieldCopyOp, TpFieldCopyOp, MapInnerOp, KPtrXchgOp>(user); // Destination records, inner-map handles and kptr fields.
+                    TimerInitOp, TimerSetCallbackOp, TimerStartOp, TimerCancelOp, // Timer helpers receive a timer within the value.
+                    KFieldCopyOp, TpFieldCopyOp, MapInnerOp, KPtrXchgOp, KPtrLoadRcuOp>(user); // Destination records, inner-map handles and kptr fields.
     if (!allowed) {
       a.emitOpError() << "a checked " << v.getType() << " may only be used by "
                       << (isRes ? "ebpf.ringbuf.{store_field,store_record,submit,discard}, ebpf.task.comm, ebpf.user.read_str, ebpf.kfield.copy or "
@@ -367,6 +414,29 @@ CheckVerdict checkPacketInvalidation(Operation *prog) {
       }
     }
   });
+  // the meta windows follow the same rule — every invalidator the shared
+  // predicate knows (adjust_head / adjust_tail / adjust_meta / tail_call.try / seg6 …)
+  // on a path from the check to a meta_store / meta_load rejects it.
+  prog->walk([&](MetaCheckBrOp mk) {
+    Block *in = mk.getInRange();
+    Value w = in->getArgument(0);
+    for (Operation *use : w.getUsers()) {
+      if (!isa<MetaStoreOp, MetaLoadOp>(use))
+        continue;
+      WindowPath path(in, use, WindowPathKind::MayExecute, UseBlockOps::BeforeUse);
+      for (Operation *h : invalidators) {
+        if (path.contains(h)) {
+          InFlightDiagnostic d = use->emitOpError()
+                                 << "uses a meta window that '" << h->getName()
+                                 << "' may have invalidated (a path from the ebpf.xdp.meta_check to this use passes through it; "
+                                    "the helper invalidates packet pointers whether it succeeds or fails — check the metadata again after it)";
+          d.attachNote(h->getLoc()) << "the packet pointers are invalidated here";
+          v = CheckVerdict::Rejected;
+          break;
+        }
+      }
+    }
+  });
   return v;
 }
 
@@ -381,14 +451,16 @@ struct EBPFVerifyStructuredPass
 
     // Verify subprogram bodies like program bodies.
     module.walk([&](Operation *prog) {
-      // Include bpf_loop callback bodies.
-      if (!isa<ProgramOp, SubprogramOp, LoopCallbackOp>(prog))
+      // Include bpf_loop callback bodies. and timer callback bodies — a
+      // sched_ext_ops owner's callback holds checked regions (kref.check,
+      // kptr.check) and closed regions after.
+      if (!isa<ProgramOp, SubprogramOp, LoopCallbackOp, TimerCallbackOp>(prog))
         return;
       prog->walk([&](Operation *op) {
         // Remaining source-stage operations indicate wrong-stage input.
         if (isa<SockRefCheckOp, RefCheckOp, RingbufIfReservedOp, MapAtomicAddOp, YieldOp, LoopOp, LoopYieldOp, IfOp,
-              IfYieldOp, BreakOp, ContinueOp, RefIndexOp, PacketCheckOp, VerdictIfOp, TailCallOp, SpinRegionOp, MapForEachOp,
-              MapForEachYieldOp>(op)) { // map.for_each
+              IfYieldOp, BreakOp, ContinueOp, RefIndexOp, PacketCheckOp, MetaCheckOp, ArenaCheckOp, ArenaAllocOp, ArenaFreeOp, VerdictIfOp, TailCallOp, SpinRegionOp, MapForEachOp,
+              MapForEachYieldOp, TaskFindVmaOp, TaskFindVmaYieldOp>(op)) { // map.for_each, task.find_vma
           op->emitOpError() << "is a stage ① op; run ebpf-expand-regions "
                                "before ebpf-verify-structured";
           tally.add(CheckVerdict::Rejected);
@@ -416,8 +488,8 @@ struct EBPFVerifyStructuredPass
       // dominance. Subprogram entry borrows are different: callers checked them.
       for (Block &blk : prog->getRegion(0))
         for (BlockArgument arg : blk.getArguments())
-          if (isChecked(arg.getType()) &&
-              !((isa<SubprogramOp>(prog) || (isa<LoopCallbackOp>(prog) && cast<LoopCallbackOp>(prog).getForEach())) && blk.isEntryBlock())) { // for_each callback value.
+          if (isChecked(arg.getType()) && !isArenaWindowEntry(blk, arg) && !isMetaWindowEntry(blk, arg) &&
+              !((isa<SubprogramOp, TimerCallbackOp>(prog) || (isa<LoopCallbackOp>(prog) && (cast<LoopCallbackOp>(prog).getForEach() || cast<LoopCallbackOp>(prog).getFindVma()))) && blk.isEntryBlock())) { // for_each callback value; the timer callback's map value (the kernel passes it non-null).
             prog->emitOpError() << "a checked " << arg.getType()
                                << " must not be carried across blocks as a "
                                   "block argument";
@@ -458,7 +530,7 @@ struct EBPFVerifyStructuredPass
                 return;
               std::string name =
                   "@" + callee->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName()).getValue().str();
-              path.push_back(name + (isa<BpfLoopOp>(site) ? " (bpf_loop callback)" : isa<ForEachMapElemOp>(site) ? " (for_each_map_elem callback)" : ""));
+              path.push_back(name + (isa<BpfLoopOp>(site) ? " (bpf_loop callback)" : isa<ForEachMapElemOp>(site) ? " (for_each_map_elem callback)" : isa<FindVmaCallOp>(site) ? " (find_vma callback)" : ""));
               if (onPath.count(callee)) {
                 site->emitOpError() << "makes the call / callback graph recursive ("
                                     << llvm::join(path, " -> ") << ")";
@@ -484,6 +556,13 @@ struct EBPFVerifyStructuredPass
       for (auto prog : module.getOps<ProgramOp>()) {
         SmallVector<std::string> path{"@" + prog.getSymName().str()};
         visit(prog, 1, path);
+      }
+      // a timer callback is its own entry frame (as in
+      // ebpf-verify-call-graph): the functions it reaches may hold callback
+      // ebpf.loop bodies that become frames only in ②.
+      for (auto cb : module.getOps<TimerCallbackOp>()) {
+        SmallVector<std::string> path{"@" + cb.getSymName().str()};
+        visit(cb, 1, path);
       }
     }
 

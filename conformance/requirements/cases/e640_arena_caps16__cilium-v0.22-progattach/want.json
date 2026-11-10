@@ -1,0 +1,12 @@
+{
+  "result": "target_rejected",
+  "unmet": [
+    {
+      "kind": "arena_loader_unknown",
+      "program": "",
+      "name": "ar",
+      "id": 0,
+      "blocks_load": true
+    }
+  ]
+}

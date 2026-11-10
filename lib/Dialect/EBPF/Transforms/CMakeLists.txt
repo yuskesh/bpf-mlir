@@ -11,11 +11,16 @@ add_library(MLIREBPFTransforms STATIC
   TargetProfile.cpp
   VerifyTargetLegality.cpp
   VerifyCallGraph.cpp
+  CallContexts.cpp
+  VerifyCallContexts.cpp
   ExpandRegions.cpp
   VerifyStructured.cpp
+  ReuseDominatedLookup.cpp
   EBPFToBPFABI.cpp
+  ScalarHelperLowering.cpp
   PrintSemanticFacts.cpp
   WarnNonrootIndex.cpp
+  WarnSharedRMW.cpp
   Pipeline.cpp)
 add_dependencies(MLIREBPFTransforms MLIREBPFTransformsIncGen)
 target_link_libraries(MLIREBPFTransforms PUBLIC

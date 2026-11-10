@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 #include "bpf-mlir/Dialect/BPFABI/KernelABI.h"
 #include "bpf-mlir/Support/ProgramKinds.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 using namespace mlir;
 using namespace mlir::bpfabi;
@@ -14,6 +16,15 @@ namespace {
 constexpr HelperABI kHelpers[] = {
 #define BPFABI_HELPER(name, id, nargs, ret, nullable)                          \
   {name, id, nargs, ret, nullable},
+#include "KernelABITable.inc"
+};
+
+struct VariadicHelperABI {
+  llvm::StringLiteral name;
+  unsigned minArgs, maxArgs;
+};
+constexpr VariadicHelperABI kVariadicHelpers[] = {
+#define BPFABI_HELPER_VARIADIC(name, minArgs, maxArgs) {name, minArgs, maxArgs},
 #include "KernelABITable.inc"
 };
 
@@ -87,6 +98,12 @@ constexpr KindABI kPktInval[] = {
 #include "KernelABITable.inc"
 };
 
+// GPL-only helpers (helpergpl).
+constexpr KindABI kHelperGPL[] = {
+#define BPFABI_HELPER_GPL(name, id) {name, id},
+#include "KernelABITable.inc"
+};
+
 // bpf_perf_event_output current_cpu flag.
 constexpr KindABI kPerfFlags[] = {
 #define BPFABI_PERF_FLAG(name, value) {name, value},
@@ -108,6 +125,62 @@ constexpr KindABI kStorageFlags[] = {
 // bpf_sk_assign sk_lookup replace/no_reuseport flags.
 constexpr KindABI kSkLookupFlags[] = {
 #define BPFABI_SK_LOOKUP_FLAG(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+
+// bpf_l4_csum_replace flags pseudo_hdr/mark_mangled_0.
+constexpr KindABI kCsumFlags[] = {
+#define BPFABI_CSUM_FLAG(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+
+// bpf_skb_adjust_room modes net/mac.
+constexpr KindABI kAdjRoomModes[] = {
+#define BPFABI_ADJ_ROOM_MODE(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+
+// bpf_fib_lookup flags (direct) and struct bpf_fib_lookup views.
+constexpr KindABI kHeaderStarts[] = {
+#define BPFABI_HEADER_START(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+constexpr KindABI kCsumLevels[] = {
+#define BPFABI_CSUM_LEVEL(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+constexpr KindABI kFibFlags[] = {
+#define BPFABI_FIB_FLAG(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+constexpr KindABI kTunnelFlags[] = {
+#define BPFABI_TUNNEL_FLAG(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+constexpr mlir::bpfabi::TunnelFieldABI kTunnelFields[] = {
+#define BPFABI_TUNNEL_FIELD(view, name, offset, elem, count) {view, name, offset, elem, count},
+#include "KernelABITable.inc"
+};
+constexpr mlir::bpfabi::SockOptABI kSockOptions[] = {
+#define BPFABI_SOCKOPT(name, level, optname, get) {name, level, optname, get},
+#include "KernelABITable.inc"
+};
+constexpr mlir::bpfabi::SockOptNameABI kSockOptionNames[] = {
+#define BPFABI_SOCKOPT_NAME(name, level, optname) {name, level, optname},
+#include "KernelABITable.inc"
+};
+constexpr mlir::bpfabi::FibFieldABI kFibFields[] = {
+#define BPFABI_FIB_FIELD(name, offset, elem, count) {name, offset, elem, count},
+#include "KernelABITable.inc"
+};
+
+// bpf_sk_lookup_tcp / _udp netns value and struct bpf_sock_tuple leaves.
+constexpr KindABI kSkLookupNetns[] = {
+#define BPFABI_SK_LOOKUP_NETNS(name, value) {name, value},
+#include "KernelABITable.inc"
+};
+constexpr mlir::bpfabi::SockTupleFieldABI kSockTupleFields[] = {
+#define BPFABI_SOCK_TUPLE_FIELD(family, name, offset, elem, count) {family, name, offset, elem, count},
 #include "KernelABITable.inc"
 };
 
@@ -216,6 +289,14 @@ const HelperABI *mlir::bpfabi::lookupHelper(llvm::StringRef name) {
   return nullptr;
 }
 
+std::pair<unsigned, unsigned>
+mlir::bpfabi::helperArgumentRange(const HelperABI &helper) {
+  for (const auto &range : kVariadicHelpers)
+    if (range.name == helper.name)
+      return {range.minArgs, range.maxArgs};
+  return {helper.numArgs, helper.numArgs};
+}
+
 std::optional<PacketCtxABI>
 mlir::bpfabi::lookupPacketCtx(llvm::StringRef programKind) {
   // ProgramKinds.def PACKET selects bounds fields: data/data_end for xdp and
@@ -306,8 +387,19 @@ bool mlir::bpfabi::isPacketInvalidatingHelper(llvm::StringRef name) {
   return lookupKind(kPktInval, name).has_value();
 }
 
+bool mlir::bpfabi::isGPLOnlyHelper(llvm::StringRef name) {
+  return lookupKind(kHelperGPL, name).has_value();
+}
+
 std::optional<int64_t> mlir::bpfabi::lookupClockId(llvm::StringRef name) {
   return lookupKind(kClockIds, name);
+}
+
+std::string mlir::bpfabi::clockIdNames() {
+  std::string out;
+  for (const KindABI &k : kClockIds)
+    out += (out.empty() ? "\"" : " / \"") + k.name.str() + "\"";
+  return out;
 }
 
 std::optional<int64_t> mlir::bpfabi::lookupPerfFlag(llvm::StringRef name) {
@@ -324,6 +416,102 @@ std::optional<int64_t> mlir::bpfabi::lookupStorageFlag(llvm::StringRef name) {
 
 std::optional<int64_t> mlir::bpfabi::lookupSkLookupFlag(llvm::StringRef name) {
   return lookupKind(kSkLookupFlags, name);
+}
+
+std::optional<int64_t> mlir::bpfabi::lookupCsumFlag(llvm::StringRef name) {
+  return lookupKind(kCsumFlags, name);
+}
+
+std::optional<int64_t> mlir::bpfabi::lookupAdjRoomMode(llvm::StringRef name) {
+  return lookupKind(kAdjRoomModes, name);
+}
+std::optional<int64_t> mlir::bpfabi::lookupHeaderStart(llvm::StringRef name) {
+  return lookupKind(kHeaderStarts, name);
+}
+std::optional<int64_t> mlir::bpfabi::lookupCsumLevel(llvm::StringRef name) {
+  return lookupKind(kCsumLevels, name);
+}
+
+std::optional<int64_t> mlir::bpfabi::lookupFibFlag(llvm::StringRef name) {
+  if (name == "none")
+    return 0;
+  return lookupKind(kFibFlags, name);
+}
+
+llvm::ArrayRef<mlir::bpfabi::FibFieldABI> mlir::bpfabi::fibFields() { return kFibFields; }
+std::optional<int64_t> mlir::bpfabi::lookupSkLookupNetns(llvm::StringRef name) {
+  return lookupKind(kSkLookupNetns, name);
+}
+llvm::ArrayRef<mlir::bpfabi::SockTupleFieldABI> mlir::bpfabi::sockTupleFields() { return kSockTupleFields; }
+
+std::optional<int64_t> mlir::bpfabi::lookupTunnelFlag(llvm::StringRef name) {
+  if (name == "none")
+    return 0;
+  return lookupKind(kTunnelFlags, name);
+}
+
+std::optional<int64_t> mlir::bpfabi::tunnelFlagsValue(llvm::StringRef spec, bool forSet) {
+  if (spec == "none")
+    return 0;
+  static const llvm::StringLiteral kGet[] = {"tuninfo_ipv6", "tuninfo_flags"};
+  static const llvm::StringLiteral kSet[] = {"tuninfo_ipv6", "zero_csum_tx", "dont_fragment", "seq_number",
+                                              "no_tunnel_key"};
+  llvm::ArrayRef<llvm::StringLiteral> allowed = forSet ? llvm::ArrayRef<llvm::StringLiteral>(kSet)
+                                                       : llvm::ArrayRef<llvm::StringLiteral>(kGet);
+  int64_t value = 0;
+  llvm::SmallVector<llvm::StringRef> seen;
+  llvm::SmallVector<llvm::StringRef> parts;
+  spec.split(parts, ',');
+  for (llvm::StringRef p : parts) {
+    if (!llvm::is_contained(allowed, p) || llvm::is_contained(seen, p))
+      return std::nullopt;
+    std::optional<int64_t> v = lookupKind(kTunnelFlags, p);
+    if (!v)
+      return std::nullopt;
+    seen.push_back(p);
+    value |= *v;
+  }
+  return value;
+}
+
+bool mlir::bpfabi::tunnelFlagsIpv6(llvm::StringRef spec) {
+  llvm::SmallVector<llvm::StringRef> parts;
+  spec.split(parts, ',');
+  return llvm::is_contained(parts, "tuninfo_ipv6");
+}
+
+llvm::ArrayRef<mlir::bpfabi::TunnelFieldABI> mlir::bpfabi::tunnelFields() { return kTunnelFields; }
+
+llvm::ArrayRef<mlir::bpfabi::SockOptABI> mlir::bpfabi::sockOptions() { return kSockOptions; }
+
+const mlir::bpfabi::SockOptABI *mlir::bpfabi::lookupSockOption(llvm::StringRef name) {
+  for (const SockOptABI &row : kSockOptions)
+    if (row.Name == name)
+      return &row;
+  return nullptr;
+}
+
+llvm::ArrayRef<mlir::bpfabi::SockOptNameABI> mlir::bpfabi::sockOptionNames() { return kSockOptionNames; }
+
+const mlir::bpfabi::SockOptNameABI *mlir::bpfabi::lookupSockOptionName(llvm::StringRef name) {
+  for (const SockOptNameABI &row : kSockOptionNames)
+    if (row.Name == name)
+      return &row;
+  return nullptr;
+}
+
+bool mlir::bpfabi::isFirstMemberOf(llvm::StringRef from, llvm::StringRef to) {
+  struct Pair {
+    llvm::StringLiteral From, To;
+  };
+  static constexpr Pair kFirstMembers[] = {
+#define BPFABI_FIRST_MEMBER(outer, inner) {outer, inner},
+#include "KernelABITable.inc"
+  };
+  for (const Pair &p : kFirstMembers)
+    if (p.From == from && p.To == to)
+      return true;
+  return false;
 }
 
 std::optional<int64_t> mlir::bpfabi::lookupBpfCmd(llvm::StringRef name) {
@@ -418,6 +606,24 @@ const KfuncABI *mlir::bpfabi::lookupKfunc(llvm::StringRef name) {
       return &k;
   return nullptr;
 }
+namespace {
+constexpr ScxEnumABI kScxEnums[] = {
+#define BPFABI_SCX_ENUM(name, enumName, value) {name, enumName, value},
+#include "KernelABITable.inc"
+};
+} // namespace
+const ScxEnumABI *mlir::bpfabi::lookupScxEnum(llvm::StringRef name) {
+  for (const ScxEnumABI &e : kScxEnums)
+    if (e.name == name)
+      return &e;
+  return nullptr;
+}
+std::string mlir::bpfabi::listScxEnums() {
+  std::string out;
+  for (const ScxEnumABI &e : kScxEnums)
+    out += (out.empty() ? "" : ", ") + e.name.str();
+  return out;
+}
 // struct_ops members from ABI structopsmember rows.
 namespace {
 constexpr StructOpsMemberABI kStructOpsMembers[] = {
@@ -437,10 +643,14 @@ bool mlir::bpfabi::hasStructOpsType(llvm::StringRef type) {
       return true;
   return false;
 }
-std::string mlir::bpfabi::listKfuncs() {
+llvm::ArrayRef<mlir::bpfabi::KfuncABI> mlir::bpfabi::kfuncTable() { return kKfuncs; }
+std::string mlir::bpfabi::listKfuncs(bool genericCandidates) {
   std::string out;
-  for (const KfuncABI &k : kKfuncs)
+  for (const KfuncABI &k : kKfuncs) {
+    if (genericCandidates && (k.hasFlag("arena_arg2") || k.hasFlag("arena_ret")))
+      continue;
     out += (out.empty() ? "\"" : ", \"") + k.name.str() + "\"";
+  }
   return out;
 }
 
@@ -493,4 +703,17 @@ std::string mlir::bpfabi::listCtxAccess(llvm::StringRef progType, llvm::StringRe
       out += "\"" + a.field.str() + "\" (" + std::to_string(a.bytes) + " bytes)";
     }
   return out.empty() ? "(none)" : out;
+}
+
+// only xdp has a data_meta field in the packet context (xdp_md); the
+// offsets come from the UAPI ctxfield rows, not from a constant here.
+std::optional<mlir::bpfabi::MetaCtxABI>
+mlir::bpfabi::lookupMetaCtx(llvm::StringRef programKind) {
+  if (programKind != "xdp")
+    return std::nullopt;
+  const StructFieldABI *meta = lookupStructField("xdp_md", "data_meta");
+  const StructFieldABI *data = lookupStructField("xdp_md", "data");
+  if (!meta || !data || meta->bytes != data->bytes)
+    return std::nullopt;
+  return MetaCtxABI{meta->offset, data->offset, meta->bytes};
 }

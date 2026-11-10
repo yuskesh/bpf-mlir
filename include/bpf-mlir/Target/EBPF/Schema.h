@@ -95,8 +95,17 @@ struct KptrType {
   bool operator==(const KptrType &o) const { return structName == o.structName; }
 };
 
+// an embedded struct bpf_cpumask (LAVD's cpdom_cpumask[i]). The size is
+// required — the kernel writes its own sizeof(struct bpf_cpumask), checked at
+// load by the requirements row kstructsize; BTF is the opaque local
+// __ebpf_cpumask_<size> { u8 __opaque[size] }.
+struct CpumaskType {
+  uint64_t size = 0;
+  bool operator==(const CpumaskType &o) const { return size == o.size; }
+};
+
 struct Type {
-  std::variant<IntType, ArrayType, RecordRefType, SpinLockType, TimerType, StackBuildIdType, KptrType> v;
+  std::variant<IntType, ArrayType, RecordRefType, SpinLockType, TimerType, StackBuildIdType, KptrType, CpumaskType> v;
   bool operator==(const Type &o) const { return v == o.v; }
   bool operator!=(const Type &o) const { return !(*this == o); }
 };
@@ -154,6 +163,11 @@ inline const char *mapKindSpelling(MapKind k) {
 // Shared spelling source for serialization and schema verification.
 const char *mapKindName(MapKind k);
 
+// arena pages are x86_64 4096-byte pages; max_entries (pages) is at most
+// 4 GiB / 4096 so that an arena never exceeds one 32-bit user-address window.
+inline constexpr uint64_t kArenaPageSize = 4096;
+inline constexpr uint64_t kArenaMaxPages = (uint64_t(1) << 32) / kArenaPageSize;
+
 // Ring buffers remain MapKind::RingBuf despite having no key/value. Do not
 // require key/value for every map kind.
 struct Map {
@@ -183,18 +197,29 @@ struct Map {
       bool operator==(const Op &o) const { return member == o.member && program == o.program; }
     };
     std::vector<Op> ops;
-    bool operator==(const StructOps &o) const { return type == o.type && name == o.name && ops == o.ops; }
+    // Integer DATA (StructOpsTypes.def KIND u32 / u64) present in the schema, in
+    // table order. Absent members stay zero and are not emitted.
+    struct Data {
+      std::string member;
+      uint64_t value = 0;
+      bool operator==(const Data &o) const { return member == o.member && value == o.value; }
+    };
+    std::vector<Data> data;
+    bool operator==(const StructOps &o) const { return type == o.type && name == o.name && ops == o.ops && data == o.data; }
   };
   std::optional<StructOps> structOps;
   // array_of_maps/hash_of_maps inner template names another core.maps symbol.
   // It supplies BTF values, not a separate ELF .maps entry. Other kinds are empty.
   std::string inner;
+  // arena user address (BPF_MAP_CREATE map_extra) — required for arena,
+  // rejected for other kinds; zero otherwise.
+  uint64_t mapExtra = 0;
   bool synthesized = false; // Compiler-added USDT spec map, omitted from canonical serialization.
   bool operator==(const Map &o) const {
     return symbol == o.symbol && kind == o.kind && key == o.key &&
            value == o.value && maxEntries == o.maxEntries &&
            flags == o.flags && record == o.record && note == o.note && slots == o.slots && structOps == o.structOps &&
-           inner == o.inner;
+           inner == o.inner && mapExtra == o.mapExtra;
   }
 };
 
@@ -212,6 +237,9 @@ struct Program {
   int64_t nargs = -1;
   IntType ret;
   bool retVoid = false; // struct_ops void return is represented by retsig void.
+  // ret is declared (fexit may omit nargs — the object then reads the return
+  // value with ctx.func_ret and the requirements carry funcret instead of retsig).
+  bool hasRet = false;
   // Probe architecture defines calling convention/pt_regs (x86_64 only).
   // Argument n is one-based and checked against target kprobearg at load time.
   std::string arch;
@@ -256,12 +284,14 @@ struct Program {
   // max_entries bound on point count.
   std::string usdtSemaphore;
   uint64_t usdtMaxPoints = 0;
+  // struct_ops program loaded sleepable (section struct_ops.s).
+  bool sleepable = false;
   std::string note;
   bool operator==(const Program &o) const {
     return name == o.name && kind == o.kind && attachTarget == o.attachTarget && attachTargets == o.attachTargets &&
            maps == o.maps && args == o.args && nargs == o.nargs && (nargs < 0 || (ret == o.ret && retVoid == o.retVoid)) && arch == o.arch &&
            params == o.params && targetParams == o.targetParams && binarySHA256 == o.binarySHA256 && fields == o.fields && usdtSemaphore == o.usdtSemaphore &&
-           usdtMaxPoints == o.usdtMaxPoints && note == o.note;
+           usdtMaxPoints == o.usdtMaxPoints && sleepable == o.sleepable && note == o.note;
   }
   const TpField *field(llvm::StringRef n) const {
     for (const TpField &f : fields)
@@ -281,12 +311,65 @@ struct Program {
 // section/symbol information owns placement.
 struct Global {
   std::string name;
-  std::string section; // "rodata" / "bss"
-  IntType type;
+  std::string section; // "rodata" / "bss" / "data" / "data:<name>"
+  IntType type;        // rodata / bss integer globals only (empty record).
+  std::string record;  // a core.records symbol: data, or rodata / bss (borrowed with ebpf.global.ref).
+  std::string kptr;    // data:<name> only: the kptr's struct (bpf_cpumask).
+  std::string kaddr;   // bss only — an untrusted kernel address of this core.kernel_types struct (8 bytes).
   std::string note;
-  bool operator==(const Global &o) const {
-    return name == o.name && section == o.section && type == o.type && note == o.note;
+  // a "data:<name>" global is a hidden kptr in the compiler's dedicated
+  // ELF section .data.<name> (C's private(name)), never mmapped by loaders.
+  bool isKptr() const { return !kptr.empty(); }
+  // a record global (data, rodata or bss) has a record, not an integer type.
+  bool isRecord() const { return !record.empty(); }
+  bool isKaddr() const { return !kaddr.empty(); }
+  std::string elfSection() const {
+    return llvm::StringRef(section).starts_with("data:") ? ".data." + section.substr(5) : "." + section;
   }
+  bool operator==(const Global &o) const {
+    return name == o.name && section == o.section && type == o.type && record == o.record && kptr == o.kptr && kaddr == o.kaddr &&
+           note == o.note;
+  }
+};
+
+// a per-CPU typed ksym VAR (C's extern T name __ksym [__weak]). The
+// slot is what each CPU's copy holds: an integer, or a one-level pointer to a
+// core.kernel_types struct. bpf_per_cpu_ptr returns the slot's address as
+// read-only memory; the slot's pointer is a plain number to the verifier
+// so the program sees it as an untrusted !ebpf.kaddr.
+struct KsymVar {
+  std::string name;
+  IntType slotInt;        // Used when slotStruct is empty.
+  std::string slotStruct; // Nonempty: the slot is struct slotStruct *.
+  bool weak = false;
+  std::string note;
+  // Requirements spelling (ksymvar row): i8..u64 or ptr:<S>.
+  std::string slotSpelling() const {
+    return slotStruct.empty() ? std::string(slotInt.isSigned ? "i" : "u") + std::to_string(slotInt.bits) : "ptr:" + slotStruct;
+  }
+  uint32_t slotBits() const { return slotStruct.empty() ? slotInt.bits : 64; }
+  bool operator==(const KsymVar &o) const {
+    return name == o.name && slotInt == o.slotInt && slotStruct == o.slotStruct && weak == o.weak && note == o.note;
+  }
+};
+
+// a kconfig extern (C's extern T CONFIG_X __kconfig [__weak]). The
+// loader fills the value from the target's kconfig file at load time; the
+// compiler never knows it. A weak absent option reads 0.
+struct KconfigDecl {
+  std::string name; // CONFIG_<letters, digits, _>.
+  std::string type; // bool / tristate / char / i16..u64 (one-byte ints are char in libbpf).
+  bool weak = false;
+  std::string note;
+  // Width of the value as the program reads it (tristate is enum libbpf_tristate, 4 bytes).
+  uint32_t bits() const {
+    if (type == "bool" || type == "char")
+      return 8;
+    if (type == "tristate")
+      return 32;
+    return static_cast<uint32_t>(std::stoul(type.substr(1)));
+  }
+  bool operator==(const KconfigDecl &o) const { return name == o.name && type == o.type && weak == o.weak && note == o.note; }
 };
 
 // Partial local kernel types declare only accessed CO-RE fields, not the
@@ -300,11 +383,13 @@ struct KernelField {
   std::string ptrTo;    // Nonempty names the pointed-to kernel_types struct.
   uint64_t arrayCount = 0; // Nonzero count describes an array of one-byte integers; type is the element.
   bool strPtr = false;  // Character pointer read only by kernel.read_str; type is unused.
+  bool isEnum = false;  // kernel ENUM field of type.bits (unsigned placeholder; the sign is not a contract).
+  bool voidPtr = false; // void * field ({"kind": "ptr"}), read by kaddr.read as !ebpf.kaddr<"">; type is unused.
   uint64_t offset = 0;  // Parse-computed natural local offset, not the target offset.
   std::string note;
   bool operator==(const KernelField &o) const {
-    return name == o.name && embedded == o.embedded && type == o.type && ptrTo == o.ptrTo && arrayCount == o.arrayCount && strPtr == o.strPtr &&
-           offset == o.offset && note == o.note;
+    return name == o.name && embedded == o.embedded && type == o.type && ptrTo == o.ptrTo && arrayCount == o.arrayCount && strPtr == o.strPtr && isEnum == o.isEnum &&
+           voidPtr == o.voidPtr && offset == o.offset && note == o.note;
   }
 };
 
@@ -525,6 +610,21 @@ public:
         return &g;
     return nullptr;
   }
+  // core.ksyms / core.kconfig, empty when absent.
+  const std::vector<KsymVar> &ksyms() const { return ksyms_; }
+  const KsymVar *ksym(llvm::StringRef name) const {
+    for (const KsymVar &k : ksyms_)
+      if (k.name == name)
+        return &k;
+    return nullptr;
+  }
+  const std::vector<KconfigDecl> &kconfigs() const { return kconfigs_; }
+  const KconfigDecl *kconfig(llvm::StringRef name) const {
+    for (const KconfigDecl &k : kconfigs_)
+      if (k.name == name)
+        return &k;
+    return nullptr;
+  }
   // telemetry
   const std::vector<Signal> &signals() const { return signals_; }
   const std::vector<Clock> &clocks() const { return clocks_; }
@@ -548,6 +648,8 @@ private:
   std::vector<Record> records_;
   std::vector<KernelType> kernelTypes_;
   std::vector<Global> globals_;
+  std::vector<KsymVar> ksyms_;
+  std::vector<KconfigDecl> kconfigs_;
   std::vector<Signal> signals_;
   std::vector<Clock> clocks_;
   std::vector<ValueMap> valueMaps_;
@@ -560,6 +662,13 @@ private:
 inline bool isTPArgScalarSpelling(llvm::StringRef s) {
   return s == "-" || s == "i8" || s == "u8" || s == "i16" || s == "u16" || s == "i32" || s == "u32" || s == "i64" ||
          s == "u64";
+}
+
+// struct_ops enum arguments carry only the BTF ENUM / ENUM64 width (8..64
+// bits) as enum:<bits>; the ':' keeps the spelling apart from kernel_types
+// names (C identifiers). Requirements farg rows use the same spelling.
+inline bool isEnumArgSpelling(llvm::StringRef s) {
+  return s == "enum:8" || s == "enum:16" || s == "enum:32" || s == "enum:64";
 }
 
 } // namespace ebpf

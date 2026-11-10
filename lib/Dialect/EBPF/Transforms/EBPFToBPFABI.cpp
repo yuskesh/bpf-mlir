@@ -7,10 +7,18 @@
 // in .maps and addressof creates loader FD relocations; BTF construction follows
 // separately. convert-bpfabi-to-llvm handles the next stage.
 //===----------------------------------------------------------------------===//
-#include "bpf-mlir/Dialect/EBPF/Transforms/Passes.h"
 #include "bpf-mlir/Dialect/EBPF/Transforms/PacketNeutral.h"
+#include "bpf-mlir/Dialect/EBPF/Transforms/Passes.h"
+#include "ArenaPageLowering.h"
+#include "ScalarHelperLowering.h"
+#include "mlir/Interfaces/DataLayoutInterfaces.h"
+#include "bpf-mlir/Support/DPathTargets.h"
+#include "bpf-mlir/Support/LoweringOnlyKfuncs.h"
 #include "bpf-mlir/Support/ProgramKinds.h"
+#include "bpf-mlir/Support/TraceFormat.h"
 #include "bpf-mlir/Support/Usdt.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/SHA256.h"
 
 #include "bpf-mlir/Dialect/BPFABI/IR/BPFABIDialect.h"
 #include "bpf-mlir/Dialect/BPFABI/KernelABI.h"
@@ -41,6 +49,13 @@ using namespace mlir::ebpf;
 
 namespace {
 
+// a kfield site's enclosing guard ids (ebpf-verify-schema) ride on the
+// CO-RE op to the ④ marker name, where ObjectEmitter keeps the matching ones.
+void copyGuards(mlir::Operation *from, mlir::Operation *to) {
+  if (mlir::Attribute a = from->getAttr("ebpf.guards"))
+    to->setAttr("ebpf.guards", a);
+}
+
 // Compiler support is exactly the ProgramKinds.def rows. Kernel helper
 // availability is recorded as a requirement, never decided during compilation.
 bool helperLoweringSupportedFor(StringRef programKind) { return bpfmlir::lookupProgramKind(programKind) != nullptr; }
@@ -48,7 +63,7 @@ bool helperLoweringSupportedFor(StringRef programKind) { return bpfmlir::lookupP
 // Attachment-table SECTION owns loader-recognized section spellings and
 // expected attachment types. User binary paths/offsets remain loader inputs.
 StringRef attachOf(ProgramOp prog) { return prog.getAttachValue(); } // Multi rows carry no name value in sections/types; use the first name for lookup.
-const bpfmlir::ProgramAttachInfo *attachRowFor(ProgramOp prog) { return bpfmlir::lookupProgramAttach(prog.getKind(), attachOf(prog)); }
+const bpfmlir::ProgramAttachInfo *attachRowFor(ProgramOp prog) { return bpfmlir::lookupProgramAttach(prog.getKind(), attachOf(prog), prog.getAttachFlags()); }
 std::string sectionFor(ProgramOp prog) {
   const bpfmlir::ProgramAttachInfo *a = attachRowFor(prog);
   if (!a) // Unknown kinds/missing attachment rows should already fail op verification.
@@ -94,6 +109,21 @@ std::optional<uint64_t> constantWindowOffset(Value window) {
   return off;
 }
 
+// the constant arena offset of a window — its block is entered only
+// through an arena.check_br's in_range with a constant (extui-looked-through)
+// offset. Anything else is not provably aligned.
+std::optional<uint64_t> constantArenaWindowOffset(Value window) {
+  auto arg = dyn_cast<BlockArgument>(window);
+  if (!arg)
+    return std::nullopt;
+  Block *blk = arg.getOwner();
+  Block *pred = blk->getSinglePredecessor();
+  auto br = pred ? dyn_cast<ArenaCheckBrOp>(pred->getTerminator()) : ArenaCheckBrOp();
+  if (!br || br.getInRange() != blk || br.getOutOfRange() == blk)
+    return std::nullopt;
+  return constantPacketOffset(br.getOffset());
+}
+
 // Module-wide state.
 struct Lowering {
   ModuleOp module;
@@ -115,6 +145,20 @@ struct Lowering {
   explicit Lowering(ModuleOp m) : module(m), builder(m.getContext()) {}
 
   Type ptrTy() { return LLVM::LLVMPointerType::get(module.getContext()); }
+  // arena memory is address space 1 (__arena); the BPF backend casts
+  // before the first access (addr_space_cast).
+  Type arenaPtrTy() { return LLVM::LLVMPointerType::get(module.getContext(), 1); }
+
+  // the arena size in bytes (schema pages × 4096) of map symbol `sym`,
+  // recorded by ebpf-build-btf-types as the module attribute ebpf.arena_bytes.
+  std::optional<uint64_t> arenaBytes(StringRef sym) {
+    auto d = module->getAttrOfType<DictionaryAttr>(kArenaBytesAttr);
+    auto v = d ? d.getAs<IntegerAttr>(sym) : IntegerAttr();
+    if (!v || v.getInt() <= 0)
+      return std::nullopt;
+    return static_cast<uint64_t>(v.getInt());
+  }
+  static constexpr StringLiteral kArenaBytesAttr = "ebpf.arena_bytes";
 
   // Establish .maps symbols and addressof targets. BTF lowering later
   // replaces placeholders with actual map-definition structs.
@@ -163,8 +207,84 @@ struct Lowering {
     return global;
   }
 
+  // C's extern T v __ksym [__weak] / extern T CONFIG_X __kconfig [__weak].
+  // Linkage, section and type come from the schema (stamped by
+  // ebpf-verify-schema); ObjectEmitter adds the VAR debug type.
+  LLVM::GlobalOp externVar(StringRef name, Type t, StringRef section, bool weak, Location loc) {
+    if (Operation *other = module.lookupSymbol(name)) {
+      auto g = dyn_cast<LLVM::GlobalOp>(other);
+      if (!g || !g->hasAttr("ebpf.extern") || g.getSection() != section) {
+        emitError(loc) << "extern @" << name << " in " << section << " collides with another symbol of the same name ("
+                       << other->getName() << ")";
+        return nullptr;
+      }
+      if (g.getGlobalType() != t || (g.getLinkage() == LLVM::Linkage::ExternWeak) != weak) {
+        emitError(loc) << "extern @" << name << " is used as " << t << (weak ? " (weak)" : "") << " and as " << g.getGlobalType();
+        return nullptr;
+      }
+      return g;
+    }
+    OpBuilder::InsertionGuard g(builder);
+    builder.setInsertionPointToStart(module.getBody());
+    auto global = LLVM::GlobalOp::create(builder, loc, t, /*isConstant=*/false,
+                                         weak ? LLVM::Linkage::ExternWeak : LLVM::Linkage::External, name,
+                                         /*value=*/Attribute(), /*alignment=*/t.isInteger() ? std::max(1u, t.getIntOrFloatBitWidth() / 8) : 8);
+    global.setSection(section);
+    global->setAttr("ebpf.extern", builder.getStringAttr(section == ".ksyms" ? "ksym" : "kconfig"));
+    return global;
+  }
+
+  // Compiler-owned format strings. trace.printk's helper takes read-only memory
+  // (ARG_PTR_TO_MEM | MEM_RDONLY), so its format stays in .rodata as C's
+  // bpf_printk. the sched_ext bstr kfuncs' `char *fmt` is a fixed-size
+  // kfunc memory argument the verifier checks for read and write
+  // (verifier.c:13171), which a BPF_F_RDONLY_PROG .rodata map value fails, so
+  // their format is in writable .data as C's scx_bpf_bstr_preamble.
+  LLVM::GlobalOp traceFormat(StringRef format, Location loc) {
+    return formatGlobal(format, "__ebpf_trace_", ".rodata", loc);
+  }
+  // a trace.printk %s literal — read through the u64 slot by
+  // bpf_bprintf_prepare (strncpy_from_kernel_nofault), so .rodata as C's
+  // bpf_printk("%s", "lit"). The prefix keeps it apart from a format of the
+  // same content (the hash is hex, so no __ebpf_trace_<hash> equals it).
+  LLVM::GlobalOp traceStrLiteral(StringRef lit, Location loc) {
+    return formatGlobal(lit, "__ebpf_trace_str_", ".rodata", loc);
+  }
+  LLVM::GlobalOp scxFormat(StringRef format, Location loc) {
+    return formatGlobal(format, "__ebpf_scx_fmt_", ".data", loc);
+  }
+  // bpf_strncmp's s2 is ARG_PTR_TO_CONST_STR — a NUL-terminated value of
+  // a frozen BPF_F_RDONLY_PROG map, so the literal is in .rodata (as C's).
+  LLVM::GlobalOp strncmpLiteral(StringRef lit, Location loc) {
+    return formatGlobal(lit, "__ebpf_strncmp_", ".rodata", loc);
+  }
+  LLVM::GlobalOp formatGlobal(StringRef format, StringRef prefix, StringRef section, Location loc) {
+    std::string symbol =
+        prefix.str() +
+        llvm::toHex(llvm::SHA256::hash(llvm::arrayRefFromStringRef(format)),
+                    true);
+    if (Operation *other = module.lookupSymbol(symbol)) {
+      auto g = dyn_cast<LLVM::GlobalOp>(other);
+      if (!g || g->getAttrOfType<StringAttr>("ebpf.trace_format") !=
+                    builder.getStringAttr(format)) {
+        emitError(loc) << "format symbol collision: " << symbol;
+        return nullptr;
+      }
+      return g;
+    }
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(module.getBody());
+    auto ty = LLVM::LLVMArrayType::get(builder.getI8Type(), format.size() + 1);
+    auto global = LLVM::GlobalOp::create(
+        builder, loc, ty, false, LLVM::Linkage::Internal, symbol, Attribute());
+    global.setSection(section);
+    global->setAttr("ebpf.trace_format", builder.getStringAttr(format));
+    return global;
+  }
+
   // Resolve record field offsets from @records after VerifyRecords; missing evidence fails.
-  FailureOr<int64_t> recordFieldOffset(Operation *op, StringRef record, StringRef field) {
+  // cpumaskLeaf: the field is an embedded cpumask (ebpf.ref.field.addr).
+  FailureOr<int64_t> recordFieldOffset(Operation *op, StringRef record, StringRef field, bool cpumaskLeaf = false) {
     for (auto sc : module.getOps<btf::ScopeOp>()) {
       if (sc.getSymName() != "records")
         continue;
@@ -173,6 +293,12 @@ struct Lowering {
         break;
       // Field paths include x, x.y and x[i].
       std::string err;
+      if (cpumaskLeaf) {
+        FailureOr<RecordTemplate> t = resolveRecordTemplate(sc, st, field, err, /*recordLeaf=*/false, true);
+        if (succeeded(t) && t->cpumaskBytes > 0 && t->dims.empty())
+          return t->offsetBytes;
+        break;
+      }
       FailureOr<RecordLeaf> leaf = resolveRecordPath(sc, st, field, err);
       if (succeeded(leaf))
         return leaf->offsetBytes;
@@ -193,7 +319,7 @@ struct Lowering {
       if (!st)
         break;
       std::string err;
-      FailureOr<RecordTemplate> t = resolveRecordTemplate(sc, st, indexTemplate(field), err);
+      FailureOr<RecordTemplate> t = resolveRecordTemplate(sc, st, indexTemplate(field), err, /*recordLeaf=*/true);
       if (succeeded(t))
         return *t;
       break;
@@ -247,6 +373,27 @@ struct Lowering {
     return specialOffset(op, record, field, "bpf_spin_lock", "spin_lock");
   }
 
+  // leak check: a helper that may sleep (SleepableOps.def) or a kfunc row
+  // with the flag "sleepable" is emitted only for an op of the sleepable-op
+  // table; otherwise ebpf.rcu.region would miss it. Internal error, loud.
+  LogicalResult checkSleepLeak(StringRef callee, bool kfunc) {
+    bool sleeps = false;
+    if (kfunc) {
+      const bpfabi::KfuncABI *k = bpfabi::lookupKfunc(callee);
+      sleeps = k && k->hasFlag("sleepable");
+    } else {
+      sleeps = bpfmlir::isMightSleepHelper(callee);
+    }
+    if (!sleeps || (currentOp && opMightSleep(currentOp)))
+      return success();
+    failed = true;
+    (currentOp ? currentOp->emitOpError() : module.emitError())
+        << "calls " << (kfunc ? "kfunc " : "helper ") << callee
+        << ", which may sleep, but the op is not in the sleepable-op table (SleepableOps.def) — internal error: add the op to "
+           "the table so ebpf.rcu.region rejects it";
+    return failure();
+  }
+
   // ABI table owns helper numbers, return types and nullability. Use the
   // caller's builder: this lowering object's builder has no insertion point
   // and would create unlinked operations. Void helpers return a null Value;
@@ -277,6 +424,10 @@ struct Lowering {
              "(PacketNeutral invalidatesPacketPointers) — internal error: add the op to the table";
       return failure();
     }
+    // likewise every emitted helper that may sleep needs its op in the
+    // sleepable-op table (SleepableOps.def), which ebpf.rcu.region rejects.
+    if (mlir::failed(checkSleepLeak(name, /*kfunc=*/false)))
+      return failure();
     SmallVector<Type> resTys;
     switch (h->retKind) {
     case bpfabi::RetKind::Void:
@@ -303,6 +454,16 @@ struct ConvertEBPFToBPFABIPass
   void runOnOperation() override;
 };
 
+// every bpfabi.kfunc_call the per-function builder inserts goes through
+// the sleep leak check (the call sites are many; the listener is one place).
+struct SleepLeakListener : public OpBuilder::Listener {
+  Lowering *ctx = nullptr;
+  void notifyOperationInserted(Operation *op, OpBuilder::InsertPoint) override {
+    if (auto k = dyn_cast<bpfabi::KfuncCallOp>(op))
+      (void)ctx->checkSleepLeak(k.getCallee(), /*kfunc=*/true);
+  }
+};
+
 // Per-function conversion.
 class ProgramLowering {
 public:
@@ -311,7 +472,10 @@ public:
       : owner_(owner), prog_(dyn_cast<ProgramOp>(owner)),
         sub_(dyn_cast<SubprogramOp>(owner)), cb_(dyn_cast<LoopCallbackOp>(owner)),
         tcb_(dyn_cast<TimerCallbackOp>(owner)), ucb_(dyn_cast<UserRingbufCallbackOp>(owner)), ctx_(ctx),
-        b_(owner->getContext()) {}
+        b_(owner->getContext()) {
+    sleepListener_.ctx = &ctx_;
+    b_.setListener(&sleepListener_);
+  }
 
   LogicalResult run();
 
@@ -329,6 +493,13 @@ private:
   }
 
   Type convertType(Type t) {
+    // the arena base is the i64 user_vm_start; a window is an
+    // address-space-1 pointer (in practice never a block argument — ③ creates
+    // it with bpfabi.arena_addr in the in-range block).
+    if (isa<ArenaBaseType>(t))
+      return IntegerType::get(t.getContext(), 64);
+    if (isa<ArenaWindowType>(t))
+      return ctx_.arenaPtrTy();
     return isa<EBPFDialect>(t.getDialect()) ? ctx_.ptrTy() : t;
   }
 
@@ -342,6 +513,7 @@ private:
   LogicalResult convertBody(Region &body);
 
   Value allocaFor(Type t, Location loc);
+  Value literalBuffer(StringRef literal, int64_t n, Location loc);
   static unsigned provableAlignment(unsigned baseAlign, int64_t offset,
                                     Type t);
   static LogicalResult checkOnce(Operation *op, bool once, unsigned align, Type t);
@@ -357,9 +529,41 @@ private:
   TimerCallbackOp tcb_; // Timer callback case.
   UserRingbufCallbackOp ucb_; // User-ringbuf drain callback case.
   Lowering &ctx_;
+  SleepLeakListener sleepListener_; // Declared before b_, which points at it.
   OpBuilder b_;
   DenseMap<Value, Value> map_;
   DenseMap<Block *, Block *> blocks_;
+  // alignment of a borrowed record element (elem.at of a record leaf);
+  // other borrows (map values, globals) are kMapValueAlignment.
+  DenseMap<Value, unsigned> borrowAlign_;
+  unsigned borrowAlign(Value lowered) const {
+    auto it = borrowAlign_.find(lowered);
+    return it == borrowAlign_.end() ? bpfabi::kMapValueAlignment : it->second;
+  }
+  // i64 uses LLVM's native atomics (CPU v1 has them); i32 is inline asm
+  // — LLVM rejects 32-bit cmpxchg / atomicrmw or below CPU v3 and ObjectEmitter
+  // targets v1. The asm pins the kernel's implicit r0 (cmpxchg compares with
+  // and returns in r0) and the source r2; ~{memory} is a compiler barrier.
+  Value atomicCmpxchg(Value at, Value expected, Value desired, Location loc) {
+    if (expected.getType().isInteger(64)) {
+      auto cx = LLVM::AtomicCmpXchgOp::create(b_, loc, at, expected, desired, LLVM::AtomicOrdering::seq_cst, LLVM::AtomicOrdering::seq_cst);
+      return LLVM::ExtractValueOp::create(b_, loc, cx.getRes(), ArrayRef<int64_t>{0});
+    }
+    auto asmOp = LLVM::InlineAsmOp::create(b_, loc, TypeRange{b_.getI32Type()}, ValueRange{at, expected, desired},
+                                           "w0 = cmpxchg32_32($1 + 0, w0, w2)", "={r0},r,{r0},{r2},~{memory}",
+                                           /*has_side_effects=*/true, /*is_align_stack=*/false, LLVM::tailcallkind::TailCallKind::None,
+                                           /*asm_dialect=*/LLVM::AsmDialectAttr(), /*operand_attrs=*/ArrayAttr());
+    return asmOp.getResult(0);
+  }
+  void atomicOr(Value at, Value v, Location loc) {
+    if (v.getType().isInteger(64)) {
+      LLVM::AtomicRMWOp::create(b_, loc, LLVM::AtomicBinOp::_or, at, v, LLVM::AtomicOrdering::monotonic);
+      return;
+    }
+    LLVM::InlineAsmOp::create(b_, loc, TypeRange{}, ValueRange{at, v}, "lock *(u32 *)($0 + 0) |= w2", "r,{r2},~{memory}",
+                              /*has_side_effects=*/true, /*is_align_stack=*/false, LLVM::tailcallkind::TailCallKind::None,
+                              /*asm_dialect=*/LLVM::AsmDialectAttr(), /*operand_attrs=*/ArrayAttr());
+  }
   DenseMap<Value, unsigned> elemAlign_; // elem.at pointer alignments and direct record fields (offset/lowered
   // value), stored into reservations at store_record.
   DenseMap<Value, SmallVector<std::pair<int64_t, Value>>> directRecords_;
@@ -376,6 +580,26 @@ private:
 
 // Explicit record.make alloca alignment anchors provable field-store alignment.
 constexpr unsigned kRecordStackAlignment = 8;
+
+// An n-byte stack buffer holding the literal, then zeros; every byte is written.
+Value ProgramLowering::literalBuffer(StringRef literal, int64_t n, Location loc) {
+  Value buf = allocaFor(LLVM::LLVMArrayType::get(b_.getI8Type(), n), loc);
+  cast<LLVM::AllocaOp>(buf.getDefiningOp()).setAlignment(8);
+  std::string bytes = literal.str();
+  bytes.resize(n, '\0');
+  for (int64_t off = 0; off < n;) {
+    unsigned w = off + 8 <= n ? 8 : 1;
+    uint64_t v = 0;
+    for (unsigned k = 0; k < w; ++k)
+      v |= static_cast<uint64_t>(static_cast<unsigned char>(bytes[off + k])) << (8 * k); // bpfel
+    Type it = b_.getIntegerType(8 * w);
+    Value c = LLVM::ConstantOp::create(b_, loc, it, b_.getIntegerAttr(it, APInt(8 * w, v)));
+    Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), buf, ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(off)});
+    LLVM::StoreOp::create(b_, loc, c, at, w);
+    off += w;
+  }
+  return buf;
+}
 
 Value ProgramLowering::allocaFor(Type t, Location loc) {
   OpBuilder::InsertionGuard g(b_);
@@ -474,7 +698,20 @@ LogicalResult ProgramLowering::run() {
   bool takesCtx = !kinfo || bpfmlir::entryTakesCtx(kinfo->attach);
   LLVM::LLVMFunctionType fnTy;
   if (takesCtx) {
-    fnTy = LLVM::LLVMFunctionType::get(b_.getI32Type(), {ctx_.ptrTy()});
+    // struct_ops may return i64 (size_t members); every other context
+    // program, and every i32 struct_ops program, keeps the i32 return.
+    Type retTy = b_.getI32Type();
+    if (kinfo && kinfo->sig == bpfmlir::SigFamily::OpsSig)
+      prog_.walk([&](ReturnOp r) { retTy = r.getValue().getType(); });
+    // A named verdict lowers to an i32 return; do not mix it into an i64 entry.
+    if (retTy.isInteger(64)) {
+      bool verdict = false;
+      prog_.walk([&](VerdictOp) { verdict = true; });
+      if (verdict)
+        return prog_.emitOpError() << "returns an i64 value and also ends a path with ebpf.verdict, which returns i32; "
+                                      "end every path of an i64 struct_ops program with ebpf.return";
+    }
+    fnTy = LLVM::LLVMFunctionType::get(retTy, {ctx_.ptrTy()});
   } else {
     int64_t nparams = 0;
     prog_.walk([&](ExtArgOp a) { nparams = std::max<int64_t>(nparams, a.getIndex() + 1); });
@@ -575,7 +812,8 @@ LogicalResult ProgramLowering::runCallback() {
   // for_each callback uses map/key/value/ctx pointers in r1..r4; bpf_loop
   // uses index/ctx. Both share carried-then-captured context slot order.
   bool forEach = cb_.getForEach();
-  auto fnTy = forEach ? LLVM::LLVMFunctionType::get(i64, {ctx_.ptrTy(), ctx_.ptrTy(), ctx_.ptrTy(), ctx_.ptrTy()})
+  bool findVma = cb_.getFindVma(); // (task, vma, ctx) in r1..r3.
+  auto fnTy = findVma ? LLVM::LLVMFunctionType::get(i64, {ctx_.ptrTy(), ctx_.ptrTy(), ctx_.ptrTy()}) : forEach ? LLVM::LLVMFunctionType::get(i64, {ctx_.ptrTy(), ctx_.ptrTy(), ctx_.ptrTy(), ctx_.ptrTy()})
                       : LLVM::LLVMFunctionType::get(i64, {i64, ctx_.ptrTy()});
   {
     OpBuilder::InsertionGuard g(b_);
@@ -583,14 +821,18 @@ LogicalResult ProgramLowering::runCallback() {
     func_ = LLVM::LLVMFuncOp::create(b_, loc, cb_.getSymName(), fnTy, LLVM::Linkage::Internal);
     func_.setNoInline(true);
     func_->setAttr("bpfabi.subprogram", b_.getStringAttr("static"));
-    func_->setAttr(forEach ? "bpfabi.foreach_callback" : "bpfabi.callback", b_.getUnitAttr());
+    func_->setAttr(findVma ? "bpfabi.find_vma_callback" : forEach ? "bpfabi.foreach_callback" : "bpfabi.callback", b_.getUnitAttr());
   }
   entry_ = func_.addEntryBlock(b_);
   Block &srcEntry = cb_.getBody().front();
   b_.setInsertionPointToStart(entry_);
-  int64_t lead = forEach ? 2 : 1;
-  Value ctxBase = entry_->getArgument(forEach ? 3 : 1);
-  if (forEach) {
+  int64_t lead = (forEach || findVma) ? 2 : 1;
+  Value ctxBase = entry_->getArgument(findVma ? 2 : forEach ? 3 : 1);
+  if (findVma) {
+    // The kernel passes the task (r1) and the vma (r2) as BTF pointers; the body reads them only through kfield.load.
+    bind(srcEntry.getArgument(0), entry_->getArgument(0));
+    bind(srcEntry.getArgument(1), entry_->getArgument(1));
+  } else if (forEach) {
     // Read keys at declared width from read-only PTR_TO_MAP_KEY; values remain borrowed PTR_TO_MAP_VALUE.
     Type kt = srcEntry.getArgument(0).getType();
     unsigned kw = cast<IntegerType>(kt).getWidth() / 8;
@@ -683,8 +925,14 @@ LogicalResult ProgramLowering::convertBody(Region &body) {
   for (Block &src : llvm::drop_begin(body)) {
     auto *dst = new Block();
     func_.getBody().push_back(dst);
-    for (BlockArgument a : src.getArguments())
+    for (BlockArgument a : src.getArguments()) {
+      // the in-range block's window has no LLVM block argument — the
+      // arena.check_br lowering binds it to bpfabi.arena_addr at the block's
+      // entry (the address is made only on the true edge).
+      if (isa<ArenaWindowType>(a.getType()))
+        continue;
       bind(a, dst->addArgument(convertType(a.getType()), a.getLoc()));
+    }
     blocks_[&src] = dst;
   }
 
@@ -702,7 +950,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
   Location loc = op.getLoc();
 
   if (isa<SockRefCheckOp, RefCheckOp, RingbufIfReservedOp, MapAtomicAddOp, YieldOp, LoopOp, LoopYieldOp, IfOp,
-              IfYieldOp, BreakOp, ContinueOp, PacketCheckOp, VerdictIfOp>(op))
+              IfYieldOp, BreakOp, ContinueOp, PacketCheckOp, MetaCheckOp, ArenaCheckOp, VerdictIfOp, TaskFindVmaOp, TaskFindVmaYieldOp>(op))
     return op.emitOpError() << "is a stage ① op; run ebpf-expand-regions "
                                "before convert-ebpf-to-bpfabi";
 
@@ -727,7 +975,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
   }
   // Callback returns write carried values as eight-byte slots and return constant zero/one.
   if (auto cr = dyn_cast<CallbackReturnOp>(op)) {
-    Value base = func_.getArgument(cb_ && cb_.getForEach() ? 3 : 1); // for_each context is argument four.
+    Value base = func_.getArgument(cb_ && cb_.getFindVma() ? 2 : cb_ && cb_.getForEach() ? 3 : 1); // for_each context is argument four; find_vma's is argument three.
     for (auto [k, v] : llvm::enumerate(cr.getValues())) {
       Value w = remap(v);
       if (w.getType() != b_.getI64Type())
@@ -801,6 +1049,39 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     return success();
   }
 
+  // bpf_find_vma(task, addr, &callback, &context, 0). The same
+  // caller-stack context as bpf_loop; the status is the raw helper result and
+  // the carried values are read back from the context (unchanged when the
+  // callback did not run).
+  if (auto fv = dyn_cast<FindVmaCallOp>(op)) {
+    Type i64 = b_.getI64Type();
+    int64_t slots = fv.getInits().size() + fv.getCaptures().size();
+    Value base = allocaFor(LLVM::LLVMArrayType::get(i64, std::max<int64_t>(slots, 1)), loc);
+    int64_t k = 0;
+    for (ValueRange vs : {ValueRange(fv.getInits()), ValueRange(fv.getCaptures())})
+      for (Value v : vs) {
+        Value w = remap(v);
+        if (w.getType() != i64)
+          w = LLVM::ZExtOp::create(b_, loc, i64, w);
+        LLVM::StoreOp::create(b_, loc, w, ctxSlot(base, k++, loc), 8);
+      }
+    if (slots == 0)
+      LLVM::StoreOp::create(b_, loc, LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(0)), base, 8);
+    Value fn = LLVM::AddressOfOp::create(b_, loc, ctx_.ptrTy(), fv.getCallback());
+    Value flags = LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(0));
+    FailureOr<Value> st = ctx_.helperCall(b_, loc, "find_vma", {remap(fv.getTask()), remap(fv.getAddr()), fn, base, flags});
+    if (failed(st))
+      return failure();
+    bind(fv.getStatus(), *st);
+    for (auto [k, r] : llvm::enumerate(fv.getResults())) {
+      Value v = LLVM::LoadOp::create(b_, loc, i64, ctxSlot(base, k, loc), 8);
+      if (r.getType() != i64)
+        v = LLVM::TruncOp::create(b_, loc, r.getType(), v);
+      bind(r, v);
+    }
+    return success();
+  }
+
   // Return verified func or attachment-enabled program integers unchanged.
   if (auto ret = dyn_cast<ReturnOp>(op)) {
     LLVM::ReturnOp::create(b_, loc, remap(ret.getValue()));
@@ -821,6 +1102,16 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     if (failed(r))
       return failure();
     bind(ah.getStatus(), *r);
+    return success();
+  }
+
+  // adjust_meta returns raw status; it only moves data_meta and invalidates packet pointers.
+  if (auto am = dyn_cast<XdpAdjustMetaOp>(op)) {
+    Value delta = LLVM::SExtOp::create(b_, loc, b_.getI64Type(), remap(am.getDelta()));
+    FailureOr<Value> r = ctx_.helperCall(b_, loc, "xdp_adjust_meta", {remap(am.getCtx()), delta});
+    if (failed(r))
+      return failure();
+    bind(am.getStatus(), *r);
     return success();
   }
 
@@ -894,13 +1185,456 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     return success();
   }
 
-  // Return bpf_redirect(ifindex,0)'s requested action, not delivery success.
+  if (auto cr = dyn_cast<CloneRedirectOp>(op)) {
+    auto ingress = bpfabi::lookupRedirFlag("ingress");
+    if (!ingress)
+      return cr.emitOpError("ingress flag missing from UAPI table");
+    Value ifx = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(cr.getIfindex()));
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(),
+                                         b_.getI64IntegerAttr(cr.getFlags() == "ingress" ? *ingress : 0));
+    auto r = ctx_.helperCall(b_, loc, "clone_redirect", {remap(cr.getCtx()), ifx, flags});
+    if (failed(r))
+      return failure();
+    bind(cr.getStatus(), *r);
+    return success();
+  }
+  if (isa<SkbLoadBytesOp, XdpLoadBytesOp, SkbLoadBytesRelativeOp>(op)) {
+    // xdp.load_bytes shares skb.load_bytes' shape (helper 189).
+    struct {
+      Value ctx, offset, value, status;
+      int64_t len;
+      StringRef helper;
+    } load;
+    if (auto l = dyn_cast<SkbLoadBytesOp>(op))
+      load = {l.getCtx(), l.getOffset(), l.getValue(), l.getStatus(), static_cast<int64_t>(l.getLen()), "skb_load_bytes"};
+    else if (auto l = dyn_cast<SkbLoadBytesRelativeOp>(op))
+      load = {l.getCtx(), l.getOffset(), l.getValue(), l.getStatus(), static_cast<int64_t>(l.getLen()), "skb_load_bytes_relative"};
+    else {
+      auto x = cast<XdpLoadBytesOp>(op);
+      load = {x.getCtx(), x.getOffset(), x.getValue(), x.getStatus(), static_cast<int64_t>(x.getLen()), "xdp_load_bytes"};
+    }
+    auto i8 = b_.getI8Type();
+    auto i64 = b_.getI64Type();
+    Value slot = allocaFor(LLVM::LLVMArrayType::get(i8, 8), loc);
+    Value zero8 = LLVM::ConstantOp::create(b_, loc, i8, b_.getI8IntegerAttr(0));
+    for (int32_t i = 0; i < 8; ++i) {
+      Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), i8, slot,
+                                     ArrayRef<LLVM::GEPArg>{i});
+      LLVM::StoreOp::create(b_, loc, zero8, at, 1);
+    }
+    Value off = LLVM::ZExtOp::create(b_, loc, i64, remap(load.offset));
+    Value len = LLVM::ConstantOp::create(b_, loc, i64,
+                                         b_.getI64IntegerAttr(load.len));
+    SmallVector<Value> args{remap(load.ctx), off, slot, len};
+    if (auto relative = dyn_cast<SkbLoadBytesRelativeOp>(op)) {
+      auto start = bpfabi::lookupHeaderStart(relative.getStart());
+      if (!start) return relative.emitOpError("header selector missing from UAPI");
+      args.push_back(LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(*start)));
+    }
+    auto status = ctx_.helperCall(b_, loc, load.helper, args);
+    if (failed(status))
+      return failure();
+    Value value =
+        LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(0));
+    for (int32_t i = 0; i < load.len; ++i) {
+      Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), i8, slot,
+                                     ArrayRef<LLVM::GEPArg>{i});
+      Value byte = LLVM::LoadOp::create(b_, loc, i8, at, 1);
+      byte = LLVM::ZExtOp::create(b_, loc, i64, byte);
+      if (i) {
+        Value shift =
+            LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(8 * i));
+        byte = LLVM::ShlOp::create(b_, loc, byte, shift);
+      }
+      value = LLVM::OrOp::create(b_, loc, value, byte);
+    }
+    bind(load.value, value);
+    bind(load.status, *status);
+    return success();
+  }
+  if (auto adjust = dyn_cast<SkbAdjustRoomOp>(op)) {
+    Value delta = LLVM::SExtOp::create(b_, loc, b_.getI64Type(),
+                                       remap(adjust.getDelta()));
+    Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(),
+                                          b_.getI64IntegerAttr(0));
+    Value mode = zero;
+    if (cast<ContextType>(adjust.getCtx().getType()).getKind() == "sched_cls") {
+      // sched_cls mode word (default net) from the UAPI adjroommode rows.
+      auto m = bpfabi::lookupAdjRoomMode(adjust.getRoomMode().value_or("net"));
+      if (!m)
+        return adjust.emitOpError("room mode missing from UAPI table");
+      mode = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(*m));
+    }
+    auto status = ctx_.helperCall(b_, loc, "skb_adjust_room",
+                                  {remap(adjust.getCtx()), delta, mode, zero});
+    if (failed(status))
+      return failure();
+    bind(adjust.getStatus(), *status);
+    return success();
+  }
+  if (auto trace = dyn_cast<TracePrintkOp>(op)) {
+    auto global = ctx_.traceFormat(trace.getFormat(), loc);
+    if (!global)
+      return failure();
+    Value addr =
+        LLVM::AddressOfOp::create(b_, loc, ctx_.ptrTy(), global.getSymName());
+    Value size = LLVM::ConstantOp::create(
+        b_, loc, b_.getI64Type(),
+        b_.getI64IntegerAttr(trace.getFormat().size() + 1));
+    SmallVector<Value> args{addr, size};
+    std::string error;
+    auto spec = bpfmlir::parseTraceFormat(trace.getFormat(), error);
+    if (!spec)
+      return trace.emitOpError(error);
+    // the slots follow the format's conversion order — a %s takes the
+    // next strs literal (a .rodata string's address as i64), an integer the
+    // next $args value.
+    ArrayAttr strs = trace.getStrsAttr();
+    unsigned nextStr = 0;
+    auto nextArg = trace.getArgs().begin();
+    for (const bpfmlir::TraceFormatArg &fmt : *spec) {
+      if (fmt.isString) {
+        if (!strs || nextStr >= strs.size())
+          return trace.emitOpError("has fewer strs than %s conversions (the op verifier checks it)");
+        auto lit = ctx_.traceStrLiteral(cast<StringAttr>(strs[nextStr++]).getValue(), loc);
+        if (!lit)
+          return failure();
+        Value p = LLVM::AddressOfOp::create(b_, loc, ctx_.ptrTy(), lit.getSymName());
+        args.push_back(LLVM::PtrToIntOp::create(b_, loc, b_.getI64Type(), p));
+        continue;
+      }
+      if (nextArg == trace.getArgs().end())
+        return trace.emitOpError("has fewer arguments than integer conversions (the op verifier checks it)");
+      Value v = remap(*nextArg++);
+      if (fmt.bits == 32) {
+        if (fmt.isSigned)
+          v = LLVM::SExtOp::create(b_, loc, b_.getI64Type(), v);
+        else
+          v = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), v);
+      }
+      args.push_back(v);
+    }
+    while (args.size() < 5)
+      args.push_back(LLVM::ConstantOp::create(b_, loc, b_.getI64Type(),
+                                              b_.getI64IntegerAttr(0)));
+    auto status = ctx_.helperCall(b_, loc, "trace_printk", args);
+    if (failed(status))
+      return failure();
+    bind(trace.getStatus(), *status);
+    return success();
+  }
+  if (isa<SkbStoreBytesOp, XdpStoreBytesOp>(op)) {
+    // xdp.store_bytes shares the stack shape; helper 190 has no flags.
+    auto skbStore = dyn_cast<SkbStoreBytesOp>(op);
+    auto xdpStore = dyn_cast<XdpStoreBytesOp>(op);
+    struct {
+      Value ctx, offset, value, status;
+      int64_t len;
+    } sb = skbStore ? decltype(sb){skbStore.getCtx(), skbStore.getOffset(), skbStore.getValue(), skbStore.getStatus(),
+                                   static_cast<int64_t>(skbStore.getLen())}
+                    : decltype(sb){xdpStore.getCtx(), xdpStore.getOffset(), xdpStore.getValue(), xdpStore.getStatus(),
+                                   static_cast<int64_t>(xdpStore.getLen())};
+    auto i8 = b_.getI8Type();
+    Value slot = allocaFor(LLVM::LLVMArrayType::get(i8, sb.len), loc);
+    Value v = remap(sb.value);
+    for (int64_t i = 0; i < sb.len; ++i) {
+      Value byte = v;
+      if (i) {
+        Value shift = LLVM::ConstantOp::create(b_, loc, v.getType(), b_.getIntegerAttr(v.getType(), i * 8));
+        byte = LLVM::LShrOp::create(b_, loc, v, shift);
+      }
+      if (byte.getType() != i8)
+        byte = LLVM::TruncOp::create(b_, loc, i8, byte);
+      Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), i8, slot,
+                                     ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(i)});
+      LLVM::StoreOp::create(b_, loc, byte, at, 1);
+    }
+    Value off = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(sb.offset));
+    Value len = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(sb.len));
+    FailureOr<Value> r;
+    if (xdpStore)
+      r = ctx_.helperCall(b_, loc, "xdp_store_bytes", {remap(sb.ctx), off, slot, len});
+    else {
+      Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
+      r = ctx_.helperCall(b_, loc, "skb_store_bytes", {remap(sb.ctx), off, slot, len, zero});
+    }
+    if (failed(r))
+      return failure();
+    bind(sb.status, *r);
+    return success();
+  }
+  if (auto cs = dyn_cast<L3CsumReplaceOp>(op)) {
+    Value off = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(cs.getOffset()));
+    Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
+    auto r = ctx_.helperCall(b_, loc, "l3_csum_replace", {remap(cs.getCtx()), off, zero, remap(cs.getDiff()), zero});
+    if (failed(r))
+      return failure();
+    bind(cs.getStatus(), *r);
+    return success();
+  }
+  // difference mode (from 0, field size 0); flags OR the UAPI csumflag rows.
+  if (auto cs = dyn_cast<L4CsumReplaceOp>(op)) {
+    int64_t flag = 0;
+    for (auto [on, name] : {std::pair<bool, StringRef>{cs.getPseudoHdr(), "pseudo_hdr"},
+                            std::pair<bool, StringRef>{cs.getMarkMangled_0(), "mark_mangled_0"}}) {
+      if (!on)
+        continue;
+      auto v = bpfabi::lookupCsumFlag(name);
+      if (!v)
+        return cs.emitOpError() << "csum flag " << name << " missing from UAPI table";
+      flag |= *v;
+    }
+    Value off = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(cs.getOffset()));
+    Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(flag));
+    auto r = ctx_.helperCall(b_, loc, "l4_csum_replace", {remap(cs.getCtx()), off, zero, remap(cs.getDiff()), flags});
+    if (failed(r))
+      return failure();
+    bind(cs.getStatus(), *r);
+    return success();
+  }
+  if (auto vlan = dyn_cast<SkbVlanPushOp>(op)) {
+    Value proto = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(vlan.getProto()));
+    Value tci = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(vlan.getTci()));
+    auto status = ctx_.helperCall(b_, loc, "skb_vlan_push", {remap(vlan.getCtx()), proto, tci});
+    if (failed(status)) return failure();
+    bind(vlan.getStatus(), *status);
+    return success();
+  }
+  if (auto mtu = dyn_cast<SkbCheckMtuOp>(op)) {
+    Value slot;
+    {
+      OpBuilder::InsertionGuard guard(b_);
+      b_.setInsertionPointToStart(entry_);
+      Value one = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(1));
+      slot = LLVM::AllocaOp::create(b_, loc, ctx_.ptrTy(), b_.getI32Type(), one, /*alignment=*/4);
+    }
+    LLVM::StoreOp::create(b_, loc, remap(mtu.getMtuIn()), slot, 4);
+    Value index = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(mtu.getIfindex()));
+    Value delta = LLVM::SExtOp::create(b_, loc, b_.getI64Type(), remap(mtu.getLenDiff()));
+    Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
+    auto status = ctx_.helperCall(b_, loc, "check_mtu", {remap(mtu.getCtx()), index, slot, delta, zero});
+    if (failed(status)) return failure();
+    bind(mtu.getMtuOut(), LLVM::LoadOp::create(b_, loc, b_.getI32Type(), slot, 4));
+    bind(mtu.getStatus(), *status);
+    return success();
+  }
+  if (auto level = dyn_cast<SkbCsumLevelOp>(op)) {
+    auto mode = bpfabi::lookupCsumLevel(level.getMode());
+    if (!mode) return level.emitOpError("checksum selector missing from UAPI");
+    Value selector = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(*mode));
+    auto status = ctx_.helperCall(b_, loc, "csum_level", {remap(level.getCtx()), selector});
+    if (failed(status)) return failure();
+    bind(level.getStatus(), *status);
+    return success();
+  }
+  // (ctx, zext integer[, 0]) helpers and (ctx) helpers.
+  {
+    StringRef helper;
+    Value arg;
+    bool zeroFlags = false;
+    if (auto x = dyn_cast<SkbPullDataOp>(op))
+      helper = "skb_pull_data", arg = x.getLen();
+    else if (auto x = dyn_cast<SkbChangeTailOp>(op))
+      helper = "skb_change_tail", arg = x.getLen(), zeroFlags = true;
+    else if (auto x = dyn_cast<SkbChangeHeadOp>(op))
+      helper = "skb_change_head", arg = x.getLen(), zeroFlags = true;
+    else if (auto x = dyn_cast<SkbChangeProtoOp>(op))
+      helper = "skb_change_proto", arg = x.getProto(), zeroFlags = true;
+    else if (auto x = dyn_cast<SkbChangeTypeOp>(op))
+      helper = "skb_change_type", arg = x.getPktType();
+    else if (auto x = dyn_cast<CsumUpdateOp>(op))
+      helper = "csum_update", arg = x.getCsum();
+    else if (isa<SkbHashRecalcOp>(op))
+      helper = "get_hash_recalc";
+    else if (isa<SkbCgroupClassidOp>(op))
+      helper = "get_cgroup_classid";
+    else if (isa<SkbNetnsCookieOp>(op))
+      helper = "get_netns_cookie";
+    else if (isa<XdpBuffLenOp>(op))
+      helper = "xdp_get_buff_len";
+    else if (auto x = dyn_cast<SkbSetHashOp>(op))
+      helper = "set_hash", arg = x.getHash();
+    else if (isa<SkbSetHashInvalidOp>(op))
+      helper = "set_hash_invalid";
+    else if (isa<SkbVlanPopOp>(op))
+      helper = "skb_vlan_pop";
+    else if (isa<SkbEcnSetCeOp>(op))
+      helper = "skb_ecn_set_ce";
+    if (!helper.empty()) {
+      SmallVector<Value> args{remap(op.getOperand(0))};
+      if (arg)
+        args.push_back(LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(arg)));
+      if (zeroFlags)
+        args.push_back(LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0)));
+      auto r = ctx_.helperCall(b_, loc, helper, args);
+      if (failed(r))
+        return failure();
+      if (op.getNumResults())
+        bind(op.getResult(0), *r);
+      return success();
+    }
+  }
+  // the kernel argument is a signed int, so level and flags are
+  // sign-extended (not the zext of the block above).
+  if (isa<SkbSocketUidOp>(op)) {
+    auto r = ctx_.helperCall(b_, loc, "get_socket_uid", {remap(op.getOperand(0))});
+    if (failed(r))
+      return failure();
+    bind(op.getResult(0), LLVM::TruncOp::create(b_, loc, b_.getI32Type(), *r));
+    return success();
+  }
+  {
+    StringRef helper;
+    Value arg;
+    if (isa<SkbCgroupIdOp>(op))
+      helper = "skb_cgroup_id";
+    else if (auto x = dyn_cast<SkbAncestorCgroupIdOp>(op))
+      helper = "skb_ancestor_cgroup_id", arg = x.getLevel();
+    else if (auto x = dyn_cast<SockOpsCbFlagsSetOp>(op))
+      helper = "sock_ops_cb_flags_set", arg = x.getFlags();
+    if (!helper.empty()) {
+      SmallVector<Value> args{remap(op.getOperand(0))};
+      if (arg)
+        args.push_back(LLVM::SExtOp::create(b_, loc, b_.getI64Type(), remap(arg)));
+      auto r = ctx_.helperCall(b_, loc, helper, args);
+      if (failed(r))
+        return failure();
+      bind(op.getResult(0), *r);
+      return success();
+    }
+  }
+  // each present value gets its own fully written 4 / 8-byte stack slot
+  // before the call; an absent side is NULL with size 0.
+  if (auto cd = dyn_cast<CsumDiffOp>(op)) {
+    SmallVector<Value> args;
+    for (Value v : {cd.getFrom(), cd.getTo()}) {
+      if (!v) {
+        args.push_back(LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy()));
+        args.push_back(LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0)));
+        continue;
+      }
+      unsigned bytes = cast<IntegerType>(v.getType()).getWidth() / 8;
+      Value slot = allocaFor(v.getType(), loc);
+      LLVM::StoreOp::create(b_, loc, remap(v), slot, 4);
+      args.push_back(slot);
+      args.push_back(LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(bytes)));
+    }
+    args.push_back(LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(cd.getSeed())));
+    auto r = ctx_.helperCall(b_, loc, "csum_diff", args);
+    if (failed(r))
+      return failure();
+    bind(cd.getResult(), *r);
+    return success();
+  }
+  // fib_lookup(ctx, params, plen, flags) on a separate 64-byte,
+  // 8-aligned stack copy of the record.make input — the helper writes the
+  // params in place, so the input record stays unchanged for any other use.
+  // plen is the UAPI struct size; flags is 0 or the UAPI fibflag row. The call
+  // carries bpfabi.fib_flags for the requirements pass.
+  if (auto fl = dyn_cast<FibLookupOp>(op)) {
+    std::optional<int64_t> plen = bpfabi::lookupUapiStructSize("bpf_fib_lookup");
+    std::optional<int64_t> flag = bpfabi::lookupFibFlag(fl.getFlags());
+    if (!plen || !flag)
+      return fl.emitOpError() << "bpf_fib_lookup size or fib flag \"" << fl.getFlags()
+                              << "\" missing from UAPI table";
+    auto rt = cast<RecordType>(fl.getInput().getType());
+    if (static_cast<int64_t>(rt.getSize()) != *plen)
+      return fl.emitOpError() << "record is " << rt.getSize() << " bytes, struct bpf_fib_lookup is " << *plen;
+    Value buf = allocaFor(LLVM::LLVMArrayType::get(b_.getI8Type(), *plen), loc);
+    cast<LLVM::AllocaOp>(buf.getDefiningOp()).setAlignment(kRecordStackAlignment);
+    Value len = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(*plen));
+    auto mc = LLVM::MemcpyOp::create(b_, loc, buf, remap(fl.getInput()), len, /*isVolatile=*/false);
+    auto align = [&](unsigned a) {
+      return b_.getDictionaryAttr(b_.getNamedAttr(LLVM::LLVMDialect::getAlignAttrName(), b_.getI64IntegerAttr(a)));
+    };
+    mc.setArgAttrsAttr(b_.getArrayAttr(
+        {align(kRecordStackAlignment), align(kRecordStackAlignment), b_.getDictionaryAttr({})}));
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(*flag));
+    auto r = ctx_.helperCall(b_, loc, "fib_lookup", {remap(fl.getCtx()), buf, len, flags});
+    if (failed(r))
+      return failure();
+    r->getDefiningOp()->setAttr("bpfabi.fib_flags", b_.getStringAttr(fl.getFlags()));
+    bind(fl.getOutput(), buf);
+    bind(fl.getStatus(), *r);
+    return success();
+  }
+  // skb_{get,set}_tunnel_key(ctx, buf, size, flags) on a separate
+  // 44-byte, 8-aligned stack copy of the record.make input. size is the UAPI
+  // struct size (the kernel's compat sizes are not used); flags come from the
+  // UAPI tunnelflag rows. get binds the buffer as its output record; set only
+  // returns the raw status. No memory attributes (the helper writes / reads the
+  // buffer behind the call), and the call stays when the status is unused.
+  if (isa<SkbGetTunnelKeyOp, SkbSetTunnelKeyOp>(op)) {
+    bool isGet = isa<SkbGetTunnelKeyOp>(op);
+    Value ctxV = isGet ? cast<SkbGetTunnelKeyOp>(op).getCtx() : cast<SkbSetTunnelKeyOp>(op).getCtx();
+    Value inV = isGet ? cast<SkbGetTunnelKeyOp>(op).getInput() : cast<SkbSetTunnelKeyOp>(op).getKey();
+    StringRef flagSpec = isGet ? cast<SkbGetTunnelKeyOp>(op).getFlags() : cast<SkbSetTunnelKeyOp>(op).getFlags();
+    std::optional<int64_t> size = bpfabi::lookupUapiStructSize("bpf_tunnel_key");
+    std::optional<int64_t> flag = bpfabi::tunnelFlagsValue(flagSpec, !isGet);
+    if (!size || !flag)
+      return op.emitOpError() << "bpf_tunnel_key size or tunnel flags \"" << flagSpec << "\" missing from UAPI table";
+    auto rt = cast<RecordType>(inV.getType());
+    if (static_cast<int64_t>(rt.getSize()) != *size)
+      return op.emitOpError() << "record is " << rt.getSize() << " bytes, struct bpf_tunnel_key is " << *size;
+    Value buf = allocaFor(LLVM::LLVMArrayType::get(b_.getI8Type(), *size), loc);
+    cast<LLVM::AllocaOp>(buf.getDefiningOp()).setAlignment(kRecordStackAlignment);
+    Value len = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(*size));
+    auto mc = LLVM::MemcpyOp::create(b_, loc, buf, remap(inV), len, /*isVolatile=*/false);
+    auto align = [&](unsigned a) {
+      return b_.getDictionaryAttr(b_.getNamedAttr(LLVM::LLVMDialect::getAlignAttrName(), b_.getI64IntegerAttr(a)));
+    };
+    mc.setArgAttrsAttr(b_.getArrayAttr(
+        {align(kRecordStackAlignment), align(kRecordStackAlignment), b_.getDictionaryAttr({})}));
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(*flag));
+    auto r = ctx_.helperCall(b_, loc, isGet ? "skb_get_tunnel_key" : "skb_set_tunnel_key",
+                             {remap(ctxV), buf, len, flags});
+    if (failed(r))
+      return failure();
+    if (isGet) {
+      bind(cast<SkbGetTunnelKeyOp>(op).getOutput(), buf);
+      bind(cast<SkbGetTunnelKeyOp>(op).getStatus(), *r);
+    } else {
+      bind(cast<SkbSetTunnelKeyOp>(op).getStatus(), *r);
+    }
+    return success();
+  }
+  // one leaf of the fib output buffer, read after the call at its
+  // @records offset with the declared width.
+  if (auto rf = dyn_cast<RecordFieldOp>(op)) {
+    auto rt = cast<RecordType>(rf.getRecord().getType());
+    FailureOr<int64_t> off = ctx_.recordFieldOffset(&op, rt.getSymbol(), rf.getPath());
+    if (failed(off))
+      return failure();
+    Type t = rf.getValue().getType();
+    Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(rf.getRecord()),
+                                   ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(*off)});
+    Value v = LLVM::LoadOp::create(b_, loc, t, at, provableAlignment(kRecordStackAlignment, *off, t));
+    bind(rf.getValue(), v);
+    return success();
+  }
+
+  // Return the requested action, not delivery success.
   if (auto rd = dyn_cast<RedirectOp>(op)) {
-    if (rd.getCond())
+    if (rd.getCond() || !rd.getFallback().empty())
       return rd.emitOpError() << "the `when` form is a stage ① op; run ebpf-expand-regions first";
     Value ifx = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(rd.getIfindex()));
-    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
-    FailureOr<Value> r = ctx_.helperCall(b_, loc, "redirect", {ifx, flags});
+    int64_t flag = 0;
+    if (rd.getFlags() && *rd.getFlags() == "ingress") {
+      auto ingress = bpfabi::lookupRedirFlag("ingress");
+      if (!ingress)
+        return rd.emitOpError("ingress flag missing from UAPI table");
+      flag = *ingress;
+    }
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(flag));
+    FailureOr<Value> r;
+    // redirect_neigh(ifx, NULL, 0, 0) / redirect_peer(ifx, 0).
+    if (rd.getVia() && *rd.getVia() == "neigh")
+      r = ctx_.helperCall(b_, loc, "redirect_neigh", {ifx, LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy()), flags, flags});
+    else if (rd.getVia() && *rd.getVia() == "peer")
+      r = ctx_.helperCall(b_, loc, "redirect_peer", {ifx, flags});
+    else
+      r = ctx_.helperCall(b_, loc, "redirect", {ifx, flags});
     if (failed(r))
       return failure();
     Value ret = LLVM::TruncOp::create(b_, loc, b_.getI32Type(), *r);
@@ -911,7 +1645,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
   // Timer helper arg1 is value+@records timer offset. init receives map and
   // ABI monotonic clock; set_callback uses a relocation; start flags are zero.
   // Return raw status.
-  if (isa<TimerInitOp, TimerSetCallbackOp, TimerStartOp>(op)) {
+  if (isa<TimerInitOp, TimerSetCallbackOp, TimerStartOp, TimerCancelOp>(op)) {
     Value ref = op.getOperand(0);
     StringRef field = op.getAttrOfType<StringAttr>("field").getValue();
     auto rt = cast<RecordType>(cast<BorrowedType>(ref.getType()).getPointee());
@@ -931,6 +1665,8 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     } else if (auto sc = dyn_cast<TimerSetCallbackOp>(op)) {
       Value fn = LLVM::AddressOfOp::create(b_, loc, ctx_.ptrTy(), sc.getCallback());
       st = ctx_.helperCall(b_, loc, "timer_set_callback", {at, fn});
+    } else if (isa<TimerCancelOp>(op)) {
+      st = ctx_.helperCall(b_, loc, "timer_cancel", {at});
     } else {
       Value zero = LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(0));
       st = ctx_.helperCall(b_, loc, "timer_start", {at, remap(cast<TimerStartOp>(op).getNsecs()), zero});
@@ -980,6 +1716,48 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     return success();
   }
 
+  // setsockopt / getsockopt pass a 4-byte stack slot. getsockopt zeroes
+  // the slot first because the kernel leaves optval unwritten on some paths
+  // (the sock_ops lock gate), so the value is defined on every status.
+  if (isa<SockOpsSetsockoptOp, SockOpsGetsockoptOp, SockAddrSetsockoptOp, SockAddrGetsockoptOp>(op)) {
+    bool set = isa<SockOpsSetsockoptOp, SockAddrSetsockoptOp>(op); // same operands and results.
+    StringRef name = op.getAttrOfType<StringAttr>("option").getValue();
+    const bpfabi::SockOptABI *row = bpfabi::lookupSockOption(name);
+    if (!row)
+      return op.emitOpError() << "socket option '" << name << "' is not in the UAPI table";
+    auto word = [&](int64_t v) {
+      return LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(v)).getResult();
+    };
+    Value input = set ? remap(op.getOperand(1))
+                      : LLVM::ConstantOp::create(b_, loc, b_.getI32Type(), b_.getI32IntegerAttr(0)).getResult();
+    Value slot = spillInt(input, loc);
+    FailureOr<Value> r = ctx_.helperCall(b_, loc, set ? "setsockopt" : "getsockopt",
+                                         {remap(op.getOperand(0)), word(row->Level), word(row->Optname), slot, word(4)});
+    if (failed(r))
+      return failure();
+    if (!set)
+      bind(op.getResult(1), LLVM::LoadOp::create(b_, loc, b_.getI32Type(), slot));
+    bind(op.getResult(0), *r);
+    endSpills(loc);
+    return success();
+  }
+  // the constant name and its NUL in a stack buffer; optlen counts the
+  // NUL, so a one-byte name still has optlen 2.
+  if (auto sn = dyn_cast<SockOpsSetsockoptNameOp>(op)) {
+    const bpfabi::SockOptNameABI *row = bpfabi::lookupSockOptionName(sn.getOption());
+    if (!row)
+      return op.emitOpError() << "string socket option '" << sn.getOption() << "' is not in the UAPI table";
+    auto word = [&](int64_t v) {
+      return LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(v)).getResult();
+    };
+    int64_t n = sn.getLiteral().size() + 1;
+    Value buf = literalBuffer(sn.getLiteral(), n, loc);
+    FailureOr<Value> r = ctx_.helperCall(b_, loc, "setsockopt", {remap(sn.getCtx()), word(row->Level), word(row->Optname), buf, word(n)});
+    if (failed(r))
+      return failure();
+    bind(sn.getStatus(), *r);
+    return success();
+  }
   // sk_select_reuseport(ctx,map,&key,0) spills the key like other map ops
   // and returns raw status.
   if (auto sr = dyn_cast<SkSelectReuseportOp>(op)) {
@@ -1036,6 +1814,25 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     if (hash)
       endSpills(loc);
     LLVM::ReturnOp::create(b_, loc, LLVM::TruncOp::create(b_, loc, b_.getI32Type(), *r).getResult());
+    return success();
+  }
+
+  if (auto rd = dyn_cast<SkRedirectRequestOp>(op)) {
+    bool hash = cast<MapType>(rd.getMap().getType()).getKind() == "sockhash";
+    Value key = hash ? spillKey(remap(rd.getKey()), loc) :
+        LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(rd.getKey())).getResult();
+    int64_t fv = 0;
+    if (rd.getIngress()) {
+      auto in = bpfabi::lookupRedirFlag("ingress");
+      if (!in) return op.emitOpError("BPF_F_INGRESS is not in the UAPI table");
+      fv = *in;
+    }
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(fv));
+    auto r = ctx_.helperCall(b_, loc, hash ? "sk_redirect_hash" : "sk_redirect_map",
+                             {remap(rd.getCtx()), remap(rd.getMap()), key, flags});
+    if (failed(r)) return failure();
+    if (hash) endSpills(loc);
+    bind(rd.getStatus(), *r);
     return success();
   }
 
@@ -1251,6 +2048,71 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
   // Load data/data_end once. Check off64<=MAX_PACKET_OFF-len, then compare
   // at+len<=data_end. Pass the exact compared at register into in_range as
   // its window; recomputing data+offset loses verifier range evidence.
+  // the XDP metadata window. data_meta and data are read at their UAPI
+  // offsets (four-byte fields); the branch compares the advanced meta pointer
+  // against data. The window is the meta pointer itself (the same register
+  // that was compared, so the verifier keeps its range). Accesses are always
+  // byte by byte at align 1 — the strict alignment of PTR_TO_PACKET_META is
+  // relative to NET_IP_ALIGN, and a 4-multiple data - data_meta does not make
+  // the start aligned.
+  if (auto mk = dyn_cast<MetaCheckBrOp>(op)) {
+    auto kind = cast<ContextType>(mk.getCtx().getType()).getKind();
+    auto layout = bpfabi::lookupMetaCtx(kind);
+    if (!layout)
+      return mk.emitOpError() << "program kind \"" << kind << "\" has no data_meta in the UAPI table";
+    int64_t len = static_cast<int64_t>(mk.getLen());
+    auto range = bpfabi::CtxMetaOp::create(b_, loc, TypeRange{ctx_.ptrTy(), ctx_.ptrTy()}, remap(mk.getCtx()),
+                                           b_.getStringAttr(kind), b_.getI64IntegerAttr(layout->metaOffset),
+                                           b_.getI64IntegerAttr(layout->dataOffset), b_.getI64IntegerAttr(layout->fieldBytes));
+    Block *inDst = blocks_[mk.getInRange()];
+    Block *outDst = blocks_[mk.getOutOfRange()];
+    Value past = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), range.getMeta(),
+                                     ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(len)});
+    Value ok = LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ule, past, range.getData());
+    LLVM::CondBrOp::create(b_, loc, ok, inDst, ValueRange{range.getMeta()}, outDst, ValueRange{});
+    return success();
+  }
+
+  if (auto ml = dyn_cast<MetaLoadOp>(op)) {
+    Value w = remap(ml.getWindow());
+    Type resTy = ml.getResult().getType();
+    unsigned width = resTy.getIntOrFloatBitWidth() / 8;
+    Value v;
+    for (unsigned i = 0; i < width; ++i) {
+      Value p = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), w,
+                                    ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(ml.getIndex() + i)});
+      Value byte = LLVM::LoadOp::create(b_, loc, b_.getI8Type(), p, /*alignment=*/1);
+      Value wide = width == 1 ? byte : LLVM::ZExtOp::create(b_, loc, resTy, byte).getResult();
+      if (i != 0) {
+        Value sh = LLVM::ConstantOp::create(b_, loc, resTy, b_.getIntegerAttr(resTy, 8 * i));
+        wide = LLVM::ShlOp::create(b_, loc, wide, sh);
+        wide = LLVM::OrOp::create(b_, loc, v, wide);
+      }
+      v = wide;
+    }
+    bind(ml.getResult(), v);
+    return success();
+  }
+
+  if (auto ms = dyn_cast<MetaStoreOp>(op)) {
+    Value w = remap(ms.getWindow());
+    Value v = remap(ms.getValue());
+    unsigned bytes = v.getType().getIntOrFloatBitWidth() / 8;
+    for (unsigned k = 0; k < bytes; ++k) {
+      Value byte = v;
+      if (k > 0) {
+        Value sh = LLVM::ConstantOp::create(b_, loc, v.getType(), b_.getIntegerAttr(v.getType(), 8 * k));
+        byte = LLVM::LShrOp::create(b_, loc, v, sh);
+      }
+      if (bytes > 1)
+        byte = LLVM::TruncOp::create(b_, loc, b_.getI8Type(), byte);
+      Value p = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), w,
+                                    ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(ms.getIndex() + k)});
+      LLVM::StoreOp::create(b_, loc, byte, p, /*alignment=*/1);
+    }
+    return success();
+  }
+
   if (auto pk = dyn_cast<PktCheckBrOp>(op)) {
     auto kind = cast<ContextType>(pk.getCtx().getType()).getKind();
     auto layout = bpfabi::lookupPacketCtx(kind);
@@ -1324,7 +2186,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
       for (StringRef k : ctx_.programKinds)
         if (k != "xdp")
           return st.emitOpError() << "writes a packet window in @" << sub_.getSymName() << ", which is reached from a \"" << k
-                                  << "\" program; static packet-window stores are only for xdp programs ( cgroup_sockopt stores are entry-only)";
+                                  << "\" program; static packet-window stores are only for xdp programs (cgroup_sockopt stores are entry-only)";
     Value w = remap(st.getWindow());
     Value v = remap(st.getValue());
     unsigned bytes = v.getType().getIntOrFloatBitWidth() / 8;
@@ -1339,6 +2201,142 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
       Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), w,
                                      ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(st.getIndex() + k)});
       LLVM::StoreOp::create(b_, loc, byte, at, /*alignment=*/1);
+    }
+    return success();
+  }
+
+  // the arena window base is a CO-RE read of bpf_arena.user_vm_start
+  // from the map's .maps placeholder address (the kfield.load form).
+  if (isa<ArenaAllocBrOp, ArenaFreePagesOp>(op)) {
+    auto allocation = dyn_cast<ArenaAllocBrOp>(op);
+    auto release = dyn_cast<ArenaFreePagesOp>(op);
+    Value map = remap(allocation ? allocation.getMap() : release.getMap());
+    if (!map)
+      return op.emitOpError("arena lifecycle map has no address at stage ③");
+    uint64_t offset = allocation ? allocation.getPageOffset() : release.getPageOffset();
+    uint64_t count = allocation ? allocation.getPageCount() : release.getPageCount();
+    Value base = bpfabi::CoreFieldLoadOp::create(b_, loc, b_.getI64Type(), map, b_.getStringAttr("bpf_arena"),
+                                               b_.getStringAttr("user_vm_start"));
+    auto constant = [&](Type ty, uint64_t value) -> Value {
+      return LLVM::ConstantOp::create(b_, loc, ty, b_.getIntegerAttr(ty, value));
+    };
+    Value delta = constant(b_.getI64Type(), offset * 4096);
+    Value requested = LLVM::AddOp::create(b_, loc, base, delta);
+    Value pointer = LLVM::IntToPtrOp::create(b_, loc, ctx_.ptrTy(), requested);
+    Value pages = constant(b_.getI32Type(), count);
+    if (release) {
+      bpfabi::KfuncCallOp::create(b_, loc, TypeRange{}, b_.getStringAttr("bpf_arena_free_pages"), UnitAttr(),
+                                ValueRange{map, pointer, pages});
+      return success();
+    }
+    Value node = constant(b_.getI32Type(), uint32_t(-1));
+    Value flags = constant(b_.getI64Type(), 0);
+    auto call = bpfabi::KfuncCallOp::create(b_, loc, TypeRange{ctx_.ptrTy()}, b_.getStringAttr("bpf_arena_alloc_pages"), UnitAttr(),
+                                          ValueRange{map, pointer, pages, node, flags});
+    Value actual = LLVM::PtrToIntOp::create(b_, loc, b_.getI64Type(), call.getResult(0));
+    Value ok = mlir::ebpf::detail::arenaAllocationMatches(b_, loc, actual, requested);
+    LLVM::CondBrOp::create(b_, loc, ok, blocks_[allocation.getAllocated()], ValueRange{}, blocks_[allocation.getFailed()], ValueRange{});
+    return success();
+  }
+
+  if (auto ab = dyn_cast<ArenaBaseOp>(op)) {
+    Value m = remap(ab.getMap());
+    if (!m)
+      return ab.emitOpError() << "the arena map has no address at stage ③";
+    auto r = bpfabi::CoreFieldLoadOp::create(b_, loc, b_.getI64Type(), m, b_.getStringAttr("bpf_arena"),
+                                             b_.getStringAttr("user_vm_start"));
+    bind(ab.getBase(), r.getResult());
+    return success();
+  }
+
+  // one unsigned scalar compare off64 ule size − len and a branch — no
+  // address before the compare. The window address (base + off64 in address
+  // space 1) is made at the entry of the in-range block only.
+  if (auto ck = dyn_cast<ArenaCheckBrOp>(op)) {
+    auto ab = ck.getBase().getDefiningOp<ArenaBaseOp>();
+    Value mapAddr = ab ? remap(ab.getMap()) : Value();
+    auto addr = mapAddr ? mapAddr.getDefiningOp<LLVM::AddressOfOp>() : LLVM::AddressOfOp();
+    if (!addr)
+      return ck.emitOpError() << "the base is not an ebpf.arena.base of a map at stage ③";
+    std::optional<uint64_t> bytes = ctx_.arenaBytes(addr.getGlobalName());
+    if (!bytes)
+      return ck.emitOpError() << "the size of arena map @" << addr.getGlobalName() << " is not recorded in the module ("
+                              << Lowering::kArenaBytesAttr << " — ebpf-build-btf-types sets it from the schema pages)";
+    uint64_t len = ck.getLen();
+    if (len > *bytes)
+      return ck.emitOpError() << "the window of " << len << " bytes is larger than the arena (" << *bytes << " bytes)";
+    APInt constOff;
+    if (matchPattern(ck.getOffset(), m_ConstantInt(&constOff)) &&
+        (constOff.getActiveBits() > 64 || constOff.getZExtValue() > *bytes - len)) // Subtraction avoids overflow.
+      return ck.emitOpError() << "the window at constant offset " << constOff.getZExtValue() << " exceeds the arena (" << *bytes
+                              << " bytes)";
+    Value base = remap(ck.getBase());
+    Value off64 = remap(ck.getOffset());
+    Block *inDst = blocks_[ck.getInRange()];
+    Block *outDst = blocks_[ck.getOutOfRange()];
+    Value lim = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(static_cast<int64_t>(*bytes - len)));
+    Value ok = LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ule, off64, lim);
+    LLVM::CondBrOp::create(b_, loc, ok, inDst, ValueRange{}, outDst, ValueRange{});
+    {
+      OpBuilder::InsertionGuard g(b_);
+      b_.setInsertionPointToStart(inDst);
+      auto at = bpfabi::ArenaAddrOp::create(b_, loc, ctx_.arenaPtrTy(), base, off64);
+      bind(ck.getInRange()->getArgument(0), at.getResult());
+    }
+    return success();
+  }
+
+  // arena accesses are always volatile (shared with user space). One
+  // width-aligned access when the window's constant offset c gives
+  // (c + index) mod width = 0, otherwise one access per byte.
+  if (isa<ArenaLoadOp, ArenaStoreOp>(op)) {
+    auto ld = dyn_cast<ArenaLoadOp>(op);
+    auto st = dyn_cast<ArenaStoreOp>(op);
+    Value window = ld ? ld.getWindow() : st.getWindow();
+    uint64_t index = ld ? ld.getIndex() : st.getIndex();
+    Value w = remap(window);
+    if (!w)
+      return op.emitOpError() << "the arena window has no address at stage ③ (its arena.check_br was not lowered first)";
+    Type valTy = ld ? ld.getResult().getType() : st.getValue().getType();
+    unsigned width = valTy.getIntOrFloatBitWidth() / 8;
+    auto addrAt = [&](uint64_t i) {
+      return LLVM::GEPOp::create(b_, loc, ctx_.arenaPtrTy(), b_.getI8Type(), w,
+                                 ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(i)}).getResult();
+    };
+    std::optional<uint64_t> c = constantArenaWindowOffset(window);
+    bool wide = width == 1 || (c && (*c + index) % width == 0);
+    if (ld) {
+      if (wide) {
+        bind(ld.getResult(), LLVM::LoadOp::create(b_, loc, valTy, addrAt(index), /*alignment=*/width, /*isVolatile=*/true).getResult());
+        return success();
+      }
+      Value v;
+      for (unsigned i = 0; i < width; ++i) {
+        Value byte = LLVM::LoadOp::create(b_, loc, b_.getI8Type(), addrAt(index + i), /*alignment=*/1, /*isVolatile=*/true);
+        Value part = LLVM::ZExtOp::create(b_, loc, valTy, byte);
+        if (i != 0) {
+          Value sh = LLVM::ConstantOp::create(b_, loc, valTy, b_.getIntegerAttr(valTy, 8 * i));
+          part = LLVM::ShlOp::create(b_, loc, part, sh);
+          part = LLVM::OrOp::create(b_, loc, v, part);
+        }
+        v = part;
+      }
+      bind(ld.getResult(), v);
+      return success();
+    }
+    Value v = remap(st.getValue());
+    if (wide) {
+      LLVM::StoreOp::create(b_, loc, v, addrAt(index), /*alignment=*/width, /*isVolatile=*/true);
+      return success();
+    }
+    for (unsigned k = 0; k < width; ++k) {
+      Value byte = v;
+      if (k > 0) {
+        Value sh = LLVM::ConstantOp::create(b_, loc, valTy, b_.getIntegerAttr(valTy, 8 * k));
+        byte = LLVM::LShrOp::create(b_, loc, v, sh);
+      }
+      byte = LLVM::TruncOp::create(b_, loc, b_.getI8Type(), byte);
+      LLVM::StoreOp::create(b_, loc, byte, addrAt(index + k), /*alignment=*/1, /*isVolatile=*/true);
     }
     return success();
   }
@@ -1561,6 +2559,44 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     bind(rv.getResult(), v);
     return success();
   }
+  if (isa<CtxFuncIpOp, CtxFuncArgCntOp>(op)) {
+    StringRef helper = isa<CtxFuncIpOp>(op) ? "get_func_ip" : "get_func_arg_cnt";
+    auto value = ctx_.helperCall(b_, loc, helper, {remap(op.getOperand(0))});
+    if (failed(value))
+      return failure();
+    bind(op.getResult(0), *value);
+    return success();
+  }
+  if (auto arg = dyn_cast<CtxFuncArgOp>(op)) {
+    Value slot = mlir::ebpf::detail::scalarOutputSlot(b_, entry_, loc, b_.getI64Type(), 8);
+    mlir::ebpf::detail::clearScalarOutput(b_, loc, slot, b_.getI64Type(), 8);
+    Value index = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(arg.getN()));
+    auto status = ctx_.helperCall(b_, loc, "get_func_arg", {remap(arg.getCtx()), index, slot});
+    if (failed(status))
+      return failure();
+    bind(arg.getStatus(), *status);
+    bind(arg.getValue(), mlir::ebpf::detail::scalarOutputValue(b_, loc, slot, b_.getI64Type(),
+         cast<IntegerType>(arg.getValue().getType()), *status, 8));
+    return success();
+  }
+  // ctx.func_ret — bpf_get_func_ret(ctx, &slot) with an entry-block
+  // 8-byte slot; the status (always 0 for fexit) is discarded.
+  if (auto fr = dyn_cast<CtxFuncRetOp>(op)) {
+    Value slot;
+    {
+      OpBuilder::InsertionGuard g(b_);
+      b_.setInsertionPointToStart(entry_);
+      Value one = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(1));
+      slot = LLVM::AllocaOp::create(b_, loc, ctx_.ptrTy(), b_.getI64Type(), one, /*alignment=*/8);
+    }
+    if (failed(ctx_.helperCall(b_, loc, "get_func_ret", {remap(fr.getCtx()), slot})))
+      return failure();
+    Value v = LLVM::LoadOp::create(b_, loc, b_.getI64Type(), slot, /*alignment=*/8);
+    if (fr.getResult().getType() != v.getType())
+      v = LLVM::TruncOp::create(b_, loc, fr.getResult().getType(), v);
+    bind(fr.getResult(), v);
+    return success();
+  }
   // kprobe/uprobe arguments read raw eight-byte ABI registers and truncate.
   // Uprobe type correctness is separately matched against binary DWARF.
   if (auto ua = dyn_cast<UprobeArgOp>(op)) {
@@ -1608,6 +2644,94 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     LLVM::StoreOp::create(b_, loc, v, slot, /*alignment=*/8, /*isVolatile=*/true);
     return success();
   }
+  // one dedicated entry-block slot per expanded iterator — the size
+  // of struct bpf_iter_num from the UAPI table, align 8, and no lifetime
+  // markers, so stack coloring cannot share it with a spill slot (the
+  // verifier tracks the iterator state in these stack slots). new's status is
+  // discarded: a failed iterator's next returns NULL.
+  if (auto ib = dyn_cast<IterNumBeginOp>(op)) {
+    std::optional<int64_t> size = bpfabi::lookupUapiStructSize("bpf_iter_num");
+    if (!size || *size <= 0 || *size % 8 != 0)
+      return ib.emitOpError() << "struct bpf_iter_num has no usable size in the UAPI table (uapistruct row)";
+    Value slot;
+    {
+      OpBuilder::InsertionGuard g(b_);
+      b_.setInsertionPointToStart(entry_);
+      Value one = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(1));
+      slot = LLVM::AllocaOp::create(b_, loc, ctx_.ptrTy(), LLVM::LLVMArrayType::get(b_.getI64Type(), *size / 8), one,
+                                    /*alignment=*/8);
+    }
+    bpfabi::KfuncCallOp::create(b_, loc, TypeRange{b_.getI32Type()}, b_.getStringAttr("bpf_iter_num_new"), UnitAttr(),
+                                ValueRange{slot, remap(ib.getLo()), remap(ib.getHi())});
+    bind(ib.getSlot(), slot);
+    return success();
+  }
+  // next (KF_RET_NULL) → NULL test; the present edge loads the i32 index.
+  if (auto nb = dyn_cast<IterNumNextBrOp>(op)) {
+    auto p = bpfabi::KfuncCallOp::create(b_, loc, TypeRange{ctx_.ptrTy()}, b_.getStringAttr("bpf_iter_num_next"), b_.getUnitAttr(),
+                                         ValueRange{remap(nb.getSlot())});
+    Value null = LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy());
+    Value present = LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, p.getResult(0), null);
+    Block *cur = b_.getInsertionBlock();
+    auto *load = new Block();
+    func_.getBody().getBlocks().insert(std::next(cur->getIterator()), load);
+    LLVM::CondBrOp::create(b_, loc, present, load, ValueRange{}, blocks_[nb.getExit()], ValueRange{});
+    b_.setInsertionPointToEnd(load);
+    Value idx = LLVM::LoadOp::create(b_, loc, b_.getI32Type(), p.getResult(0), /*alignment=*/4);
+    LLVM::BrOp::create(b_, loc, ValueRange{idx}, blocks_[nb.getBody()]);
+    return success();
+  }
+  if (auto ie = dyn_cast<IterNumEndOp>(op)) {
+    bpfabi::KfuncCallOp::create(b_, loc, TypeRange{}, b_.getStringAttr("bpf_iter_num_destroy"), UnitAttr(),
+                                ValueRange{remap(ie.getSlot())});
+    return success();
+  }
+  // the DSQ iterator — the same dedicated slot rule (struct
+  // bpf_iter_scx_dsq from the UAPI table), flags 0, and next's task passed to
+  // the body on the present edge.
+  if (auto ib = dyn_cast<IterScxDsqBeginOp>(op)) {
+    std::optional<int64_t> size = bpfabi::lookupUapiStructSize("bpf_iter_scx_dsq");
+    if (!size || *size <= 0 || *size % 8 != 0)
+      return ib.emitOpError() << "struct bpf_iter_scx_dsq has no usable size in the UAPI table (uapistruct row)";
+    Value slot;
+    {
+      OpBuilder::InsertionGuard g(b_);
+      b_.setInsertionPointToStart(entry_);
+      Value one = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(1));
+      slot = LLVM::AllocaOp::create(b_, loc, ctx_.ptrTy(), LLVM::LLVMArrayType::get(b_.getI64Type(), *size / 8), one,
+                                    /*alignment=*/8);
+    }
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
+    bpfabi::KfuncCallOp::create(b_, loc, TypeRange{b_.getI32Type()}, b_.getStringAttr("bpf_iter_scx_dsq_new"), UnitAttr(),
+                                ValueRange{slot, remap(ib.getDsqId()), flags});
+    bind(ib.getSlot(), slot);
+    return success();
+  }
+  if (auto nb = dyn_cast<IterScxDsqNextBrOp>(op)) {
+    auto p = bpfabi::KfuncCallOp::create(b_, loc, TypeRange{ctx_.ptrTy()}, b_.getStringAttr("bpf_iter_scx_dsq_next"), b_.getUnitAttr(),
+                                         ValueRange{remap(nb.getSlot())});
+    Value null = LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy());
+    Value present = LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, p.getResult(0), null);
+    // The task crosses into the body only below the non-null edge (③ exit check: a use dominated by that edge).
+    Block *cur = b_.getInsertionBlock();
+    auto *edge = new Block();
+    func_.getBody().getBlocks().insert(std::next(cur->getIterator()), edge);
+    LLVM::CondBrOp::create(b_, loc, present, edge, ValueRange{}, blocks_[nb.getExit()], ValueRange{});
+    b_.setInsertionPointToEnd(edge);
+    LLVM::BrOp::create(b_, loc, ValueRange{p.getResult(0)}, blocks_[nb.getBody()]);
+    return success();
+  }
+  if (auto ie = dyn_cast<IterScxDsqEndOp>(op)) {
+    bpfabi::KfuncCallOp::create(b_, loc, TypeRange{}, b_.getStringAttr("bpf_iter_scx_dsq_destroy"), UnitAttr(),
+                                ValueRange{remap(ie.getSlot())});
+    return success();
+  }
+  // the RCU section's lock / unlock.
+  if (isa<RcuLockOp, RcuUnlockOp>(op)) {
+    bpfabi::KfuncCallOp::create(b_, loc, TypeRange{}, b_.getStringAttr(isa<RcuLockOp>(op) ? "bpf_rcu_read_lock" : "bpf_rcu_read_unlock"),
+                                UnitAttr(), ValueRange{});
+    return success();
+  }
   // fixed byte copy from the direct tracepoint context; no helper or CO-RE.
   if (auto tc = dyn_cast<TpFieldCopyOp>(op)) {
     auto t = ctx_.recordTemplate(&op, tc.getDstRecord().getSymbol(), tc.getPath());
@@ -1639,6 +2763,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     int64_t n = static_cast<int64_t>(t->dims[0].count);
     auto src = bpfabi::CoreFieldAddrOp::create(b_, loc, ctx_.ptrTy(), remap(kc.getPtr()),
                                                b_.getStringAttr(base.getStructName()), kc.getFieldAttr());
+    copyGuards(&op, src);
     for (int64_t i = 0; i < n; ++i) {
       Value s = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), src.getResult(),
                                     ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(i)});
@@ -1655,6 +2780,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     auto base = cast<KPtrType>(ks.getPtr().getType());
     auto addr = bpfabi::CoreFieldAddrOp::create(b_, loc, ctx_.ptrTy(), remap(ks.getPtr()),
                                                 b_.getStringAttr(base.getStructName()), ks.getFieldAttr());
+    copyGuards(&op, addr);
     unsigned bytes = cast<IntegerType>(ks.getValue().getType()).getWidth() / 8;
     LLVM::StoreOp::create(b_, loc, remap(ks.getValue()), addr.getResult(), bytes, /*isVolatile=*/true);
     return success();
@@ -1665,9 +2791,9 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     return success();
   }
   if (auto kp = dyn_cast<KFieldPtrOp>(op)) { // Nullable pointer result was guarded by expanded kptr.check.
-    auto base = cast<KPtrType>(kp.getPtr().getType());
     auto r = bpfabi::CoreFieldLoadOp::create(b_, loc, ctx_.ptrTy(), remap(kp.getPtr()),
-                                             b_.getStringAttr(base.getStructName()), kp.getFieldAttr());
+                                             b_.getStringAttr(kp.getBaseStructName()), kp.getFieldAttr()); // kptr or kref base.
+    copyGuards(&op, r);
     bind(kp.getResult(), r.getResult());
     return success();
   }
@@ -1677,14 +2803,35 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     const bpfabi::KfuncABI *k = bpfabi::lookupKfunc(kc.getCallee());
     if (!k)
       return kc.emitOpError() << "kfunc \"" << kc.getCallee() << "\" is not in the UAPI table";
+    // a bool result is the kernel's one-byte value (mark_reg_unknown —
+    // only r0's low byte is defined): call as i8, then compare with 0.
+    bool boolRet = StringRef(k->ret) == "bool";
     SmallVector<Type> resTys;
     for (Type t : kc.getResultTypes())
-      resTys.push_back(convertType(t));
+      resTys.push_back(boolRet ? Type(b_.getI8Type()) : convertType(t));
     bool nullable = StringRef(k->ret).starts_with("*") && k->hasFlag("ret_null");
     auto call = bpfabi::KfuncCallOp::create(b_, loc, resTys, kc.getCalleeAttr(), nullable ? b_.getUnitAttr() : UnitAttr(),
                                             remapAll(kc.getArgs()));
-    for (auto [from, to] : llvm::zip(kc.getResults(), call.getResults()))
+    for (auto [from, to] : llvm::zip(kc.getResults(), call.getResults())) {
+      if (boolRet) {
+        Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI8Type(), b_.getI8IntegerAttr(0));
+        bind(from, LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, to, zero));
+        continue;
+      }
       bind(from, to);
+    }
+    return success();
+  }
+  // kptr.load_rcu is one volatile 8-byte load of the field (MEM_RCU in the section).
+  if (auto lr = dyn_cast<KPtrLoadRcuOp>(op)) {
+    auto rt = cast<RecordType>(cast<BorrowedType>(lr.getRef().getType()).getPointee());
+    FailureOr<int64_t> off = ctx_.kptrOffset(&op, rt.getSymbol(), lr.getField());
+    if (failed(off))
+      return failure();
+    Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(lr.getRef()),
+                                   ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(*off)});
+    Value p = LLVM::LoadOp::create(b_, loc, ctx_.ptrTy(), at, /*alignment=*/8, /*isVolatile=*/true);
+    bind(lr.getPtr(), p);
     return success();
   }
   // kptr_xchg takes borrowed-record address+field offset and a new ref/null;
@@ -1703,12 +2850,35 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     bind(x.getOld(), *r);
     return success();
   }
+  // the kptr global ops use the global's address (BPF_PSEUDO_MAP_VALUE —
+  // the verifier's PTR_TO_MAP_VALUE) as the kptr field ops use a field address.
+  if (auto x = dyn_cast<GlobalKPtrXchgOp>(op)) {
+    LLVM::GlobalOp g = ctx_.globalVar(x.getName(), ctx_.ptrTy(), loc);
+    if (!g)
+      return failure();
+    Value at = LLVM::AddressOfOp::create(b_, loc, g);
+    Value nv = x.getNewRef() ? remap(x.getNewRef()) : Value(LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy()));
+    FailureOr<Value> r = ctx_.helperCall(b_, loc, "kptr_xchg", {at, nv});
+    if (failed(r))
+      return failure();
+    bind(x.getOld(), *r);
+    return success();
+  }
+  if (auto lr = dyn_cast<GlobalKPtrLoadRcuOp>(op)) {
+    LLVM::GlobalOp g = ctx_.globalVar(lr.getName(), ctx_.ptrTy(), loc);
+    if (!g)
+      return failure();
+    Value at = LLVM::AddressOfOp::create(b_, loc, g);
+    bind(lr.getPtr(), LLVM::LoadOp::create(b_, loc, ctx_.ptrTy(), at, /*alignment=*/8, /*isVolatile=*/true));
+    return success();
+  }
   if (auto ld = dyn_cast<KFieldLoadOp>(op)) {
     Type pt = ld.getPtr().getType(); // Acquired kref reads share the same lowering.
-    StringRef sname = isa<KRefType>(pt) ? cast<KRefType>(pt).getStructName() : cast<KPtrType>(pt).getStructName();
+    StringRef sname = isa<KRefType>(pt) ? cast<KRefType>(pt).getStructName() : isa<RcuPtrType>(pt) ? cast<RcuPtrType>(pt).getStructName() : cast<KPtrType>(pt).getStructName(); // rcu_ptr reads too.
     auto r = bpfabi::CoreFieldLoadOp::create(
         b_, loc, ld.getResult().getType(), remap(ld.getPtr()),
         b_.getStringAttr(sname), ld.getFieldAttr());
+    copyGuards(&op, r); // guards of the kfield row (marker suffix at ④).
     bind(ld.getResult(), r.getResult());
     return success();
   }
@@ -1737,6 +2907,25 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     if (failed(r)) return failure();
     endSpills(loc);
     bind(s.getResult(), *r);
+    return success();
+  }
+  // sk_lookup_tcp / _udp(ctx, tuple, size, netns, 0). The helper only
+  // reads the tuple, so the record.make stack slot is passed without a copy.
+  // size is the declared record size (ebpf-verify-records proved the view).
+  if (isa<SockLookupTcpOp, SockLookupUdpOp, SockSkcLookupTcpOp>(op)) {
+    std::optional<int64_t> netns = bpfabi::lookupSkLookupNetns("current_netns");
+    if (!netns)
+      return op.emitOpError() << "sklookupnetns current_netns missing from UAPI table";
+    Value tuple = op.getOperand(1);
+    int64_t size = cast<RecordType>(tuple.getType()).getSize();
+    Value len = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(size));
+    Value ns = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(*netns));
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
+    StringRef helper = isa<SockLookupTcpOp>(op) ? "sk_lookup_tcp" : isa<SockSkcLookupTcpOp>(op) ? "skc_lookup_tcp" : "sk_lookup_udp";
+    FailureOr<Value> r = ctx_.helperCall(b_, loc, helper, {remap(op.getOperand(0)), remap(tuple), len, ns, flags});
+    if (failed(r))
+      return failure();
+    bind(op.getResult(0), *r);
     return success();
   }
   if (auto s = dyn_cast<SockReleaseOp>(op))
@@ -2084,7 +3273,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     // recheck narrowing is lost through spills, 6.6 may reject larger ranges.
     // Warn factually when it does not fit; do not reject compilation.
     if (ctx_.warnIndexMaskFit && !atOp.getIndices().empty() && atOp.getIndices()[0].getDefiningOp<ElemMaskOp>()) {
-      uint64_t reach = t->offsetBytes + t->bits / 8;
+      uint64_t reach = t->offsetBytes + (t->elemRecord.empty() ? t->bits / 8 : t->elemBytes);
       for (auto [k, d] : llvm::enumerate(t->dims)) {
         uint64_t p = 1;
         while (p < d.count)
@@ -2098,12 +3287,33 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
                                   "allocation; leaving room after the array up to the next power of two in the schema "
                                   "record puts it in the guaranteed range";
     }
-    Type et = b_.getIntegerType(t->bits);
+    // a borrowed base's alignment (8 for a map value or a global; an
+    // element borrow records its own in borrowAlign_).
+    unsigned baseAlign = borrowAlign(remap(ref));
     Value cur = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(ref),
                                     ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(t->offsetBytes)});
+    // a record-array element is borrowed at offset + index × stride
+    // (@records); its alignment is what the base, the offset and the stride prove.
+    if (!t->elemRecord.empty()) {
+      unsigned a = baseAlign;
+      while (a > 1 && t->offsetBytes % a != 0)
+        a /= 2;
+      for (auto [k, izv] : llvm::enumerate(atOp.getIndices())) {
+        int64_t stride = t->dims[k].strideBytes;
+        Value s = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(stride));
+        Value off = LLVM::MulOp::create(b_, loc, remap(izv), s);
+        cur = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), cur, ArrayRef<LLVM::GEPArg>{off});
+        while (a > 1 && stride % a != 0)
+          a /= 2;
+      }
+      borrowAlign_[cur] = a;
+      bind(op.getResult(0), cur);
+      return success();
+    }
+    Type et = b_.getIntegerType(t->bits);
     // Constant offset proves alignment up to width. Index offsets preserve it
     // only when each stride is a multiple of that alignment.
-    unsigned align = provableAlignment(bpfabi::kMapValueAlignment, t->offsetBytes, et);
+    unsigned align = provableAlignment(baseAlign, t->offsetBytes, et);
     for (auto [k, izv] : llvm::enumerate(atOp.getIndices())) {
       int64_t stride = t->dims[k].strideBytes;
       Value iz = remap(izv);
@@ -2153,7 +3363,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     if (isLoad) {
       auto ld = cast<RefFieldLoadOp>(op);
       Type t = ld.getResult().getType();
-      unsigned align = provableAlignment(bpfabi::kMapValueAlignment, *off, t);
+      unsigned align = provableAlignment(borrowAlign(remap(ref)), *off, t);
       if (failed(checkOnce(&op, ld.getOnce(), align, t)))
         return failure();
       Value v = LLVM::LoadOp::create(b_, loc, t, at, align, /*isVolatile=*/ld.getOnce());
@@ -2161,11 +3371,22 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     } else {
       auto st = cast<RefFieldStoreOp>(op);
       Type t = st.getValue().getType();
-      unsigned align = provableAlignment(bpfabi::kMapValueAlignment, *off, t);
+      unsigned align = provableAlignment(borrowAlign(remap(ref)), *off, t);
       if (failed(checkOnce(&op, st.getOnce(), align, t)))
         return failure();
       LLVM::StoreOp::create(b_, loc, remap(st.getValue()), at, align, /*isVolatile=*/st.getOnce());
     }
+    return success();
+  }
+
+  // the address of an embedded cpumask — the borrow plus the @records offset.
+  if (auto fa = dyn_cast<RefFieldAddrOp>(op)) {
+    auto rt = cast<RecordType>(cast<BorrowedType>(fa.getRef().getType()).getPointee());
+    FailureOr<int64_t> off = ctx_.recordFieldOffset(&op, rt.getSymbol(), fa.getField(), /*cpumaskLeaf=*/true);
+    if (failed(off))
+      return failure();
+    bind(fa.getAddr(), LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(fa.getRef()),
+                                           ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(*off)}));
     return success();
   }
 
@@ -2178,7 +3399,7 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     FailureOr<int64_t> off = ctx_.recordFieldOffset(&op, rt.getSymbol(), fa.getField());
     if (failed(off))
       return failure();
-    unsigned align = provableAlignment(bpfabi::kMapValueAlignment, *off, t);
+    unsigned align = provableAlignment(borrowAlign(remap(fa.getRef())), *off, t);
     if (align < t.getIntOrFloatBitWidth() / 8)
       return fa.emitOpError() << "field \"" << fa.getField() << "\" at byte offset " << *off << " is not provably aligned to "
                               << t.getIntOrFloatBitWidth() / 8 << " bytes; cannot lower an atomic add";
@@ -2186,6 +3407,32 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
                                    ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(*off)});
     // atomicrmw defaults to natural alignment, already established above.
     LLVM::AtomicRMWOp::create(b_, loc, LLVM::AtomicBinOp::add, at, remap(fa.getDelta()), LLVM::AtomicOrdering::monotonic);
+    return success();
+  }
+
+  // field cmpxchg / or — the atomic_add address and alignment rules.
+  if (isa<RefFieldCmpxchgOp, RefFieldAtomicOrOp>(op)) {
+    auto cx = dyn_cast<RefFieldCmpxchgOp>(op);
+    auto fo = dyn_cast<RefFieldAtomicOrOp>(op);
+    Value ref = cx ? cx.getRef() : fo.getRef();
+    StringRef field = cx ? cx.getField() : fo.getField();
+    Type t = cx ? cx.getOld().getType() : fo.getValue().getType();
+    StringRef what = cx ? "an atomic compare-and-exchange" : "an atomic or";
+    if (!t.isInteger(32) && !t.isInteger(64))
+      return op.emitOpError() << "cannot lower " << what << " of " << t;
+    auto rt = cast<RecordType>(cast<BorrowedType>(ref.getType()).getPointee());
+    FailureOr<int64_t> off = ctx_.recordFieldOffset(&op, rt.getSymbol(), field);
+    if (failed(off))
+      return failure();
+    unsigned align = provableAlignment(borrowAlign(remap(ref)), *off, t);
+    if (align < t.getIntOrFloatBitWidth() / 8)
+      return op.emitOpError() << "field \"" << field << "\" at byte offset " << *off << " is not provably aligned to "
+                              << t.getIntOrFloatBitWidth() / 8 << " bytes; cannot lower " << what;
+    Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(ref), ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(*off)});
+    if (cx)
+      bind(cx.getOld(), atomicCmpxchg(at, remap(cx.getExpected()), remap(cx.getDesired()), loc));
+    else
+      atomicOr(at, remap(fo.getValue()), loc);
     return success();
   }
 
@@ -2325,12 +3572,227 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
   // Global loads are volatile, preventing initial-value assumptions like C const volatile.
   if (auto gl = dyn_cast<GlobalLoadOp>(op)) {
     Type t = gl.getResult().getType();
+    // a bss kaddr global is an 8-byte pointer (the address as a value).
+    bool kaddr = isa<KAddrType>(t);
+    if (kaddr)
+      t = ctx_.ptrTy();
     LLVM::GlobalOp g = ctx_.globalVar(gl.getName(), t, loc);
     if (!g)
       return failure();
     Value addr = LLVM::AddressOfOp::create(b_, loc, g);
-    unsigned align = t.getIntOrFloatBitWidth() / 8;
+    unsigned align = kaddr ? 8 : t.getIntOrFloatBitWidth() / 8;
     bind(gl.getResult(), LLVM::LoadOp::create(b_, loc, t, addr, align, /*isVolatile=*/true));
+    return success();
+  }
+
+  // typed ksym / kconfig externs and the CO-RE existence guards, in
+  // clang's shapes: `if (&v)` is ld_imm64 v and a compare with 0;
+  // bpf_per_cpu_ptr(&v, cpu), NULL test, then the slot load on the true edge;
+  // the kconfig value is a plain load (the .kconfig map is frozen).
+  auto externOf = [&](Operation *o, StringRef name, StringRef section) -> LLVM::GlobalOp {
+    auto ta = o->getAttrOfType<TypeAttr>("ebpf.extern_type");
+    Type t = ta ? convertType(ta.getValue()) : Type();
+    if (section == ".kconfig")
+      t = o->getResult(0).getType();
+    if (!t) {
+      o->emitOpError() << "has no ebpf.extern_type (ebpf-verify-schema did not run)";
+      return nullptr;
+    }
+    return ctx_.externVar(name, t, section, o->hasAttr("ebpf.weak"), loc);
+  };
+  if (auto ex = dyn_cast<KsymExistsOp>(op)) {
+    LLVM::GlobalOp g = externOf(&op, ex.getName(), ".ksyms");
+    if (!g)
+      return failure();
+    Value addr = LLVM::AddressOfOp::create(b_, loc, g);
+    Value null = LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy());
+    bind(ex.getResult(), LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, addr, null));
+    return success();
+  }
+  if (auto br = dyn_cast<KsymPerCpuBrOp>(op)) {
+    LLVM::GlobalOp g = externOf(&op, br.getName(), ".ksyms");
+    if (!g)
+      return failure();
+    Value addr = LLVM::AddressOfOp::create(b_, loc, g);
+    FailureOr<Value> p = ctx_.helperCall(b_, loc, "per_cpu_ptr", {addr, remap(br.getCpu())});
+    if (failed(p))
+      return failure();
+    Value null = LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy());
+    Value ok = LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, *p, null);
+    Block *cur = b_.getInsertionBlock();
+    auto *mid = new Block();
+    func_.getBody().getBlocks().insert(std::next(cur->getIterator()), mid);
+    LLVM::CondBrOp::create(b_, loc, ok, mid, ValueRange{}, blocks_[br.getAbsent()], ValueRange{});
+    b_.setInsertionPointToEnd(mid);
+    Type st = g.getGlobalType();
+    unsigned align = st.isInteger() ? st.getIntOrFloatBitWidth() / 8 : 8;
+    Value v = LLVM::LoadOp::create(b_, loc, st, *p, align);
+    LLVM::BrOp::create(b_, loc, ValueRange{v}, blocks_[br.getPresent()]);
+    return success();
+  }
+  if (auto nn = dyn_cast<KAddrNonNullOp>(op)) {
+    Value null = LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy());
+    bind(nn.getResult(), LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, remap(nn.getAddr()), null));
+    return success();
+  }
+  // the untrusted kernel-address ops (clang's BPF_CORE_READ /
+  // bpf_core_read_str / bpf_strncmp / container_of shapes).
+  if (auto eq = dyn_cast<KAddrEqOp>(op)) {
+    bind(eq.getResult(), LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::eq, remap(eq.getLhs()), remap(eq.getRhs())));
+    return success();
+  }
+  if (isa<KAddrReadOp, KAddrStrncmpOp, KFieldStrncmpOp, KAddrContainerOfOp>(op)) {
+    Type i64 = b_.getI64Type();
+    auto c64 = [&](int64_t v) -> Value { return LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(v)); };
+    auto fieldAddr = [&](Value base, StringRef sname, StringAttr field) -> Value {
+      auto a = bpfabi::CoreFieldAddrOp::create(b_, loc, ctx_.ptrTy(), base, b_.getStringAttr(sname), field);
+      copyGuards(&op, a);
+      return a.getResult();
+    };
+    auto literal = [&](StringRef lit) -> FailureOr<Value> {
+      LLVM::GlobalOp g = ctx_.strncmpLiteral(lit, loc);
+      if (!g)
+        return failure();
+      return Value(LLVM::AddressOfOp::create(b_, loc, ctx_.ptrTy(), g.getSymName()));
+    };
+    if (auto rd = dyn_cast<KAddrReadOp>(op)) {
+      Type vt = rd.getValue().getType();
+      bool ptr = isa<KAddrType>(vt);
+      Type lt = ptr ? Type(ctx_.ptrTy()) : vt;
+      unsigned bytes = ptr ? 8 : vt.getIntOrFloatBitWidth() / 8;
+      Value tmp = allocaFor(i64, loc); // Zeroed: a failed read leaves 0 (the kernel also zeroes it).
+      cast<LLVM::AllocaOp>(tmp.getDefiningOp()).setAlignment(8);
+      LLVM::StoreOp::create(b_, loc, c64(0), tmp, 8);
+      Value src = fieldAddr(remap(rd.getAddr()), rd.getAddr().getType().getStructName(), rd.getFieldAttr());
+      FailureOr<Value> st = ctx_.helperCall(b_, loc, "probe_read_kernel", {tmp, c64(bytes), src});
+      if (failed(st))
+        return failure();
+      bind(rd.getStatus(), *st);
+      bind(rd.getValue(), LLVM::LoadOp::create(b_, loc, lt, tmp, bytes));
+      return success();
+    }
+    if (auto sc = dyn_cast<KAddrStrncmpOp>(op)) {
+      int64_t n = static_cast<int64_t>(sc.getLiteral().size()) + 1; // C's char buf[sizeof(lit)].
+      Value buf = allocaFor(LLVM::LLVMArrayType::get(b_.getI8Type(), n), loc);
+      cast<LLVM::AllocaOp>(buf.getDefiningOp()).setAlignment(8);
+      Value src = fieldAddr(remap(sc.getAddr()), sc.getAddr().getType().getStructName(), sc.getFieldAttr());
+      FailureOr<Value> rd = ctx_.helperCall(b_, loc, "probe_read_kernel_str", {buf, c64(n), src});
+      if (failed(rd))
+        return failure();
+      FailureOr<Value> s2 = literal(sc.getLiteral());
+      if (failed(s2))
+        return failure();
+      FailureOr<Value> c = ctx_.helperCall(b_, loc, "strncmp", {buf, c64(n), *s2});
+      if (failed(c))
+        return failure();
+      bind(sc.getStatus(), *rd);
+      bind(sc.getCmp(), *c);
+      return success();
+    }
+    if (auto kc = dyn_cast<KFieldStrncmpOp>(op)) {
+      Value src = fieldAddr(remap(kc.getPtr()), kc.getPtr().getType().getStructName(), kc.getFieldAttr());
+      FailureOr<Value> s2 = literal(kc.getLiteral());
+      if (failed(s2))
+        return failure();
+      FailureOr<Value> c = ctx_.helperCall(b_, loc, "strncmp", {src, c64(kc.getLen()), *s2});
+      if (failed(c))
+        return failure();
+      bind(kc.getCmp(), *c);
+      return success();
+    }
+    auto co = cast<KAddrContainerOfOp>(op);
+    auto off = bpfabi::CoreFieldOffsetOp::create(b_, loc, b_.getI32Type(), co.getStructNameAttr(), co.getFieldAttr());
+    copyGuards(&op, off);
+    Value off64 = LLVM::ZExtOp::create(b_, loc, i64, off.getResult());
+    Value neg = LLVM::SubOp::create(b_, loc, c64(0), off64);
+    bind(co.getResult(), LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(co.getAddr()), ArrayRef<LLVM::GEPArg>{neg}));
+    return success();
+  }
+  if (auto kl = dyn_cast<KconfigLoadOp>(op)) {
+    LLVM::GlobalOp g = externOf(&op, kl.getName(), ".kconfig");
+    if (!g)
+      return failure();
+    Type t = kl.getResult().getType();
+    Value addr = LLVM::AddressOfOp::create(b_, loc, g);
+    bind(kl.getResult(), LLVM::LoadOp::create(b_, loc, t, addr, t.getIntOrFloatBitWidth() / 8));
+    return success();
+  }
+  // the kind-independent CO-RE enum read (scx.const shares it below).
+  if (auto ce = dyn_cast<CoreEnumValueOp>(op)) {
+    const bpfabi::ScxEnumABI *e = bpfabi::lookupScxEnum(ce.getName());
+    if (!e || e->enumName != ce.getEnumName())
+      return ce.emitOpError() << "enum constant \"" << ce.getEnumName() << "." << ce.getName() << "\" is not in the UAPI table";
+    bind(ce.getValue(), bpfabi::CoreEnumValueOp::create(b_, loc, b_.getI64Type(), b_.getStringAttr(e->enumName), b_.getStringAttr(e->name),
+                                                        b_.getI64IntegerAttr(static_cast<int64_t>(e->value))));
+    return success();
+  }
+  if (isa<CoreTypeExistsOp, CoreFieldExistsOp>(op)) {
+    auto te = dyn_cast<CoreTypeExistsOp>(op);
+    auto fe = dyn_cast<CoreFieldExistsOp>(op);
+    auto r = bpfabi::CoreExistsOp::create(b_, loc, b_.getI32Type(), b_.getStringAttr(te ? "type" : "field"),
+                                          te ? te.getStructNameAttr() : fe.getStructNameAttr(),
+                                          b_.getStringAttr(te ? StringRef() : fe.getField()));
+    Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI32Type(), b_.getI32IntegerAttr(0));
+    bind(op.getResult(0), LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, r.getResult(), zero));
+    return success();
+  }
+
+  // a record global borrow is the address of the placeholder (a byte
+  // array of the record size — the same placeholder as .data record);
+  // BTF-to-DI types it from the schema. The ref ops lower against @records.
+  if (auto gr = dyn_cast<GlobalRefOp>(op)) {
+    auto rt = cast<RecordType>(cast<BorrowedType>(gr.getRef().getType()).getPointee());
+    LLVM::GlobalOp g = ctx_.globalVar(gr.getName(), LLVM::LLVMArrayType::get(b_.getI8Type(), rt.getSize()), loc);
+    if (!g)
+      return failure();
+    bind(gr.getRef(), LLVM::AddressOfOp::create(b_, loc, g));
+    return success();
+  }
+
+  // .bss stores are volatile like global.load (one access per occurrence).
+  if (auto gs = dyn_cast<GlobalStoreOp>(op)) {
+    Value v = remap(gs.getValue());
+    LLVM::GlobalOp g = ctx_.globalVar(gs.getName(), v.getType(), loc);
+    if (!g)
+      return failure();
+    Value addr = LLVM::AddressOfOp::create(b_, loc, g);
+    // a !ebpf.kaddr value is an 8-byte pointer.
+    unsigned align = isa<LLVM::LLVMPointerType>(v.getType()) ? 8 : v.getType().getIntOrFloatBitWidth() / 8;
+    LLVM::StoreOp::create(b_, loc, v, addr, align, /*isVolatile=*/true);
+    return success();
+  }
+
+  // UEI_RECORD into the .data struct user_exit_info record (offsets are
+  // fixed by ebpf-verify-schema's shape check). The cmpxchg32 is inline asm:
+  // LLVM rejects 32-bit cmpxchg below CPU v3, and ObjectEmitter targets v1.
+  if (auto ex = dyn_cast<ScxExitInfoOp>(op)) {
+    constexpr uint64_t kUeiBytes = 1168, kReasonOff = 16, kReasonLen = 128, kMsgOff = 144, kMsgLen = 1024;
+    LLVM::GlobalOp g = ctx_.globalVar(ex.getUei(), LLVM::LLVMArrayType::get(b_.getI8Type(), kUeiBytes), loc);
+    if (!g)
+      return failure();
+    Value ei = remap(ex.getInfo());
+    StringAttr sname = b_.getStringAttr("scx_exit_info");
+    Value uei = LLVM::AddressOfOp::create(b_, loc, g);
+    auto at = [&](uint64_t off) -> Value {
+      return LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), uei, ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(off)});
+    };
+    auto readStr = [&](StringRef field, uint64_t off, uint64_t len) -> LogicalResult {
+      auto src = bpfabi::CoreFieldLoadOp::create(b_, loc, ctx_.ptrTy(), ei, sname, b_.getStringAttr(field));
+      Value n = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(len));
+      return ctx_.helperCall(b_, loc, "probe_read_kernel_str", {at(off), n, src.getResult()});
+    };
+    if (failed(readStr("reason", kReasonOff, kReasonLen)) || failed(readStr("msg", kMsgOff, kMsgLen)))
+      return failure();
+    auto code = bpfabi::CoreFieldLoadOp::create(b_, loc, b_.getI64Type(), ei, sname, b_.getStringAttr("exit_code"));
+    LLVM::StoreOp::create(b_, loc, code.getResult(), at(8), /*align=*/8);
+    Value minus1 = LLVM::ConstantOp::create(b_, loc, b_.getI32Type(), b_.getI32IntegerAttr(-1));
+    LLVM::StoreOp::create(b_, loc, minus1, at(4), /*align=*/4);
+    Value old = LLVM::LoadOp::create(b_, loc, b_.getI32Type(), uei, /*align=*/4, /*isVolatile=*/true);
+    auto kind = bpfabi::CoreFieldLoadOp::create(b_, loc, b_.getI32Type(), ei, sname, b_.getStringAttr("kind"));
+    LLVM::InlineAsmOp::create(b_, loc, TypeRange{b_.getI32Type()}, ValueRange{uei, old, kind.getResult()},
+                              "w0 = cmpxchg32_32($1 + 0, w0, w2)", "={r0},r,{r0},{r2},~{memory}",
+                              /*has_side_effects=*/true, /*is_align_stack=*/false, LLVM::tailcallkind::TailCallKind::None,
+                              /*asm_dialect=*/LLVM::AsmDialectAttr(), /*operand_attrs=*/ArrayAttr());
     return success();
   }
 
@@ -2345,9 +3807,165 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     return success();
   }
 
+  // .bss cmpxchg / or (ebpf-verify-schema proved an integer .bss global).
+  if (auto cx = dyn_cast<GlobalCmpxchgOp>(op)) {
+    LLVM::GlobalOp g = ctx_.globalVar(cx.getName(), cx.getOld().getType(), loc);
+    if (!g)
+      return failure();
+    Value addr = LLVM::AddressOfOp::create(b_, loc, g);
+    bind(cx.getOld(), atomicCmpxchg(addr, remap(cx.getExpected()), remap(cx.getDesired()), loc));
+    return success();
+  }
+  if (auto go = dyn_cast<GlobalAtomicOrOp>(op)) {
+    Value v = remap(go.getValue());
+    LLVM::GlobalOp g = ctx_.globalVar(go.getName(), v.getType(), loc);
+    if (!g)
+      return failure();
+    atomicOr(LLVM::AddressOfOp::create(b_, loc, g), v, loc);
+    return success();
+  }
+
   // Multi target indices use get_attach_cookie under the loader mtarget-index
   // contract. Session is_return returns i8 bool, compared with zero for i1;
   // session_cookie returns a non-null u64 pointer accessed through eight bytes.
+  // sched_ext kfuncs of the family "insert". Each op calls its
+  // ScxContract.def kfunc with the UAPI row's BPF-visible prototype (bool
+  // returns are i8 compared with zero). select_cpu_dfl's bool out parameter is
+  // a zeroed one-byte stack slot; error's format is compiler-owned writable
+  // .data (not .rodata as trace.printk) and its arguments a stack u64
+  // array.
+  // the B1 ops call their kfunc the same way; exit / dump share
+  // error's format and argument array.
+  if (isa<ScxDsqInsertOp, ScxDsqInsertVtimeOp, ScxDsqMoveToLocalOp, ScxCreateDsqOp, ScxSelectCpuDflOp, ScxTaskSetDsqVtimeOp, ScxErrorOp,
+          ScxConstOp, ScxTaskCpuOp, ScxKickCpuOp, ScxDsqNrQueuedOp, ScxDsqPeekOp, ScxTaskSetSliceOp, ScxNowOp, ScxPickIdleCpuOp,
+          ScxCpuCurrOp, ScxCpuperfCapOp, ScxCpuperfSetOp, ScxDsqReenqOp, ScxExitOp, ScxDumpOp>(op)) {
+    if (auto c = dyn_cast<ScxConstOp>(op)) {
+      const bpfabi::ScxEnumABI *e = bpfabi::lookupScxEnum(c.getName());
+      if (!e)
+        return c.emitOpError() << "enum constant \"" << c.getName() << "\" is not in the UAPI table";
+      bind(c.getValue(), bpfabi::CoreEnumValueOp::create(b_, loc, b_.getI64Type(), b_.getStringAttr(e->enumName), b_.getStringAttr(e->name),
+                                                         b_.getI64IntegerAttr(static_cast<int64_t>(e->value))));
+      return success();
+    }
+    auto call = [&](StringRef kfunc, TypeRange res, ValueRange args) {
+      return bpfabi::KfuncCallOp::create(b_, loc, res, b_.getStringAttr(kfunc), UnitAttr(), args);
+    };
+    auto nonzero = [&](Value v) {
+      Value zero = LLVM::ConstantOp::create(b_, loc, b_.getI8Type(), b_.getI8IntegerAttr(0));
+      return LLVM::ICmpOp::create(b_, loc, LLVM::ICmpPredicate::ne, v, zero);
+    };
+    if (auto o = dyn_cast<ScxDsqInsertOp>(op)) {
+      call("scx_bpf_dsq_insert", {}, {remap(o.getTask()), remap(o.getDsq()), remap(o.getSlice()), remap(o.getFlags())});
+      return success();
+    }
+    if (auto o = dyn_cast<ScxDsqInsertVtimeOp>(op)) {
+      call("scx_bpf_dsq_insert_vtime", {},
+           {remap(o.getTask()), remap(o.getDsq()), remap(o.getSlice()), remap(o.getVtime()), remap(o.getFlags())});
+      return success();
+    }
+    if (auto o = dyn_cast<ScxDsqMoveToLocalOp>(op)) {
+      auto c = call("scx_bpf_dsq_move_to_local", {b_.getI8Type()}, {remap(o.getDsq())});
+      bind(o.getMoved(), nonzero(c.getResult(0)));
+      return success();
+    }
+    if (auto o = dyn_cast<ScxCreateDsqOp>(op)) {
+      auto c = call("scx_bpf_create_dsq", {b_.getI32Type()}, {remap(o.getDsq()), remap(o.getNode())});
+      bind(o.getStatus(), c.getResult(0));
+      return success();
+    }
+    if (auto o = dyn_cast<ScxSelectCpuDflOp>(op)) {
+      Value slot = allocaFor(b_.getI8Type(), loc);
+      LLVM::StoreOp::create(b_, loc, LLVM::ConstantOp::create(b_, loc, b_.getI8Type(), b_.getI8IntegerAttr(0)), slot, 1);
+      auto c = call("scx_bpf_select_cpu_dfl", {b_.getI32Type()}, {remap(o.getTask()), remap(o.getPrev()), remap(o.getWake()), slot});
+      bind(o.getCpu(), c.getResult(0));
+      bind(o.getIdle(), nonzero(LLVM::LoadOp::create(b_, loc, b_.getI8Type(), slot, 1)));
+      return success();
+    }
+    if (auto o = dyn_cast<ScxTaskSetDsqVtimeOp>(op)) {
+      call("scx_bpf_task_set_dsq_vtime", {b_.getI8Type()}, {remap(o.getTask()), remap(o.getVtime())});
+      return success();
+    }
+    // The RCU task results (rcu_ptr_or_null) are KF_RET_NULL: ret_nullable.
+    auto one = [&](Value result, StringRef kfunc, ValueRange args) {
+      bool ptr = isa<RcuPtrOrNullType>(result.getType());
+      auto c = bpfabi::KfuncCallOp::create(b_, loc, TypeRange{ptr ? Type(ctx_.ptrTy()) : result.getType()}, b_.getStringAttr(kfunc),
+                                           ptr ? b_.getUnitAttr() : UnitAttr(), args);
+      bind(result, c.getResult(0));
+      return success();
+    };
+    if (auto o = dyn_cast<ScxTaskCpuOp>(op))
+      return one(o.getCpu(), "scx_bpf_task_cpu", {remap(o.getTask())});
+    if (auto o = dyn_cast<ScxDsqNrQueuedOp>(op))
+      return one(o.getCount(), "scx_bpf_dsq_nr_queued", {remap(o.getDsq())});
+    if (auto o = dyn_cast<ScxDsqPeekOp>(op))
+      return one(o.getTask(), "scx_bpf_dsq_peek", {remap(o.getDsq())});
+    if (auto o = dyn_cast<ScxNowOp>(op))
+      return one(o.getNs(), "scx_bpf_now", {});
+    if (auto o = dyn_cast<ScxPickIdleCpuOp>(op))
+      return one(o.getCpu(), "scx_bpf_pick_idle_cpu", {remap(o.getCpus()), remap(o.getFlags())});
+    if (auto o = dyn_cast<ScxCpuCurrOp>(op))
+      return one(o.getTask(), "scx_bpf_cpu_curr", {remap(o.getCpu())});
+    if (auto o = dyn_cast<ScxCpuperfCapOp>(op))
+      return one(o.getCap(), "scx_bpf_cpuperf_cap", {remap(o.getCpu())});
+    if (auto o = dyn_cast<ScxKickCpuOp>(op)) {
+      call("scx_bpf_kick_cpu", {}, {remap(o.getCpu()), remap(o.getFlags())});
+      return success();
+    }
+    if (auto o = dyn_cast<ScxTaskSetSliceOp>(op)) {
+      call("scx_bpf_task_set_slice", {b_.getI8Type()}, {remap(o.getTask()), remap(o.getSlice())});
+      return success();
+    }
+    if (auto o = dyn_cast<ScxCpuperfSetOp>(op)) {
+      call("scx_bpf_cpuperf_set", {}, {remap(o.getCpu()), remap(o.getPerf())});
+      return success();
+    }
+    if (auto o = dyn_cast<ScxDsqReenqOp>(op)) {
+      call("scx_bpf_dsq_reenq", {}, {remap(o.getDsq()), remap(o.getFlags())});
+      return success();
+    }
+    // error / exit / dump: format in compiler-owned writable .data (the
+    // kfunc's char *fmt needs write access), arguments in a stack u64 array.
+    StringRef format, kfunc;
+    ValueRange fargs;
+    SmallVector<Value, 1> lead;
+    if (auto o = dyn_cast<ScxExitOp>(op)) {
+      format = o.getFormat(), fargs = o.getArgs(), kfunc = "scx_bpf_exit_bstr";
+      lead.push_back(remap(o.getCode()));
+    } else if (auto o = dyn_cast<ScxDumpOp>(op)) {
+      format = o.getFormat(), fargs = o.getArgs(), kfunc = "scx_bpf_dump_bstr";
+    } else {
+      auto e = cast<ScxErrorOp>(op);
+      format = e.getFormat(), fargs = e.getArgs(), kfunc = "scx_bpf_error_bstr";
+    }
+    auto global = ctx_.scxFormat(format, loc);
+    if (!global)
+      return failure();
+    Value fmt =LLVM::AddressOfOp::create(b_, loc, ctx_.ptrTy(), global.getSymName());
+    // data is never NULL: the kfunc's unsigned long long *data is not a
+    // nullable argument, and the 7.3.1 verifier rejects NULL before the
+    // mem / size pair's NULL exemption. With no arguments it
+    // is a zeroed one-element array with data__sz = 8, as C's
+    // scx_bpf_bstr_preamble (___param[narg ?: 1] = {}, common.bpf.h).
+    size_t n = fargs.size();
+    auto i64 = b_.getI64Type();
+    Value data = allocaFor(LLVM::LLVMArrayType::get(i64, n ? n : 1), loc);
+    if (n) {
+      for (auto [i, a] : llvm::enumerate(fargs)) {
+        Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), i64, data, ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(i)});
+        Value val = remap(a);
+        if (isa<StrBufType>(a.getType())) // a %s argument is the buffer's stack address.
+          val = LLVM::PtrToIntOp::create(b_, loc, i64, val);
+        LLVM::StoreOp::create(b_, loc, val, at, 8);
+      }
+    } else {
+      Value zero = LLVM::ConstantOp::create(b_, loc, i64, b_.getI64IntegerAttr(0));
+      LLVM::StoreOp::create(b_, loc, zero, data, 8);
+    }
+    Value size = LLVM::ConstantOp::create(b_, loc, b_.getI32Type(), b_.getI32IntegerAttr(static_cast<int32_t>(8 * (n ? n : 1))));
+    lead.append({fmt, data, size});
+    call(kfunc, {}, lead);
+    return success();
+  }
   if (isa<SessionIsReturnOp, SessionCookieLoadOp, SessionCookieStoreOp>(op)) {
     Value ctxV = remap(op.getOperand(0));
     if (auto ir = dyn_cast<SessionIsReturnOp>(op)) {
@@ -2527,6 +4145,52 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     bind(ua.getStatus(), resS);
     return success();
   }
+  if (isa<CgroupRetvalOp, CgroupSetRetvalOp, TaskSendSignalOp, TaskSendSignalThreadOp>(op)) {
+    StringRef helper = isa<CgroupRetvalOp>(op) ? "get_retval" :
+                       isa<CgroupSetRetvalOp>(op) ? "set_retval" :
+                       isa<TaskSendSignalThreadOp>(op) ? "send_signal_thread" : "send_signal";
+    SmallVector<Value> args;
+    if (op.getNumOperands())
+      args.push_back(LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(op.getOperand(0))));
+    auto value = ctx_.helperCall(b_, loc, helper, args);
+    if (failed(value))
+      return failure();
+    Value result = *value;
+    if (isa<CgroupRetvalOp>(op))
+      result = LLVM::TruncOp::create(b_, loc, b_.getI32Type(), result);
+    bind(op.getResult(0), result);
+    return success();
+  }
+  if (auto ns = dyn_cast<TaskNsPidTgidOp>(op)) {
+    auto *pid = bpfabi::lookupStructField("bpf_pidns_info", "pid");
+    auto *tgid = bpfabi::lookupStructField("bpf_pidns_info", "tgid");
+    auto type = LLVM::LLVMStructType::getLiteral(b_.getContext(), {b_.getI32Type(), b_.getI32Type()});
+    DataLayout layout(ctx_.module);
+    uint64_t bytes = layout.getTypeSize(type).getFixedValue();
+    unsigned align = layout.getTypeABIAlignment(type);
+    // The internal LLVM representation must match the generated UAPI fields.
+    if (!pid || !tgid || pid->kind != "int" || tgid->kind != "int" || pid->offset != 0 ||
+        pid->bytes != static_cast<int64_t>(layout.getTypeSize(b_.getI32Type()).getFixedValue()) ||
+        tgid->offset != pid->bytes || tgid->bytes != pid->bytes ||
+        pid->count != 1 || tgid->count != 1 || bytes != static_cast<uint64_t>(tgid->offset + tgid->bytes))
+      return ns.emitOpError("internal bpf_pidns_info layout disagrees with UAPI");
+    Value slot = mlir::ebpf::detail::scalarOutputSlot(b_, entry_, loc, type, align);
+    mlir::ebpf::detail::clearScalarOutput(b_, loc, slot, type, align);
+    Value size = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(bytes));
+    auto status = ctx_.helperCall(b_, loc, "get_ns_current_pid_tgid",
+                                 {remap(ns.getDev()), remap(ns.getIno()), slot, size});
+    if (failed(status))
+      return failure();
+    auto field = [&](const bpfabi::StructFieldABI *f) {
+      Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), slot,
+          ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(f->offset)});
+      return mlir::ebpf::detail::scalarOutputValue(b_, loc, at, b_.getI32Type(), b_.getI32Type(), *status, align);
+    };
+    bind(ns.getStatus(), *status);
+    bind(ns.getPid(), field(pid));
+    bind(ns.getTgid(), field(tgid));
+    return success();
+  }
   // get_current_pid_tgid uses ABI helper ID/return type.
   if (auto pt = dyn_cast<TaskPidTgidOp>(op)) {
     FailureOr<Value> v = ctx_.helperCall(b_, loc, "get_current_pid_tgid", {});
@@ -2541,6 +4205,55 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     if (failed(v))
       return failure();
     bind(cg.getResult(), *v);
+    return success();
+  }
+
+  if (isa<CtxStackOp, KernelDPathOp, StrSnprintfOp>(op)) {
+    auto rt = cast<RecordType>(cast<ReservationType>(op.getOperand(0).getType()).getRecordType());
+    StringRef field = op.getAttrOfType<StringAttr>("field").getValue();
+    auto t = ctx_.recordTemplate(&op, rt.getSymbol(), (field + "[]").str());
+    if (failed(t))
+      return failure();
+    Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(op.getOperand(0)),
+                                  ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(t->offsetBytes)});
+    auto c64 = [&](int64_t v) -> Value {
+      return LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(v));
+    };
+    StringRef helper;
+    SmallVector<Value> args;
+    if (auto stack = dyn_cast<CtxStackOp>(op)) {
+      helper = "get_stack";
+      args = {remap(stack.getCtx()), at, c64(8 * t->dims[0].count), c64(0)};
+    } else if (auto path = dyn_cast<KernelDPathOp>(op)) {
+      helper = "d_path";
+      args = {remap(path.getPtr()), at, c64(t->dims[0].count)};
+    } else {
+      auto fmt = cast<StrSnprintfOp>(op);
+      auto global = ctx_.formatGlobal(fmt.getFormat(), "__ebpf_snprintf_", ".rodata", loc);
+      if (!global)
+        return failure();
+      Value format = LLVM::AddressOfOp::create(b_, loc, ctx_.ptrTy(), global.getSymName());
+      Value data = LLVM::ZeroOp::create(b_, loc, ctx_.ptrTy());
+      if (!fmt.getArgs().empty()) {
+        data = allocaFor(LLVM::LLVMArrayType::get(b_.getI64Type(), fmt.getArgs().size()), loc);
+        cast<LLVM::AllocaOp>(data.getDefiningOp()).setAlignment(8);
+        for (auto [i, arg] : llvm::enumerate(fmt.getArgs())) {
+          Value slot = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI64Type(), data,
+                                          ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(i)});
+          LLVM::StoreOp::create(b_, loc, remap(arg), slot, /*alignment=*/8);
+        }
+      }
+      helper = "snprintf";
+      args = {at, c64(t->dims[0].count), format, data, c64(8 * fmt.getArgs().size())};
+    }
+    auto value = ctx_.helperCall(b_, loc, helper, args);
+    if (failed(value))
+      return failure();
+    if (isa<KernelDPathOp>(op))
+      value->getDefiningOp()->setAttr(
+          "bpfabi.helper_target",
+          b_.getStringAttr(dPathHelperTarget(op.getParentOfType<ProgramOp>().getAttach().value_or(""))));
+    bind(op.getResult(0), *value);
     return success();
   }
 
@@ -2665,6 +4378,44 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     return success();
   }
 
+  // a sleepable fentry's address is the raw i64 itself (no helper).
+  if (auto ua = dyn_cast<UserAddrOp>(op)) {
+    bind(ua.getResult(), remap(ua.getValue()));
+    return success();
+  }
+  // bpf_copy_from_user(reservation + field offset, field length, address); raw status.
+  if (auto uc = dyn_cast<UserCopyOp>(op)) {
+    auto rt = cast<RecordType>(cast<ReservationType>(uc.getReservation().getType()).getRecordType());
+    FailureOr<RecordTemplate> t = ctx_.recordTemplate(&op, rt.getSymbol(), (uc.getField() + "[]").str());
+    if (failed(t))
+      return failure();
+    Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(uc.getReservation()),
+                                   ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(t->offsetBytes)});
+    Value n = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(t->dims[0].count));
+    FailureOr<Value> v = ctx_.helperCall(b_, loc, "copy_from_user", {at, n, remap(uc.getAddr())});
+    if (failed(v))
+      return failure();
+    bind(uc.getStatus(), *v);
+    return success();
+  }
+
+  // bpf_copy_from_user_task(reservation + field offset, field length, address, task, 0); raw status.
+  if (auto uc = dyn_cast<UserCopyTaskOp>(op)) {
+    auto rt = cast<RecordType>(cast<ReservationType>(uc.getReservation().getType()).getRecordType());
+    FailureOr<RecordTemplate> t = ctx_.recordTemplate(&op, rt.getSymbol(), (uc.getField() + "[]").str());
+    if (failed(t))
+      return failure();
+    Value at = LLVM::GEPOp::create(b_, loc, ctx_.ptrTy(), b_.getI8Type(), remap(uc.getReservation()),
+                                   ArrayRef<LLVM::GEPArg>{static_cast<int32_t>(t->offsetBytes)});
+    Value n = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(t->dims[0].count));
+    Value flags = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(0));
+    FailureOr<Value> v = ctx_.helperCall(b_, loc, "copy_from_user_task", {at, n, remap(uc.getAddr()), remap(uc.getTask()), flags});
+    if (failed(v))
+      return failure();
+    bind(uc.getStatus(), *v);
+    return success();
+  }
+
   // Read char* through an eight-byte CO-RE load, then probe_read_kernel_str
   // into reservation+path offset with constant count. Return raw status.
   if (auto ks = dyn_cast<KernelReadStrOp>(op)) {
@@ -2685,11 +4436,96 @@ LogicalResult ProgramLowering::convertOp(Operation &op) {
     return success();
   }
 
+  // string buffers — one dedicated entry-block alloca per op (never
+  // shared by size or content, no lifetime markers, so stack colouring keeps
+  // it apart from every other slot).
+  if (isa<StrBufLiteralOp, KernelReadStrBufOp>(op)) {
+    auto st = cast<StrBufType>(op.getResult(0).getType());
+    int64_t n = st.getSize();
+    if (auto lit = dyn_cast<StrBufLiteralOp>(op)) { // All N bytes: the literal, then zeros.
+      bind(lit.getBuf(), literalBuffer(lit.getLiteral(), n, loc));
+      return success();
+    }
+    Value buf = allocaFor(LLVM::LLVMArrayType::get(b_.getI8Type(), n), loc);
+    cast<LLVM::AllocaOp>(buf.getDefiningOp()).setAlignment(8);
+    auto rb = cast<KernelReadStrBufOp>(op); // Not prefilled: the helper writes to the NUL, or zeroes all N bytes.
+    auto src = bpfabi::CoreFieldLoadOp::create(b_, loc, ctx_.ptrTy(), remap(rb.getPtr()),
+                                               b_.getStringAttr(rb.getPtr().getType().getStructName()), rb.getFieldAttr());
+    Value size = LLVM::ConstantOp::create(b_, loc, b_.getI64Type(), b_.getI64IntegerAttr(n));
+    FailureOr<Value> v = ctx_.helperCall(b_, loc, "probe_read_kernel_str", {buf, size, src.getResult()});
+    if (failed(v))
+      return failure();
+    bind(rb.getBuf(), buf);
+    bind(rb.getStatus(), *v);
+    return success();
+  }
+
   if (auto kt = dyn_cast<KtimeOp>(op)) {
     FailureOr<Value> v = ctx_.helperCall(b_, loc, "ktime_get_ns", {});
     if (failed(v))
       return failure();
     bind(kt.getResult(), *v);
+    return success();
+  }
+
+  // ctx-free scalar helpers. u32 helpers truncate the i64 return; the
+  // others keep raw i64 bits. get_current_task stays an integer (no inttoptr).
+  {
+    StringRef helper;
+    bool truncate32 = false;
+    if (isa<CpuIdOp>(op))
+      helper = "get_smp_processor_id", truncate32 = true;
+    else if (isa<RandomU32Op>(op))
+      helper = "get_prandom_u32", truncate32 = true;
+    else if (isa<NumaNodeIdOp>(op))
+      helper = "get_numa_node_id";
+    else if (isa<TaskUidGidOp>(op))
+      helper = "get_current_uid_gid";
+    else if (isa<Jiffies64Op>(op))
+      helper = "jiffies64";
+    else if (isa<KtimeBootNsOp>(op))
+      helper = "ktime_get_boot_ns";
+    else if (isa<KtimeCoarseNsOp>(op))
+      helper = "ktime_get_coarse_ns";
+    else if (isa<KtimeTaiNsOp>(op))
+      helper = "ktime_get_tai_ns";
+    else if (isa<TaskCurrentRawOp>(op))
+      helper = "get_current_task";
+    if (!helper.empty()) {
+      FailureOr<Value> v = ctx_.helperCall(b_, loc, helper, {});
+      if (failed(v))
+        return failure();
+      Value r = *v;
+      if (truncate32)
+        r = LLVM::TruncOp::create(b_, loc, b_.getI32Type(), r);
+      bind(op.getResult(0), r);
+      return success();
+    }
+  }
+  // the int level is passed as clang does (32-bit move, upper zero).
+  if (auto anc = dyn_cast<TaskAncestorCgroupIdOp>(op)) {
+    Value lvl = LLVM::ZExtOp::create(b_, loc, b_.getI64Type(), remap(anc.getLevel()));
+    FailureOr<Value> v = ctx_.helperCall(b_, loc, "get_current_ancestor_cgroup_id", {lvl});
+    if (failed(v))
+      return failure();
+    bind(anc.getResult(), *v);
+    return success();
+  }
+  // RET_PTR_TO_BTF_ID_TRUSTED is never NULL; the pointer becomes the
+  // kptr directly, without a NULL branch or ownership.
+  // the UAPI signature returns long; the kernel returns a BTF pointer, never NULL.
+  if (auto regs = dyn_cast<TaskPtRegsOp>(op)) {
+    FailureOr<Value> v = ctx_.helperCall(b_, loc, "task_pt_regs", {remap(regs.getTask())});
+    if (failed(v))
+      return failure();
+    bind(regs.getResult(), LLVM::IntToPtrOp::create(b_, loc, ctx_.ptrTy(), *v));
+    return success();
+  }
+  if (auto cur = dyn_cast<TaskCurrentBtfOp>(op)) {
+    FailureOr<Value> v = ctx_.helperCall(b_, loc, "get_current_task_btf", {});
+    if (failed(v))
+      return failure();
+    bind(cur.getResult(), *v);
     return success();
   }
 
@@ -2877,6 +4713,11 @@ void ConvertEBPFToBPFABIPass::runOnOperation() {
         if (auto cb = SymbolTable::lookupNearestSymbolFrom<LoopCallbackOp>(op, ref))
           reach(cb, kind);
     });
+    // a timer callback's calls (sched_ext_ops owners) reach with the owner's kind.
+    owner->walk([&](TimerSetCallbackOp sc) {
+      if (auto cb = SymbolTable::lookupNearestSymbolFrom<TimerCallbackOp>(sc, sc.getCallbackAttr()))
+        reach(cb, kind);
+    });
   };
   for (auto p : module.getOps<ProgramOp>())
     reach(p, p.getKind());
@@ -2963,6 +4804,9 @@ void ConvertEBPFToBPFABIPass::runOnOperation() {
       return;
     }
   }
+  // the arena size is consumed by the arena.check_br lowering; keep the
+  // attribute out of the later stages (LLVM translation).
+  module->removeAttr(Lowering::kArenaBytesAttr);
 }
 
 } // namespace

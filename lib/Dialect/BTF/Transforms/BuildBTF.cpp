@@ -5,6 +5,7 @@
 // .ebpf_records, license becomes a char-array var, and program functions get
 // BTF signatures with void* contexts.
 //===----------------------------------------------------------------------===//
+#include <set>
 #include "bpf-mlir/Dialect/BTF/Transforms/Passes.h"
 
 #include "bpf-mlir/Dialect/BPFABI/KernelABI.h"
@@ -60,6 +61,9 @@ struct Builder {
     // Timer fields reference @records bpf_timer.
     if (std::holds_alternative<::ebpf::TimerType>(t.v))
       return recordRef("bpf_timer");
+    // an embedded cpumask references the opaque @records __ebpf_cpumask_<N>.
+    if (const auto *c = std::get_if<::ebpf::CpumaskType>(&t.v))
+      return recordRef(cpumaskStructName(c->size));
     // Schema confines stack_build_id to untyped stack_trace values. If reached,
     // represent it as 32 opaque bytes.
     if (std::holds_alternative<::ebpf::StackBuildIdType>(t.v))
@@ -72,6 +76,7 @@ struct Builder {
     const auto &r = std::get<::ebpf::RecordRefType>(t.v);
     return recordRef(r.symbol);
   }
+  static std::string cpumaskStructName(uint64_t n) { return "__ebpf_cpumask_" + std::to_string(n); }
   Attribute recordRef(llvm::StringRef sym) {
     return RefAttr::get(ctx, SymbolRefAttr::get(ctx, "records",
                                                 {FlatSymbolRefAttr::get(ctx, sym)}));
@@ -151,6 +156,19 @@ void buildTypeScopes(ModuleOp module, const ::ebpf::Schema &schema) {
       StructOp::create(sb, loc, sb.getStringAttr("bpf_timer"), i64(*sz * 8), i64(mlir::bpfabi::kTimerAlignment * 8),
                        sb.getArrayAttr({MemberAttr::get(ctx, "__opaque", 0, *sz * 8, ArrayOfAttr::get(ctx, u64, *sz / 8))}));
     }
+    // one opaque __ebpf_cpumask_<N> { u8 __opaque[N] } per distinct size N
+    // (alignment 8 — the schema keeps the field 8-byte aligned). Not named
+    // bpf_cpumask: the kfunc protos in the same BTF refer to the kernel's struct.
+    std::set<uint64_t> cpumaskSizes;
+    for (const ::ebpf::Record &r : sp->records())
+      for (const ::ebpf::Field &f : r.fields)
+        if (const auto *c = std::get_if<::ebpf::CpumaskType>(&f.type.v))
+          cpumaskSizes.insert(c->size);
+    for (uint64_t n : cpumaskSizes) {
+      Attribute u8 = IntAttr::get(ctx, "u8", 8, "unsigned");
+      StructOp::create(sb, loc, sb.getStringAttr(Builder::cpumaskStructName(n)), i64(n * 8), i64(64),
+                       sb.getArrayAttr({MemberAttr::get(ctx, "__opaque", 0, n * 8, ArrayOfAttr::get(ctx, u8, n))}));
+    }
     for (const ::ebpf::Record &r : sp->records()) {
       SmallVector<Attribute> ms;
       for (const ::ebpf::Field &f : r.fields)
@@ -161,10 +179,27 @@ void buildTypeScopes(ModuleOp module, const ::ebpf::Schema &schema) {
     }
   }
   // Local CO-RE integer fields use 8/16/32/64-bit widths and maximum-width alignment.
-  if (!sp->kernelTypes().empty()) {
+  // an arena map adds the local bpf_arena { user_vm_start: u64 } (provisional
+  // offset 0, like kernel_types) for the window base's CO-RE read; the schema
+  // reserves the name, so it never collides with a user kernel_types entry.
+  const bool anyArena = llvm::any_of(sp->maps(), [](const ::ebpf::Map &m) { return m.kind == ::ebpf::MapKind::Arena; });
+  // the arena size (pages × 4096 bytes) for ③'s arena.check_br compare —
+  // ③ has no schema. Keyed by map symbol; consumed (removed) by ③.
+  if (anyArena) {
+    SmallVector<NamedAttribute> sizes;
+    for (const ::ebpf::Map &m : sp->maps())
+      if (m.kind == ::ebpf::MapKind::Arena)
+        sizes.push_back(b.getNamedAttr(m.symbol, b.getI64IntegerAttr(static_cast<int64_t>(m.maxEntries * ::ebpf::kArenaPageSize))));
+    module->setAttr("ebpf.arena_bytes", b.getDictionaryAttr(sizes));
+  }
+  if (!sp->kernelTypes().empty() || anyArena) {
     auto scope = ScopeOp::create(b, loc, "kernel");
     scope.getBody().emplaceBlock();
     OpBuilder sb = OpBuilder::atBlockEnd(&scope.getBody().front());
+    if (anyArena)
+      StructOp::create(sb, loc, sb.getStringAttr("bpf_arena"), i64(64), i64(64),
+                       sb.getArrayAttr({MemberAttr::get(ctx, "user_vm_start", 0, 64,
+                                                        IntAttr::get(ctx, kernelIntName(64, false), 64, "unsigned"))}));
     for (const ::ebpf::KernelType &k : sp->kernelTypes()) {
       SmallVector<Attribute> ms;
       unsigned align = 32;
@@ -188,6 +223,11 @@ void buildTypeScopes(ModuleOp module, const ::ebpf::Schema &schema) {
           ms.push_back(MemberAttr::get(ctx, f.name, f.offset * 8, 64, PtrAttr::get(ctx, IntAttr::get(ctx, "char", 8, "char"))));
           continue;
         }
+        if (f.voidPtr) { // void * is PTR -> VOID (type id 0), as clang's.
+          align = std::max(align, 64u);
+          ms.push_back(MemberAttr::get(ctx, f.name, f.offset * 8, 64, PtrAttr::get(ctx, VoidAttr::get(ctx))));
+          continue;
+        }
         if (f.arrayCount) { // Eight-bit integer array.
           ms.push_back(MemberAttr::get(ctx, f.name, f.offset * 8, f.arrayCount * 8,
                                        ArrayOfAttr::get(ctx,
@@ -198,6 +238,10 @@ void buildTypeScopes(ModuleOp module, const ::ebpf::Schema &schema) {
         }
         unsigned bits = f.type.bits;
         align = std::max(align, bits);
+        if (f.isEnum) { // anonymous enum; an int local member would not relocate against a target ENUM.
+          ms.push_back(MemberAttr::get(ctx, f.name, f.offset * 8, bits, EnumAttr::get(ctx, bits)));
+          continue;
+        }
         ms.push_back(MemberAttr::get(ctx, f.name, f.offset * 8, bits,
                                      IntAttr::get(ctx, kernelIntName(bits, f.type.isSigned), bits,
                                                   f.type.isSigned ? "signed" : "unsigned")));
@@ -381,6 +425,9 @@ struct EBPFBuildBTFPass : public mlir::btf::impl::EBPFBuildBTFBase<EBPFBuildBTFP
       } else if (mp.kind == ::ebpf::MapKind::BloomFilter) {
         // bloom_filter permits a typed value without a key member: bloom_map_check_btf accepts void keys.
         ms.push_back(bb.typeMember("value", *mp.value, 128));
+      } else if (mp.kind == ::ebpf::MapKind::Arena) {
+        // arena has no key/value members (kernel key_size / value_size 0);
+        // map_flags and map_extra follow below.
       } else {
         if (mp.key)
           ms.push_back(bb.typeMember("key", *mp.key, 128));
@@ -390,6 +437,11 @@ struct EBPFBuildBTFPass : public mlir::btf::impl::EBPFBuildBTFBase<EBPFBuildBTFP
       // Emit map_flags only when nonzero, preserving BTF for default-flag maps.
       if (mp.flags != 0)
         ms.push_back(bb.uintMember("map_flags", mp.flags, ms.size() * 64));
+      // arena map_extra (the user address) is libbpf __ulong — an anonymous
+      // ENUM64 member with one enumerator, always this one form. The __uint form
+      // (int (*)[N]) cannot carry values above U32_MAX bytes (btf-verify K9).
+      if (mp.kind == ::ebpf::MapKind::Arena)
+        ms.push_back(MemberAttr::get(ctx, "map_extra", ms.size() * 64, 64, ULongAttr::get(ctx, mp.mapExtra)));
       auto ty = AnonStructAttr::get(ctx, ms.size() * 64, 64, ms);
       // Use the first referring addressof location for map definitions, returning
       // BTF diagnostics to frontend source. Fall back to module location if
@@ -438,10 +490,23 @@ struct EBPFBuildBTFPass : public mlir::btf::impl::EBPFBuildBTFBase<EBPFBuildBTFP
         progs.push_back(FlatSymbolRefAttr::get(ctx, op.program));
         off += 64;
       }
-      // DATA rows follow table order, currently str char[BYTES] from schema keys.
-      // tcp_congestion_ops has name[16]; types without DATA have only callbacks.
+      // DATA rows follow table order: str char[BYTES] (name) always, integer
+      // u32 / u64 only when the schema has the key (absent stays zero). Integers
+      // are naturally aligned. tcp_congestion_ops has name[16]; types without
+      // DATA have only callbacks.
       SmallVector<Attribute> data;
       for (const bpfmlir::StructOpsDataInfo *d : bpfmlir::structOpsDataOf(mp.structOps->type)) {
+        if (bpfmlir::isStructOpsIntData(*d)) {
+          auto it = llvm::find_if(mp.structOps->data, [&](const ::ebpf::Map::StructOps::Data &x) { return x.member == d->member; });
+          if (it == mp.structOps->data.end())
+            continue;
+          uint64_t bits = uint64_t(d->bytes) * 8;
+          off = llvm::alignTo(off, bits);
+          ms.push_back(MemberAttr::get(ctx, d->member, off, bits, IntAttr::get(ctx, d->kind, bits, "unsigned")));
+          off += bits;
+          data.push_back(ob.getIntegerAttr(ob.getIntegerType(bits), APInt(bits, it->value)));
+          continue;
+        }
         if (d->kind != "str" || d->schemaKey != "name") {
           module.emitError() << "struct_ops map \"" << mp.symbol << "\": data member " << mp.structOps->type << "." << d->member
                              << " of kind " << d->kind << " (schema key " << d->schemaKey << ") is not supported yet";
@@ -453,6 +518,7 @@ struct EBPFBuildBTFPass : public mlir::btf::impl::EBPFBuildBTFBase<EBPFBuildBTFP
         off += uint64_t(d->bytes) * 8;
         data.push_back(ob.getStringAttr(mp.structOps->name));
       }
+      off = llvm::alignTo(off, 64); // Struct size rounds to the pointer alignment.
       StructOp::create(sb, loc, sb.getStringAttr(mp.structOps->type), i64(off), i64(64), sb.getArrayAttr(ms));
       auto v = VarOp::create(ob, loc, mp.symbol,
                              RefAttr::get(ctx, SymbolRefAttr::get(ctx, "struct_ops", {FlatSymbolRefAttr::get(ctx, mp.structOps->type)})),
@@ -465,7 +531,38 @@ struct EBPFBuildBTFPass : public mlir::btf::impl::EBPFBuildBTFBase<EBPFBuildBTFP
       auto g = module.lookupSymbol<LLVM::GlobalOp>(gl.name);
       if (!g || !g->hasAttr("ebpf.global"))
         continue;
+      if (gl.isRecord()) { // a record global (.data / .rodata / .bss) is a VAR of the record struct.
+        VarOp::create(ob, loc, gl.name, bb.recordRef(gl.record), "." + gl.section);
+        continue;
+      }
+      if (gl.isKptr()) { // a kptr global is a VAR of PTR -> TYPE_TAG kptr -> STRUCT in .data.<name>.
+        auto v = VarOp::create(ob, loc, gl.name, bb.typeOf(::ebpf::Type{::ebpf::KptrType{gl.kptr}}), gl.elfSection());
+        v->setAttr("btf.hidden", ob.getUnitAttr());
+        continue;
+      }
+      if (gl.isKaddr()) { // a bss kaddr global is a VAR of PTR -> the local @kernel struct (no type tag, as clang).
+        VarOp::create(ob, loc, gl.name, PtrAttr::get(ctx, RefAttr::get(ctx, SymbolRefAttr::get(ctx, "kernel", {FlatSymbolRefAttr::get(ctx, gl.kaddr)}))),
+                      "." + gl.section);
+        continue;
+      }
       VarOp::create(ob, loc, gl.name, bb.typeOf(::ebpf::Type{gl.type}), "." + gl.section);
+    }
+    for (auto g : module.getOps<LLVM::GlobalOp>()) {
+      auto format = g->getAttrOfType<StringAttr>("ebpf.trace_format");
+      if (!format)
+        continue;
+      // the section is the lowering's (.rodata for trace.printk, .data for the sched_ext bstr kfuncs).
+      std::optional<StringRef> section = g.getSection();
+      if (!section || (*section != ".rodata" && *section != ".data")) {
+        g.emitOpError("a compiler-owned format must be in .rodata or .data");
+        return signalPassFailure();
+      }
+      auto v = VarOp::create(
+          ob, loc, g.getSymName(),
+          ArrayOfAttr::get(ctx, IntAttr::get(ctx, "char", 8, "char"),
+                           format.getValue().size() + 1),
+          *section);
+      v->setAttr("btf.trace_format", format);
     }
     // Record witnesses: const struct X *__ebpf_record_X.
     for (const ::ebpf::Record &r : schema->records())
@@ -493,6 +590,18 @@ struct EBPFBuildBTFPass : public mlir::btf::impl::EBPFBuildBTFBase<EBPFBuildBTFP
         auto f = FuncOp::create(ob, loc, fn.getSymName(),
                                 ob.getArrayAttr({ParamAttr::get(ctx, "index", u64),
                                                  ParamAttr::get(ctx, "ctx", PtrAttr::get(ctx, VoidAttr::get(ctx)))}),
+                                u64);
+        f.setLinkage("static");
+        continue;
+      }
+      // bpf_find_vma callback is static (void* task,vma,ctx)->u64:
+      // verifier set_find_vma_callback_state registers r1..r3.
+      if (fn->hasAttr("bpfabi.find_vma_callback")) {
+        auto u64 = IntAttr::get(ctx, "u64", 64, "unsigned");
+        auto vp = [&] { return PtrAttr::get(ctx, VoidAttr::get(ctx)); };
+        auto f = FuncOp::create(ob, loc, fn.getSymName(),
+                                ob.getArrayAttr({ParamAttr::get(ctx, "task", vp()), ParamAttr::get(ctx, "vma", vp()),
+                                                 ParamAttr::get(ctx, "ctx", vp())}),
                                 u64);
         f.setLinkage("static");
         continue;
@@ -656,7 +765,19 @@ struct EBPFBuildBTFPass : public mlir::btf::impl::EBPFBuildBTFBase<EBPFBuildBTFP
         bad = true;
         continue;
       }
-      FuncOp::create(ob, loc, fn.getSymName(), ob.getArrayAttr(progParams), bb.cInt());
+      // An i64 struct_ops entry returns the schema ret, as clang's
+      // size_t BPF_PROG does; every i32 entry keeps int, byte for byte.
+      Attribute progRet = bb.cInt();
+      if (fn.getFunctionType().getReturnType().isInteger(64)) {
+        const ::ebpf::Program *decl = schema->program(fn.getSymName());
+        if (!decl || decl->nargs < 0 || decl->retVoid || decl->ret.bits != 64) {
+          fn.emitOpError() << "program entry returns i64 but its schema signature has no 64-bit ret";
+          bad = true;
+          continue;
+        }
+        progRet = bb.typeOf(::ebpf::Type{decl->ret});
+      }
+      FuncOp::create(ob, loc, fn.getSymName(), ob.getArrayAttr(progParams), progRet);
     }
     if (bad)
       signalPassFailure();

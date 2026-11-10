@@ -34,18 +34,18 @@
 //===----------------------------------------------------------------------===//
 // clang-format off
 // NAME          PTYPE        ATTACH        ARCH   PACKET           CTX          SIG       OPS                                                        DONE
-EBPF_PROGRAM_KIND("xdp",       "xdp",       None,         false, "data,data_end",  "xdp_md",    None,     "packet.store xdp.adjust redirect_map tail_call timer spin sock.map_lookup sock.map_delete devmap.lookup xsk.lookup", std::nullopt)
-EBPF_PROGRAM_KIND("tp_btf",    "tracing",   Tracepoint,   false, "-", "-",         TpArgs,   "kptr.addr ctx.arg timer spin",                                      mlir::bpfabi::kTpBtfDoneValue)
-EBPF_PROGRAM_KIND("fentry",    "tracing",   KernelFunc,   false, "-", "-",         FuncArgs, "kptr.addr ctx.arg perf.output stack.kernel_id stack.user_id timer spin", mlir::bpfabi::kFentryDoneValue)
-EBPF_PROGRAM_KIND("fexit",     "tracing",   KernelFunc,   false, "-", "-",         FuncRet,  "kptr.addr ctx.retval timer spin",                                   mlir::bpfabi::kFentryDoneValue)
-EBPF_PROGRAM_KIND("kprobe",    "kprobe",    KernelFunc,   true,  "-", "-",         Probe,    "kprobe.arg kernel.read_scalar stack.user_id",             mlir::bpfabi::kKprobeDoneValue)
-EBPF_PROGRAM_KIND("uprobe",    "kprobe",    UserSymbol,   true,  "-", "-",         Probe,    "uprobe.arg user.read user.read_str stack.user_id",                  mlir::bpfabi::kKprobeDoneValue)
-EBPF_PROGRAM_KIND("sched_cls", "sched_cls", TcxDirection, false, "data,data_end",  "__sk_buff", None,     "redirect",                                                std::nullopt)
+EBPF_PROGRAM_KIND("xdp",       "xdp",       None,         false, "data,data_end",  "xdp_md",    None,     "packet.store xdp.adjust redirect_map tail_call timer spin sock.map_lookup sock.map_delete devmap.lookup xsk.lookup xdp.bytes csum.diff fib.lookup sock.lookup", std::nullopt)
+EBPF_PROGRAM_KIND("tp_btf",    "tracing",   Tracepoint,   false, "-", "-",         TpArgs,   "kptr.addr ctx.arg timer spin scx.dsq_reenq ctx.func_arg ctx.func_arg_cnt",                        mlir::bpfabi::kTpBtfDoneValue)  // OPS scx.dsq_reenq (the one sched_ext kfunc op a tp_btf program may call)
+EBPF_PROGRAM_KIND("fentry",    "tracing",   KernelFunc,   false, "-", "-",         FuncArgs, "kptr.addr ctx.arg perf.output stack.kernel_id stack.user_id timer spin ctx.func_ip ctx.func_arg ctx.func_arg_cnt kernel.d_path task.find_vma", mlir::bpfabi::kFentryDoneValue)
+EBPF_PROGRAM_KIND("fexit",     "tracing",   KernelFunc,   false, "-", "-",         FuncRet,  "kptr.addr ctx.retval ctx.func_ret timer spin ctx.func_ip ctx.func_arg ctx.func_arg_cnt",                                   mlir::bpfabi::kFentryDoneValue)
+EBPF_PROGRAM_KIND("kprobe",    "kprobe",    KernelFunc,   true,  "-", "-",         Probe,    "kprobe.arg kernel.read_scalar stack.user_id ctx.func_ip ctx.stack str.snprintf",             mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("uprobe",    "kprobe",    UserSymbol,   true,  "-", "-",         Probe,    "uprobe.arg user.read user.read_str stack.user_id ctx.func_ip",                  mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("sched_cls", "sched_cls", TcxDirection, false, "data,data_end",  "__sk_buff", None,     "trace.printk redirect tc.mutation skb.load_bytes skb.adjust_room skb.resize skb.meta skb.datapath csum.diff redirect.neigh redirect.peer skb.socket_uid skb.cgroup_id skb.ancestor_cgroup_id sock.lookup", std::nullopt)
 // __sk_buff families: socket_filter rejects packet access at load;
 // flow_dissector exposes packet data without integer context fields.
-EBPF_PROGRAM_KIND("socket_filter",  "socket_filter",  None,            false, "-", "__sk_buff", None, "", std::nullopt)
+EBPF_PROGRAM_KIND("socket_filter",  "socket_filter",  None,            false, "-", "__sk_buff", None, "skb.socket_uid", std::nullopt)
 EBPF_PROGRAM_KIND("sched_act",      "sched_act",      None,            false, "data,data_end",  "__sk_buff", None, "", std::nullopt)
-EBPF_PROGRAM_KIND("cgroup_skb",     "cgroup_skb",     CgroupDirection, false, "data,data_end",  "__sk_buff", None, "", std::nullopt)
+EBPF_PROGRAM_KIND("cgroup_skb",     "cgroup_skb",     CgroupDirection, false, "data,data_end",  "__sk_buff", None, "skb.cgroup_id skb.ancestor_cgroup_id", std::nullopt)
 EBPF_PROGRAM_KIND("lwt_in",         "lwt_in",         None,            false, "data,data_end",  "__sk_buff", None, "", std::nullopt)
 EBPF_PROGRAM_KIND("lwt_out",        "lwt_out",        None,            false, "data,data_end",  "__sk_buff", None, "", std::nullopt)
 EBPF_PROGRAM_KIND("lwt_xmit",       "lwt_xmit",       None,            false, "data,data_end",  "__sk_buff", None, "redirect", std::nullopt)
@@ -59,11 +59,11 @@ EBPF_PROGRAM_KIND("sk_lookup", "sk_lookup", None,      false, "-", "bpf_sk_looku
 EBPF_PROGRAM_KIND("netfilter", "netfilter", None,      false, "-", "bpf_nf_ctx", None,  "",                                                        std::nullopt)
 // Tracing families.
 EBPF_PROGRAM_KIND("raw_tp",    "raw_tracepoint", Tracepoint, false, "-", "bpf_raw_tracepoint_args", None,     "",                                     mlir::bpfabi::kRawTpDoneValue)
-EBPF_PROGRAM_KIND("kretprobe", "kprobe",    KernelFunc, true,  "-", "-",         ProbeRet, "probe.retval",                                            mlir::bpfabi::kKprobeDoneValue)
-EBPF_PROGRAM_KIND("uretprobe", "kprobe",    UserSymbol, true,  "-", "-",         ProbeRet, "probe.retval",                                            mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("kretprobe", "kprobe",    KernelFunc, true,  "-", "-",         ProbeRet, "probe.retval ctx.func_ip",                                            mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("uretprobe", "kprobe",    UserSymbol, true,  "-", "-",         ProbeRet, "probe.retval ctx.func_ip",                                            mlir::bpfabi::kKprobeDoneValue)
 EBPF_PROGRAM_KIND("iter",      "tracing",   IterTarget,   false, "-", "-",         Iter,    "kptr.addr ctx.arg seq.write",                                       mlir::bpfabi::kIterDoneValue)
-EBPF_PROGRAM_KIND("syscall",   "syscall",   None,        false, "-", "-",         None,     "ctx.load sys.bpf sys.close",                              mlir::bpfabi::kSyscallDoneValue)
-EBPF_PROGRAM_KIND("fmod_ret",  "tracing",   KernelFunc, false, "-", "-",         IntArgs, "kptr.addr ctx.arg",                                                 mlir::bpfabi::kFmodRetDoneValue)
+EBPF_PROGRAM_KIND("syscall",   "syscall",   None,        false, "-", "-",         None,     "ctx.load sys.bpf sys.close sleepable scx.now",            mlir::bpfabi::kSyscallDoneValue)  // OPS scx.now (scx_kfunc_context_filter allows the in_any kfuncs for SYSCALL; only scx_bpf_now is opened)
+EBPF_PROGRAM_KIND("fmod_ret",  "tracing",   KernelFunc, false, "-", "-",         IntArgs, "kptr.addr ctx.arg ctx.func_ip ctx.func_arg ctx.func_arg_cnt",                                                 mlir::bpfabi::kFmodRetDoneValue)
 // lsm attaches a system-wide BPF_LSM_MAC link. Int hooks allow -MAX_ERRNO..0;
 // compile conservatively rejects bool-hook return one. HookArgs supports
 // nullable struct pointers, integers and null. With schema args, ObjectEmitter
@@ -73,14 +73,14 @@ EBPF_PROGRAM_KIND("lsm",       "lsm",       LsmHook,      false, "-",   "-",    
 // so each hook needs an attachment row with its own verdict range.
 // sock_ops deny discards the reply and returns -1 to the caller (tcp_call_bpf);
 // it does not stop connection establishment from a callback.
-EBPF_PROGRAM_KIND("cgroup_sock",      "cgroup_sock",      CgroupHook, false, "-", "bpf_sock",      None, "", std::nullopt)
-EBPF_PROGRAM_KIND("cgroup_sock_addr", "cgroup_sock_addr", CgroupHook, false, "-", "bpf_sock_addr", None, "sock_addr.set_sun_path", std::nullopt)
-EBPF_PROGRAM_KIND("sock_ops",         "sock_ops",         None,       false, "-", "bpf_sock_ops",  None, "sock.map_update", std::nullopt)  // Cgroup device/sysctl/sockopt verdicts are deny=0/allow=1 (verifier 0..1).
+EBPF_PROGRAM_KIND("cgroup_sock",      "cgroup_sock",      CgroupHook, false, "-", "bpf_sock",      None, "cgroup.retval", std::nullopt)
+EBPF_PROGRAM_KIND("cgroup_sock_addr", "cgroup_sock_addr", CgroupHook, false, "-", "bpf_sock_addr", None, "sock_addr.set_sun_path cgroup.retval sock_addr.sockopt", std::nullopt)
+EBPF_PROGRAM_KIND("sock_ops",         "sock_ops",         None,       false, "-", "bpf_sock_ops",  None, "sock.map_update sock_ops.cb_flags_set sock_ops.sockopt", std::nullopt)  // Cgroup device/sysctl/sockopt verdicts are deny=0/allow=1 (verifier 0..1).
 // The generic requirement carries the ABI attach type and cgroup target kind;
 // its FD is a loader input. Sockopt packet bounds use optval/optval_end.
-EBPF_PROGRAM_KIND("cgroup_device",  "cgroup_device",  None,        false, "-",                 "bpf_cgroup_dev_ctx", None, "", std::nullopt)
-EBPF_PROGRAM_KIND("cgroup_sysctl",  "cgroup_sysctl",  None,        false, "-",                 "bpf_sysctl",         None, "sysctl.set", std::nullopt)
-EBPF_PROGRAM_KIND("cgroup_sockopt", "cgroup_sockopt", SockoptHook, false, "optval,optval_end", "bpf_sockopt",        None, "packet.store", std::nullopt) // Sockopt writes require checked entry-program optval; ABI rejects static funcs.
+EBPF_PROGRAM_KIND("cgroup_device",  "cgroup_device",  None,        false, "-",                 "bpf_cgroup_dev_ctx", None, "cgroup.retval", std::nullopt)
+EBPF_PROGRAM_KIND("cgroup_sysctl",  "cgroup_sysctl",  None,        false, "-",                 "bpf_sysctl",         None, "sysctl.set cgroup.retval", std::nullopt)
+EBPF_PROGRAM_KIND("cgroup_sockopt", "cgroup_sockopt", SockoptHook, false, "optval,optval_end", "bpf_sockopt",        None, "packet.store cgroup.retval", std::nullopt) // Sockopt writes require checked entry-program optval; ABI rejects static funcs.
 // lwt_seg6local is End.BPF in a netlink route, not a link, with lwt context rules.
 // Redirect is meaningful after seg6_action sets dst; lwt_reroute is not valid here.
 // lwt.seg6 exposes helpers 74..76. lwt_xmit redirect returns BPF_REDIRECT (7);
@@ -90,7 +90,7 @@ EBPF_PROGRAM_KIND("lwt_seg6local",  "lwt_seg6local",  None,        false, "data,
 // not section values; generic requirements use map:<symbol>. sk_action names
 // the verdicts; the verifier does not constrain the return, and non-SK_PASS drops.
 // sk_msg packet access through data/data_end is read-only.
-EBPF_PROGRAM_KIND("sk_skb", "sk_skb", MapSymbol, false, "-",             "__sk_buff",  None, "sk.redirect", std::nullopt)  // OPS sk.redirect
+EBPF_PROGRAM_KIND("sk_skb", "sk_skb", MapSymbol, false, "-",             "__sk_buff",  None, "sk.redirect skb.load_bytes skb.adjust_room trace.printk", std::nullopt)  // OPS sk.redirect
 EBPF_PROGRAM_KIND("sk_msg", "sk_msg", MapSymbol, false, "data,data_end", "sk_msg_md",  None, "msg.redirect msg.apply_bytes msg.cork_bytes msg.pull_data msg.pop_data", std::nullopt)  // sk_reuseport selects SO_REUSEPORT sockets with SO_ATTACH_REUSEPORT_EBPF,
 // not a link; socket FD is a loader input. Non-SK_PASS behaves as drop, without
 // verifier return restrictions. Direct packet reads use data/data_end only.
@@ -123,24 +123,24 @@ EBPF_PROGRAM_KIND("lirc_mode2",     "lirc_mode2",     None,        false, "-",  
 // expected_attach_type to the member index. Generic struct_ops map:<symbol>
 // describes map registration. Void returns done; integer returns use return.
 // OpsSig supplies nargs/ret/args; ctx.arg gives nullable struct pointers.
-// kfield.store supports tcp_sock writes. trace_struct_ops/structop/retsig/farg
+// kfield.store supports tcp_sock writes. timer: sleepable sched_ext_ops members only (VerifySchema). trace_struct_ops/structop/retsig/farg
 // companions match member FUNC_PROTO; PROMOTION maps farg back to BTF names.
-EBPF_PROGRAM_KIND("struct_ops",     "struct_ops",     StructOpsMap, false, "-",             "-",                  OpsSig, "ctx.arg kfield.store", mlir::bpfabi::kStructOpsDoneValue)
+EBPF_PROGRAM_KIND("struct_ops",     "struct_ops",     StructOpsMap, false, "-",             "-",                  OpsSig, "ctx.arg kfield.store scx timer trace.printk", mlir::bpfabi::kStructOpsDoneValue)  // OPS trace.printk (only for sched_ext_ops members, checked by ebpf-verify-schema)
 // Multi-probes use kprobe program type and pt_regs with enumerated names, not
 // globs. Shared params are matched for every mtarget; target_params permits
 // target-specific entry parameters via probe.target_arg. Operations expose
 // argument/return registers, user strings and probe.target_index cookies.
 // stack.user_id is excluded: kprobe.multi fprobe contexts have partial pt_regs.
-EBPF_PROGRAM_KIND("kprobe_multi",    "kprobe",    KernelFuncList, true, "-", "-",      Probe,    "kprobe.arg probe.target_index probe.target_arg",         mlir::bpfabi::kKprobeDoneValue)
-EBPF_PROGRAM_KIND("kretprobe_multi", "kprobe",    KernelFuncList, true, "-", "-",      ProbeRet, "probe.retval probe.target_index",                        mlir::bpfabi::kKprobeDoneValue)
-EBPF_PROGRAM_KIND("uprobe_multi",    "kprobe",    UserSymbolList, true, "-", "-",      Probe,    "uprobe.arg user.read user.read_str probe.target_index probe.target_arg", mlir::bpfabi::kKprobeDoneValue)
-EBPF_PROGRAM_KIND("uretprobe_multi", "kprobe",    UserSymbolList, true, "-", "-",      ProbeRet, "probe.retval probe.target_index",                        mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("kprobe_multi",    "kprobe",    KernelFuncList, true, "-", "-",      Probe,    "kprobe.arg probe.target_index probe.target_arg ctx.func_ip",         mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("kretprobe_multi", "kprobe",    KernelFuncList, true, "-", "-",      ProbeRet, "probe.retval probe.target_index ctx.func_ip",                        mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("uprobe_multi",    "kprobe",    UserSymbolList, true, "-", "-",      Probe,    "uprobe.arg user.read user.read_str probe.target_index probe.target_arg ctx.func_ip", mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("uretprobe_multi", "kprobe",    UserSymbolList, true, "-", "-",      ProbeRet, "probe.retval probe.target_index ctx.func_ip",                        mlir::bpfabi::kKprobeDoneValue)
 // USDT uses kprobe program type and pt_regs without expected_attach_type.
 // provider:name lives in schema, not the section; arch/params/binary_sha256
 // follow uprobes, with semaphore/max_points added. usdt.arg reads loader-built
 // note specs through cookies; probe.target_index returns point index i.
 // Locations are selected by the binary compiler, not known at BPF compile time.
-EBPF_PROGRAM_KIND("usdt",            "kprobe",    UsdtProbe,      true, "-", "-",      Probe,    "usdt.arg probe.target_index",                            mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("usdt",            "kprobe",    UsdtProbe,      true, "-", "-",      Probe,    "usdt.arg probe.target_index ctx.func_ip",                            mlir::bpfabi::kKprobeDoneValue)
 // lsm_s uses BPF_F_SLEEPABLE and lsm_mac. With schema args it shares trace_lsm
 // and farg matching. Kernel-version-specific sleepable hook/map/helper support
 // is checked at load, not restricted by the compiler.
@@ -149,20 +149,20 @@ EBPF_PROGRAM_KIND("usdt",            "kprobe",    UsdtProbe,      true, "-", "-"
 // 0..1, while void hooks require 1. HookArgs/ctx.arg with schema args emits
 // trace_lsm_cgroup/farg while retaining generic matching; without args, use only
 // the generic attachment row.
-EBPF_PROGRAM_KIND("lsm_s",           "lsm",       LsmHook,        false, "-", "-",     HookArgs, "ctx.arg",                                                mlir::bpfabi::kLsmDoneValue)
+EBPF_PROGRAM_KIND("lsm_s",           "lsm",       LsmHook,        false, "-", "-",     HookArgs, "ctx.arg sleepable",                                      mlir::bpfabi::kLsmDoneValue)
 EBPF_PROGRAM_KIND("lsm_cgroup",      "lsm",       LsmHook,        false, "-", "-",     HookArgs, "ctx.arg",                                                std::nullopt)
 // ksyscall probes syscall entry with libbpf ksyscall/<name> sections. ProbeRet
 // avoids wrapper-register params: schema params describe syscall arguments.
 // Requirements use ksyscall <name>, then arch/ctxfield/sysarg. Readers derive
 // wrapper names from ABI syscallpfx. ksyscall.arg performs two-level reads
 // through wrapper pt_regs using ABI ksyscallarg offsets.
-EBPF_PROGRAM_KIND("ksyscall",        "kprobe",    SyscallName,    true,  "-", "-",     ProbeRet, "ksyscall.arg user.read_str user.str_at",                             mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("ksyscall",        "kprobe",    SyscallName,    true,  "-", "-",     ProbeRet, "ksyscall.arg user.read_str user.str_at ctx.func_ip",                             mlir::bpfabi::kKprobeDoneValue)
 // kprobe_session uses a single-function Session multi-link; fsession uses
 // trampoline entry/return. session operations call bpf_session_is_return and
 // bpf_session_cookie. Generic attach requirements use ABI attach types and
 // func:<name>; argument/pt_regs access is not exposed. kprobe_session returns
 // 0..1 (one skips return); fsession returns done=0.
-EBPF_PROGRAM_KIND("kprobe_session",  "kprobe",    KernelFunc,     false, "-", "-",     None,     "session",                                                mlir::bpfabi::kKprobeDoneValue)
-EBPF_PROGRAM_KIND("fsession",        "tracing",   KernelFunc,     false, "-", "-",     None,     "kptr.addr session",                                                mlir::bpfabi::kFentryDoneValue)
+EBPF_PROGRAM_KIND("kprobe_session",  "kprobe",    KernelFunc,     false, "-", "-",     None,     "session ctx.func_ip",                                                mlir::bpfabi::kKprobeDoneValue)
+EBPF_PROGRAM_KIND("fsession",        "tracing",   KernelFunc,     false, "-", "-",     None,     "kptr.addr session ctx.func_ip ctx.func_arg ctx.func_arg_cnt",                                                mlir::bpfabi::kFentryDoneValue)
 // clang-format on
 #undef EBPF_PROGRAM_KIND

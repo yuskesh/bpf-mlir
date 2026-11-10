@@ -1,0 +1,4 @@
+ebpf-requirements 23
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	p	syscall	31
+kfield	p	cpufreq_policy	cur	u32	guarded	0

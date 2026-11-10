@@ -1,4 +1,4 @@
 {
   "result": "error",
-  "error": "core.programs: unknown key \"zz_unknown\" (known: name, kind, attach_target, maps, args, nargs, ret, arch, params, target_params, binary_sha256, fields, semaphore, max_points, note)"
+  "error": "core.programs: unknown key \"zz_unknown\" (known: name, kind, attach_target, maps, args, nargs, ret, arch, params, target_params, binary_sha256, fields, semaphore, max_points, sleepable, note)"
 }

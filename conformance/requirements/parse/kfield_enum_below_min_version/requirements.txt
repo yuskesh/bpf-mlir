@@ -1,0 +1,5 @@
+ebpf-requirements 21
+schema	sha256	0000000000000000000000000000000000000000000000000000000000000000
+program	s	tracing	26
+kfield	s	scx_exit_info	kind	enum:32
+btf	int
