@@ -154,6 +154,27 @@ error: 'ebpf.ref.load' op operand is an unchecked nullable reference '!ebpf.mayb
 note: check it with ebpf.ref.check first; the kernel verifier rejects dereferencing a possibly-null map lookup result
 ```
 
+## Feature coverage
+
+An interactive table of the program types, attach types, map types, helpers,
+kfuncs (an excerpt of the UAPI table) and `struct_ops` members that the feature
+census tracks, with the support status (including what is unsupported), the
+operation or kind that provides each, the limits, and the evidence, is published at
+**<https://yuskesh.github.io/bpf-mlir/>**. The counts below are for release
+v1.21.0 (497 rows). "Supported" means bound to load or run evidence on a real kernel; it is not a claim that
+every argument or combination was run.
+
+| Category | Supported | Compile-only | Unsupported | Out of scope | Total |
+|---|---:|---:|---:|---:|---:|
+| program type | 32 | 0 | 0 | 0 | 32 |
+| attach type | 52 | 0 | 7 | 0 | 59 |
+| map type | 31 | 0 | 5 | 0 | 36 |
+| helper | 145 | 0 | 66 | 0 | 211 |
+| kfunc (UAPI excerpt) | 63 | 3 | 1 | 0 | 67 |
+| struct_ops member | 52 | 10 | 7 | 1 | 70 |
+| Other | 16 | 4 | 0 | 2 | 22 |
+| **All** | 391 | 17 | 86 | 3 | 497 |
+
 ## Limitations
 
 - You write `ebpf` dialect MLIR, or a frontend does. bpf-mlir has no high-level
