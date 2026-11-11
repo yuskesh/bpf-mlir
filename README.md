@@ -161,7 +161,7 @@ kfuncs (an excerpt of the UAPI table) and `struct_ops` members that the feature
 census tracks, with the support status (including what is unsupported), the
 operation or kind that provides each, the limits, and the evidence, is published at
 **<https://yuskesh.github.io/bpf-mlir/>**. The counts below are for release
-v1.21.0 (497 rows). "Supported" means bound to load or run evidence on a real kernel; it is not a claim that
+v1.21.0 (499 rows). "Supported" means bound to load or run evidence on a real kernel; it is not a claim that
 every argument or combination was run.
 
 | Category | Supported | Compile-only | Unsupported | Out of scope | Total |
@@ -170,10 +170,10 @@ every argument or combination was run.
 | attach type | 52 | 0 | 7 | 0 | 59 |
 | map type | 31 | 0 | 5 | 0 | 36 |
 | helper | 145 | 0 | 66 | 0 | 211 |
-| kfunc (UAPI excerpt) | 63 | 3 | 1 | 0 | 67 |
+| kfunc (UAPI excerpt) | 65 | 3 | 1 | 0 | 69 |
 | struct_ops member | 52 | 10 | 7 | 1 | 70 |
 | Other | 16 | 4 | 0 | 2 | 22 |
-| **All** | 391 | 17 | 86 | 3 | 497 |
+| **All** | 393 | 17 | 86 | 3 | 499 |
 
 ## Limitations
 
